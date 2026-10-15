@@ -276,20 +276,7 @@ export function createDemoTransport(
       downloadCount: state.contents.filter((c) => c.downloadSummary.state === "VERIFIED").length,
       archiveCount: state.contents.filter((c) => c.archiveSummary.state === "VERIFIED").length };
     if (path === "/health") return { runtime, bilibili };
-    if (path === "/overview")
-      return {
-        runtime, bilibili,
-        contentCount:
-          state.contents.length +
-          state.resources.length +
-          state.nodes.filter((n) => n.kind === "FILE").length,
-        activeTasks: state.tasks.filter((t) =>
-          ["RUNNING", "QUEUED"].includes(t.status),
-        ).length,
-        archives: state.artifacts.filter((a) => a.archiveState === "VERIFIED")
-          .length,
-        issues: state.tasks.filter((t) => t.error).length,
-      };
+    if (path === "/overview") return { runtime, bilibili };
     if (path === "/search") {
       const q = (p.get("q") || "").toLowerCase();
       return list(

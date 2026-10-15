@@ -82,6 +82,8 @@ describe("Bilibili frozen media contract d508c7a", () => {
     expect(pv.archivePolicy).toBe("NONE");
     expect(pv.items[0].decision).toBe("DOWNLOAD");
     expect(pv.items[0].reasonCode).toBe("CUSTOM_TARGET_NO_ARCHIVE");
+    expect(pv.items[0].downloadState).toBe("NOT_REQUESTED");
+    expect(pv.items[0].archiveState).toBe("NOT_REQUESTED");
     const submitted = await h.request<any>("POST", "/download-orders", { previewId: pv.id });
     const order = await h.request<any>("GET", "/download-orders/" + submitted.orderId);
     expect(order.target.path).toBe("E:\\本批媒体");
@@ -111,6 +113,8 @@ describe("Bilibili frozen media contract d508c7a", () => {
     expect(mux.items[0].decision).toBe("DOWNLOAD");
     expect(previewFact({ decision: "REUSE" })).toBe("状态待确认");
     expect(previewFact({ reasonCode: "NETWORK_TEMPORARY" })).not.toBe("原视频已删除");
+    h.state.contents.find((content) => content.id === "b11")!.availability = "REMOVED";
+    expect(previewFact((await h.preview(["b11"])).items[0])).toBe("原视频已删除");
     expect(previewAction({ decision: "DOWNLOAD" }, "NONE")).toContain("不归档");
   });
   it("shows size only when every item has reliable bytes, including real zero", () => {
@@ -151,6 +155,7 @@ describe("Bilibili frozen media contract d508c7a", () => {
     expect(sources.items.find((source) => source.kind === "SERIES")?.navigationGroup).toBe("OTHER");
     await expect(h.request("PATCH", "/bilibili/sources/s2", { pinned: false }, { "If-Match": '"1"' })).rejects.toMatchObject({ code: "VERSION_CHANGED" });
     const overview = await h.request<any>("GET", "/overview");
+    expect(Object.keys(overview).sort()).toEqual(["bilibili", "runtime"]);
     expect(overview.runtime.state).toBe("UNKNOWN");
     expect(overview.runtime.mount.state).toBe("UNKNOWN");
   });
