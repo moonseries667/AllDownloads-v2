@@ -1,0 +1,564 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alldownloads.invalid/contracts/management.schema.json",
+  "title": "Part 3 management",
+  "$defs": {
+    "DriveTarget": {
+      "type": "object",
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "folderId": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "accountId",
+        "folderId",
+        "revision",
+        "name",
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "DriveFolder": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "accountId": {
+          "type": "string"
+        },
+        "parentId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "const": "FOLDER"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "selectable": {
+          "type": "boolean"
+        },
+        "availability": {
+          "type": "string"
+        },
+        "availabilityReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "accountId",
+        "parentId",
+        "name",
+        "kind",
+        "revision",
+        "selectable",
+        "availability",
+        "availabilityReason",
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "ArtifactFile": {
+      "type": "object",
+      "properties": {
+        "outputId": {
+          "type": "string"
+        },
+        "relativePath": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "mediaKinds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "verified": {
+          "const": true
+        }
+      },
+      "required": [
+        "outputId",
+        "relativePath",
+        "sizeBytes",
+        "sha256",
+        "verified"
+      ],
+      "additionalProperties": false
+    },
+    "Summary": {
+      "type": "object",
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "running": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cancelled": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pending": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "total",
+        "completed",
+        "running",
+        "failed",
+        "cancelled",
+        "pending"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadChild": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "contentId": {
+          "type": "string"
+        },
+        "partId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "attachmentId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "nodeId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "QUEUED",
+            "RUNNING",
+            "PAUSING",
+            "PAUSED",
+            "WAITING_RETRY",
+            "NEEDS_ACTION",
+            "SUCCEEDED",
+            "FAILED",
+            "CANCELLED",
+            "PARTIAL"
+          ]
+        },
+        "desiredAction": {
+          "enum": [
+            "CONTINUE",
+            "PAUSE",
+            "CANCEL"
+          ]
+        },
+        "allowedActions": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "PAUSE",
+              "RESUME",
+              "CANCEL",
+              "RETRY",
+              "RECONCILE"
+            ]
+          }
+        },
+        "actionReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "taskIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "projectId",
+        "contentId",
+        "partId",
+        "attachmentId",
+        "nodeId",
+        "title",
+        "revision",
+        "status",
+        "desiredAction",
+        "allowedActions",
+        "actionReason",
+        "taskIds",
+        "outputs",
+        "files"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadProject": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "batchId": {
+          "type": "string"
+        },
+        "platform": {
+          "enum": [
+            "BILIBILI",
+            "TELEGRAM",
+            "QUARK"
+          ]
+        },
+        "contentId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "QUEUED",
+            "RUNNING",
+            "PAUSING",
+            "PAUSED",
+            "WAITING_RETRY",
+            "NEEDS_ACTION",
+            "SUCCEEDED",
+            "FAILED",
+            "CANCELLED",
+            "PARTIAL"
+          ]
+        },
+        "desiredAction": {
+          "enum": [
+            "CONTINUE",
+            "PAUSE",
+            "CANCEL"
+          ]
+        },
+        "allowedActions": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "PAUSE",
+              "RESUME",
+              "CANCEL",
+              "RETRY",
+              "RECONCILE"
+            ]
+          }
+        },
+        "actionReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "target": {
+          "type": "object"
+        },
+        "archivePolicy": {
+          "enum": [
+            "AUTO",
+            "NONE"
+          ]
+        },
+        "archiveTarget": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DriveTarget"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "summary": {
+          "$ref": "#/$defs/Summary"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DownloadChild"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "batchId",
+        "platform",
+        "contentId",
+        "title",
+        "revision",
+        "status",
+        "desiredAction",
+        "allowedActions",
+        "actionReason",
+        "createdAt",
+        "target",
+        "archivePolicy",
+        "archiveTarget",
+        "summary",
+        "items"
+      ],
+      "additionalProperties": false
+    },
+    "ArchiveUpload": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "batchId": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "QUEUED",
+            "RUNNING",
+            "PAUSING",
+            "PAUSED",
+            "WAITING_RETRY",
+            "NEEDS_ACTION",
+            "SUCCEEDED",
+            "FAILED",
+            "CANCELLED",
+            "PARTIAL"
+          ]
+        },
+        "revision": {
+          "type": "string"
+        },
+        "desiredAction": {
+          "type": "string"
+        },
+        "allowedActions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "progress": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "target": {
+          "$ref": "#/$defs/DriveTarget"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "error": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "projectId",
+        "batchId",
+        "platform",
+        "title",
+        "status",
+        "revision",
+        "desiredAction",
+        "allowedActions",
+        "progress",
+        "target",
+        "files",
+        "taskId",
+        "createdAt",
+        "error"
+      ],
+      "additionalProperties": false
+    },
+    "DirectorySelection": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "PENDING",
+            "SELECTED",
+            "CANCELLED",
+            "UNAVAILABLE"
+          ]
+        },
+        "targetId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "targetId",
+        "error"
+      ],
+      "additionalProperties": false
+    },
+    "SettingsValidation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "VALIDATING",
+            "VALID",
+            "INVALID"
+          ]
+        },
+        "downloadTarget": {
+          "type": "object"
+        },
+        "archiveDestination": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DriveTarget"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "status",
+        "downloadTarget",
+        "archiveDestination",
+        "error"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

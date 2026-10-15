@@ -1,0 +1,9 @@
+{
+  "idempotencyKey":"isolated-fixture-request-1",
+  "request": {
+    "resourceKey":"fixture:isolated-text-1",
+    "relativePath":"fixture/verified.txt",
+    "content":"synthetic fixture content",
+    "storageRevision":"isolated-root-v1"
+  }
+}

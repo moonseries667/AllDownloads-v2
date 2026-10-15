@@ -1,0 +1,320 @@
+{
+  "projects": [
+    {
+      "id": "project-bilibili",
+      "batchId": "batch-example",
+      "platform": "BILIBILI",
+      "contentId": "content-video",
+      "title": "content-video",
+      "revision": "1",
+      "status": "QUEUED",
+      "desiredAction": "CONTINUE",
+      "allowedActions": [
+        "CANCEL"
+      ],
+      "actionReason": null,
+      "createdAt": "2026-10-15T00:00:00Z",
+      "target": {
+        "id": "default",
+        "revision": "1",
+        "status": "VALID",
+        "path": "D:\\Downloads",
+        "label": "D:\\Downloads",
+        "rootId": "root-main",
+        "archivePolicy": "AUTO",
+        "error": null
+      },
+      "archivePolicy": "AUTO",
+      "archiveTarget": {
+        "accountId": "drive-account",
+        "folderId": "folder-123",
+        "revision": "drive-v1",
+        "name": "上传",
+        "path": "备份/上传"
+      },
+      "summary": {
+        "total": 2,
+        "completed": 0,
+        "running": 0,
+        "failed": 0,
+        "cancelled": 0,
+        "pending": 2
+      },
+      "items": [
+        {
+          "id": "project-bilibili-child-0",
+          "projectId": "project-bilibili",
+          "contentId": "content-video",
+          "partId": "part-1",
+          "attachmentId": null,
+          "nodeId": null,
+          "title": "part-1",
+          "revision": "1",
+          "status": "QUEUED",
+          "desiredAction": "CONTINUE",
+          "allowedActions": [
+            "CANCEL"
+          ],
+          "actionReason": null,
+          "taskIds": [
+            "task-BILIBILI-0"
+          ],
+          "outputs": [
+            {
+              "id": "out-part-1",
+              "relativePath": "BILIBILI/part-1.bin",
+              "kind": "FILE",
+              "trackIds": [],
+              "sizeBytes": null
+            }
+          ],
+          "files": []
+        },
+        {
+          "id": "project-bilibili-child-1",
+          "projectId": "project-bilibili",
+          "contentId": "content-video",
+          "partId": "part-2",
+          "attachmentId": null,
+          "nodeId": null,
+          "title": "part-2",
+          "revision": "1",
+          "status": "QUEUED",
+          "desiredAction": "CONTINUE",
+          "allowedActions": [
+            "CANCEL"
+          ],
+          "actionReason": null,
+          "taskIds": [
+            "task-BILIBILI-1"
+          ],
+          "outputs": [
+            {
+              "id": "out-part-2",
+              "relativePath": "BILIBILI/part-2.bin",
+              "kind": "FILE",
+              "trackIds": [],
+              "sizeBytes": null
+            }
+          ],
+          "files": []
+        }
+      ]
+    },
+    {
+      "id": "project-telegram",
+      "batchId": "batch-example",
+      "platform": "TELEGRAM",
+      "contentId": "saved-group",
+      "title": "saved-group",
+      "revision": "1",
+      "status": "QUEUED",
+      "desiredAction": "CONTINUE",
+      "allowedActions": [
+        "CANCEL"
+      ],
+      "actionReason": null,
+      "createdAt": "2026-10-15T00:00:00Z",
+      "target": {
+        "id": "default",
+        "revision": "1",
+        "status": "VALID",
+        "path": "D:\\Downloads",
+        "label": "D:\\Downloads",
+        "rootId": "root-main",
+        "archivePolicy": "AUTO",
+        "error": null
+      },
+      "archivePolicy": "AUTO",
+      "archiveTarget": {
+        "accountId": "drive-account",
+        "folderId": "folder-123",
+        "revision": "drive-v1",
+        "name": "上传",
+        "path": "备份/上传"
+      },
+      "summary": {
+        "total": 2,
+        "completed": 0,
+        "running": 0,
+        "failed": 0,
+        "cancelled": 0,
+        "pending": 2
+      },
+      "items": [
+        {
+          "id": "project-telegram-child-0",
+          "projectId": "project-telegram",
+          "contentId": "saved-group",
+          "partId": null,
+          "attachmentId": "attachment-video",
+          "nodeId": null,
+          "title": "attachment-video",
+          "revision": "1",
+          "status": "QUEUED",
+          "desiredAction": "CONTINUE",
+          "allowedActions": [
+            "CANCEL"
+          ],
+          "actionReason": null,
+          "taskIds": [
+            "task-TELEGRAM-0"
+          ],
+          "outputs": [
+            {
+              "id": "out-attachment-video",
+              "relativePath": "TELEGRAM/attachment-video.bin",
+              "kind": "VIDEO",
+              "trackIds": [],
+              "sizeBytes": null
+            }
+          ],
+          "files": []
+        },
+        {
+          "id": "project-telegram-child-1",
+          "projectId": "project-telegram",
+          "contentId": "saved-group",
+          "partId": null,
+          "attachmentId": "attachment-photo",
+          "nodeId": null,
+          "title": "attachment-photo",
+          "revision": "1",
+          "status": "QUEUED",
+          "desiredAction": "CONTINUE",
+          "allowedActions": [
+            "CANCEL"
+          ],
+          "actionReason": null,
+          "taskIds": [
+            "task-TELEGRAM-1"
+          ],
+          "outputs": [
+            {
+              "id": "out-attachment-photo",
+              "relativePath": "TELEGRAM/attachment-photo.bin",
+              "kind": "PHOTO",
+              "trackIds": [],
+              "sizeBytes": null
+            }
+          ],
+          "files": []
+        }
+      ]
+    },
+    {
+      "id": "project-quark",
+      "batchId": "batch-example",
+      "platform": "QUARK",
+      "contentId": "share-1",
+      "title": "share-1",
+      "revision": "1",
+      "status": "QUEUED",
+      "desiredAction": "CONTINUE",
+      "allowedActions": [
+        "CANCEL"
+      ],
+      "actionReason": null,
+      "createdAt": "2026-10-15T00:00:00Z",
+      "target": {
+        "id": "default",
+        "revision": "1",
+        "status": "VALID",
+        "path": "D:\\Downloads",
+        "label": "D:\\Downloads",
+        "rootId": "root-main",
+        "archivePolicy": "AUTO",
+        "error": null
+      },
+      "archivePolicy": "AUTO",
+      "archiveTarget": {
+        "accountId": "drive-account",
+        "folderId": "folder-123",
+        "revision": "drive-v1",
+        "name": "上传",
+        "path": "备份/上传"
+      },
+      "summary": {
+        "total": 2,
+        "completed": 0,
+        "running": 0,
+        "failed": 0,
+        "cancelled": 0,
+        "pending": 2
+      },
+      "items": [
+        {
+          "id": "project-quark-child-0",
+          "projectId": "project-quark",
+          "contentId": "share-1",
+          "partId": null,
+          "attachmentId": null,
+          "nodeId": "node-1",
+          "title": "node-1",
+          "revision": "1",
+          "status": "QUEUED",
+          "desiredAction": "CONTINUE",
+          "allowedActions": [
+            "CANCEL"
+          ],
+          "actionReason": null,
+          "taskIds": [
+            "task-QUARK-0"
+          ],
+          "outputs": [
+            {
+              "id": "out-node-1",
+              "relativePath": "QUARK/node-1.bin",
+              "kind": "FILE",
+              "trackIds": [],
+              "sizeBytes": null
+            }
+          ],
+          "files": []
+        },
+        {
+          "id": "project-quark-child-1",
+          "projectId": "project-quark",
+          "contentId": "share-1",
+          "partId": null,
+          "attachmentId": null,
+          "nodeId": "node-2",
+          "title": "node-2",
+          "revision": "1",
+          "status": "QUEUED",
+          "desiredAction": "CONTINUE",
+          "allowedActions": [
+            "CANCEL"
+          ],
+          "actionReason": null,
+          "taskIds": [
+            "task-QUARK-1"
+          ],
+          "outputs": [
+            {
+              "id": "out-node-2",
+              "relativePath": "QUARK/node-2.bin",
+              "kind": "FILE",
+              "trackIds": [],
+              "sizeBytes": null
+            }
+          ],
+          "files": []
+        }
+      ]
+    }
+  ],
+  "driveTarget": {
+    "accountId": "drive-account",
+    "folderId": "folder-123",
+    "revision": "drive-v1",
+    "name": "上传",
+    "path": "备份/上传"
+  },
+  "directoryCancelled": {
+    "id": "selection-1",
+    "status": "CANCELLED",
+    "targetId": null,
+    "error": null
+  }
+}

@@ -40,6 +40,24 @@ jobs:
       - name: Check tracked files and discover modules
         id: discover
         run: node scripts/ci/repository.mjs
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: hashFiles('contracts/runner.schema.json') != ''
+        with:
+          python-version: '3.12'
+      - name: Validate shared contract schemas and examples
+        if: hashFiles('contracts/runner.schema.json') != ''
+        run: |
+          $contractEnvironment = Join-Path $env:RUNNER_TEMP 'alldownloads-contracts'
+          python -m venv $contractEnvironment
+          $contractPython = Join-Path $contractEnvironment 'Scripts/python.exe'
+          & $contractPython -m pip install -r tests/integration/requirements.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $contractPython tests/integration/validate_contracts.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $contractPython tests/integration/validate_feedback2_contracts.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $contractPython tests/integration/validate_runner_lifecycle.py
+          exit $LASTEXITCODE
 
   frontend:
     name: Frontend build and test

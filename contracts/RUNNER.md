@@ -1,5 +1,11 @@
 # Java 与 Go 执行协议
 
+正式客户端、生命周期机器规范与只读转存核对以 [平台客户端增量](PLATFORM-CLIENTS.md) 为准。
+
+第三部分独立子项执行、部分停止收据、上传固定目标与原生/Drive 目录操作见 [第三部分冻结契约](FEEDBACK-PART3.md)。
+
+第一部分实际 HTTP 字段、媒体执行 payload 和目录验证见 [第一部分冻结契约](FEEDBACK-PART1.md) 与 [机器 schema](runner.schema.json)。
+
 ## 1 所有权与通信
 
 Java 是业务状态、业务队列和调度决定的唯一所有者。Go 是平台会话、真实 I/O 和执行收据的唯一所有者。Go 不连接业务数据库，不在执行完成后自行创建另一个平台下载；Java 不自行执行媒体下载、浏览器自动化或外部命令。
@@ -17,6 +23,7 @@ Java 是业务状态、业务队列和调度决定的唯一所有者。Go 是平
   "taskId": "task-example",
   "attempt": 1,
   "leaseId": "lease-example",
+  "runnerId": "runner-example",
   "fencingToken": "1",
   "leaseExpiresAt": "2026-10-15T10:00:00Z",
   "operationType": "DOWNLOAD_MEDIA",

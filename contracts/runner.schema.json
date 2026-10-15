@@ -1,0 +1,2547 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alldownloads.invalid/contracts/runner.schema.json",
+  "title": "Java-Go protocol v1, feedback parts one through three",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Operation"
+    },
+    {
+      "$ref": "#/$defs/Result"
+    },
+    {
+      "$ref": "#/$defs/Register"
+    },
+    {
+      "$ref": "#/$defs/RegisterResponse"
+    },
+    {
+      "$ref": "#/$defs/AcquireRequest"
+    },
+    {
+      "$ref": "#/$defs/AcquireResponse"
+    },
+    {
+      "$ref": "#/$defs/HeartbeatRequest"
+    },
+    {
+      "$ref": "#/$defs/HeartbeatResponse"
+    },
+    {
+      "$ref": "#/$defs/FactsRequest"
+    },
+    {
+      "$ref": "#/$defs/FactsAck"
+    },
+    {
+      "$ref": "#/$defs/ResultError"
+    },
+    {
+      "$ref": "#/$defs/ResultAck"
+    },
+    {
+      "$ref": "#/$defs/SuccessEnvelope"
+    },
+    {
+      "$ref": "#/$defs/ErrorEnvelope"
+    },
+    {
+      "$ref": "#/$defs/QuarkTransferReconcilePayload"
+    },
+    {
+      "$ref": "#/$defs/QuarkTransferReconcileResult"
+    }
+  ],
+  "$defs": {
+    "Source": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "BILIBILI"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "FAVORITE",
+            "COLLECTION",
+            "USER_ADDED",
+            "SERIES",
+            "MOVIE"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "alias": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "lastSyncedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "itemCount": {
+          "type": "integer"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "pinned": {
+          "type": "boolean"
+        },
+        "navigationGroup": {
+          "type": "string",
+          "enum": [
+            "FAVORITES",
+            "COLLECTIONS",
+            "OTHER"
+          ]
+        },
+        "displayLabel": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "platform",
+        "kind",
+        "title",
+        "alias",
+        "url",
+        "status",
+        "lastSyncedAt",
+        "itemCount",
+        "revision",
+        "pinned",
+        "navigationGroup",
+        "displayLabel"
+      ],
+      "additionalProperties": false
+    },
+    "MediaTrack": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "VIDEO",
+            "AUDIO",
+            "SUBTITLE",
+            "DANMAKU"
+          ]
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "reasonCode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "language": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "languageLabel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "subtitleOrigin": {
+          "type": "string",
+          "enum": [
+            "HUMAN",
+            "AI",
+            "UNKNOWN",
+            "NOT_APPLICABLE"
+          ]
+        },
+        "durationSeconds": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "sizeBytes": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]+$"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "available",
+        "reasonCode",
+        "language",
+        "languageLabel",
+        "subtitleOrigin",
+        "durationSeconds",
+        "sizeBytes"
+      ],
+      "additionalProperties": false
+    },
+    "MediaUnit": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "contentId": {
+          "type": "string"
+        },
+        "externalId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "MAIN",
+            "PART",
+            "EPISODE",
+            "LANGUAGE"
+          ]
+        },
+        "language": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "languageLabel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "durationSeconds": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "availability": {
+          "type": "string",
+          "enum": [
+            "AVAILABLE",
+            "REMOVED",
+            "UNAVAILABLE",
+            "UNKNOWN"
+          ]
+        },
+        "availabilityReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tracks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MediaTrack"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "contentId",
+        "externalId",
+        "title",
+        "index",
+        "kind",
+        "language",
+        "languageLabel",
+        "durationSeconds",
+        "availability",
+        "availabilityReason",
+        "tracks"
+      ],
+      "additionalProperties": false
+    },
+    "StateSummary": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "Content": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "BILIBILI"
+          ]
+        },
+        "externalId": {
+          "type": "string"
+        },
+        "externalIdType": {
+          "type": "string",
+          "enum": [
+            "BVID",
+            "SEASON_ID",
+            "EPISODE_ID",
+            "MEDIA_ID"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "SINGLE",
+            "MULTIPART",
+            "SERIES",
+            "MOVIE"
+          ]
+        },
+        "revision": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "coverUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sourceIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "originalUrl": {
+          "type": "string"
+        },
+        "availability": {
+          "type": "string",
+          "enum": [
+            "AVAILABLE",
+            "REMOVED",
+            "UNAVAILABLE",
+            "UNKNOWN"
+          ]
+        },
+        "availabilityReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "downloadSummary": {
+          "$ref": "#/$defs/StateSummary"
+        },
+        "archiveSummary": {
+          "$ref": "#/$defs/StateSummary"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "publishedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "author": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "seasonId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Source"
+          }
+        },
+        "mediaUnits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MediaUnit"
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "platform",
+        "externalId",
+        "externalIdType",
+        "kind",
+        "revision",
+        "title",
+        "coverUrl",
+        "sourceIds",
+        "originalUrl",
+        "availability",
+        "availabilityReason",
+        "downloadSummary",
+        "archiveSummary",
+        "updatedAt",
+        "publishedAt",
+        "author",
+        "description",
+        "seasonId",
+        "sources",
+        "mediaUnits",
+        "warnings"
+      ],
+      "additionalProperties": false
+    },
+    "Target": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "VALIDATING",
+            "VALID",
+            "INVALID"
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "rootId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "archivePolicy": {
+          "type": "string",
+          "enum": [
+            "AUTO",
+            "NONE"
+          ]
+        },
+        "error": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "status",
+        "path",
+        "label",
+        "rootId",
+        "archivePolicy",
+        "error"
+      ],
+      "additionalProperties": false
+    },
+    "Output": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "relativePath": {
+          "type": "string"
+        },
+        "trackIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "VIDEO",
+            "AUDIO",
+            "MUXED",
+            "SUBTITLE",
+            "DANMAKU",
+            "FILE",
+            "PHOTO",
+            "DOCUMENT",
+            "METADATA"
+          ]
+        },
+        "sizeBytes": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]+$"
+        },
+        "attachmentId": {
+          "type": "string"
+        },
+        "nodeId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "relativePath",
+        "trackIds",
+        "kind",
+        "sizeBytes"
+      ],
+      "additionalProperties": false
+    },
+    "MediaSelection": {
+      "type": "object",
+      "properties": {
+        "contentId": {
+          "type": "string"
+        },
+        "contentRevision": {
+          "type": "string"
+        },
+        "trackIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "contentId",
+        "contentRevision",
+        "trackIds"
+      ],
+      "additionalProperties": false
+    },
+    "Selection": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "EXPLICIT",
+            "QUERY"
+          ]
+        },
+        "resource": {
+          "type": "string",
+          "enum": [
+            "BILIBILI_CONTENTS",
+            "BILIBILI_PARTS",
+            "QUARK_NODES"
+          ]
+        },
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "filters": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "excludeIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "mediaSelections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MediaSelection"
+          }
+        }
+      },
+      "required": [
+        "mode",
+        "resource"
+      ],
+      "additionalProperties": false
+    },
+    "PreviewRequest": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string",
+          "enum": [
+            "BILIBILI",
+            "QUARK"
+          ]
+        },
+        "selection": {
+          "$ref": "#/$defs/Selection"
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "revision"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "platform",
+        "selection"
+      ],
+      "additionalProperties": false
+    },
+    "PreviewItem": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "contentId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "partId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "relativePath": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]+$"
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "DOWNLOAD",
+            "REUSE",
+            "BLOCKED"
+          ]
+        },
+        "reasonCode": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "actionLabel": {
+          "type": "string"
+        },
+        "selectedTrackIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "mergePolicy": {
+          "type": "string",
+          "enum": [
+            "MUX",
+            "SEPARATE"
+          ]
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Output"
+          }
+        },
+        "downloadState": {
+          "type": "string"
+        },
+        "archiveState": {
+          "type": "string"
+        },
+        "nodeId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "contentId",
+        "partId",
+        "title",
+        "version",
+        "relativePath",
+        "sizeBytes",
+        "decision",
+        "reasonCode",
+        "reason",
+        "actionLabel",
+        "selectedTrackIds",
+        "mergePolicy",
+        "outputs",
+        "downloadState",
+        "archiveState"
+      ],
+      "additionalProperties": false
+    },
+    "Preview": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PREPARING",
+            "READY",
+            "EXPIRED",
+            "NEEDS_ACTION"
+          ]
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "BILIBILI",
+            "QUARK"
+          ]
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "storageRevision": {
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/Target"
+        },
+        "archivePolicy": {
+          "type": "string",
+          "enum": [
+            "AUTO",
+            "NONE"
+          ]
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PreviewItem"
+          }
+        },
+        "summary": {
+          "type": "object",
+          "properties": {
+            "download": {
+              "type": "integer"
+            },
+            "reuse": {
+              "type": "integer"
+            },
+            "blocked": {
+              "type": "integer"
+            },
+            "total": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "download",
+            "reuse",
+            "blocked",
+            "total"
+          ],
+          "additionalProperties": false
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "platform",
+        "expiresAt",
+        "storageRevision",
+        "target",
+        "archivePolicy",
+        "items",
+        "summary",
+        "warnings"
+      ],
+      "additionalProperties": false
+    },
+    "Order": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "previewId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/Target"
+        },
+        "archivePolicy": {
+          "type": "string",
+          "enum": [
+            "AUTO",
+            "NONE"
+          ]
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PreviewItem"
+          }
+        },
+        "taskIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "createdAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "previewId",
+        "status",
+        "target",
+        "archivePolicy",
+        "items",
+        "taskIds",
+        "createdAt"
+      ],
+      "additionalProperties": false
+    },
+    "Error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "action": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryable",
+        "action",
+        "details"
+      ],
+      "additionalProperties": false
+    },
+    "Runtime": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "RUNNING",
+            "PARTIAL",
+            "UNAVAILABLE",
+            "UNKNOWN"
+          ]
+        },
+        "observedAt": {
+          "type": "string"
+        },
+        "services": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "ACTIVE",
+                  "LOST",
+                  "ERROR",
+                  "NOT_CONFIGURED",
+                  "UNKNOWN"
+                ]
+              },
+              "reasonCode": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "lastSeenAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "required",
+              "state",
+              "reasonCode",
+              "lastSeenAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "mount": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": [
+                "MOUNTED",
+                "NOT_MOUNTED",
+                "NOT_CONFIGURED",
+                "UNKNOWN",
+                "UNSUPPORTED"
+              ]
+            },
+            "reasonCode": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "observedAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "state",
+            "reasonCode",
+            "observedAt"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "state",
+        "observedAt",
+        "services",
+        "mount"
+      ],
+      "additionalProperties": false
+    },
+    "Overview": {
+      "type": "object",
+      "properties": {
+        "runtime": {
+          "$ref": "#/$defs/Runtime"
+        },
+        "bilibili": {
+          "type": "object",
+          "properties": {
+            "accountState": {
+              "type": "string"
+            },
+            "refreshState": {
+              "type": "string"
+            },
+            "downloadCount": {
+              "type": "integer"
+            },
+            "archiveCount": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "accountState",
+            "refreshState",
+            "downloadCount",
+            "archiveCount"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "runtime",
+        "bilibili"
+      ],
+      "additionalProperties": false
+    },
+    "Task": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "status",
+        "revision",
+        "allowedActions"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "desiredAction": {
+          "type": "string"
+        },
+        "allowedActions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "error": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "progress": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "nextRetryAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "Operation": {
+      "type": "object",
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "leaseId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "runnerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fencingToken": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "leaseExpiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "operationType": {
+          "$ref": "#/$defs/OperationType"
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "BILIBILI",
+            "TELEGRAM",
+            "QUARK"
+          ]
+        },
+        "accountRef": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "resourceKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "storageRevision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "destination": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "rootId": {
+                  "type": "string"
+                },
+                "rootPath": {
+                  "type": "string"
+                },
+                "relativePath": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "rootId",
+                "rootPath",
+                "relativePath"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "required": [
+            "schemaVersion"
+          ],
+          "properties": {
+            "schemaVersion": {
+              "const": 1
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "operationId",
+        "taskId",
+        "attempt",
+        "leaseId",
+        "runnerId",
+        "fencingToken",
+        "leaseExpiresAt",
+        "operationType",
+        "platform",
+        "accountRef",
+        "resourceKey",
+        "storageRevision",
+        "destination",
+        "payload"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "operationType": {
+                "const": "SCAN_TEL_SAVED"
+              },
+              "platform": {
+                "const": "TELEGRAM"
+              }
+            },
+            "required": [
+              "operationType",
+              "platform"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "feedback2.schema.json#/$defs/ScanPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operationType": {
+                "const": "LIST_QUARK_TREE"
+              },
+              "platform": {
+                "const": "QUARK"
+              }
+            },
+            "required": [
+              "operationType",
+              "platform"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "feedback2.schema.json#/$defs/TreePayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operationType": {
+                "const": "TRANSFER_QUARK_ITEMS"
+              },
+              "platform": {
+                "const": "QUARK"
+              }
+            },
+            "required": [
+              "operationType",
+              "platform"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "feedback2.schema.json#/$defs/TransferPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operationType": {
+                "const": "RECONCILE_QUARK_TRANSFER"
+              }
+            },
+            "required": [
+              "operationType"
+            ]
+          },
+          "then": {
+            "properties": {
+              "platform": {
+                "const": "QUARK"
+              },
+              "payload": {
+                "$ref": "#/$defs/QuarkTransferReconcilePayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operationType": {
+                "const": "DOWNLOAD_MEDIA"
+              },
+              "platform": {
+                "const": "TELEGRAM"
+              }
+            },
+            "required": [
+              "operationType",
+              "platform"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "feedback2.schema.json#/$defs/TelegramDownloadPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operationType": {
+                "const": "DOWNLOAD_MEDIA"
+              },
+              "platform": {
+                "const": "QUARK"
+              }
+            },
+            "required": [
+              "operationType",
+              "platform"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "feedback2.schema.json#/$defs/QuarkDownloadPayload"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "DownloadPayload": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "contentId": {
+          "type": "string"
+        },
+        "contentRevision": {
+          "type": "string"
+        },
+        "contentKind": {
+          "type": "string",
+          "enum": [
+            "SINGLE",
+            "MULTIPART",
+            "SERIES",
+            "MOVIE"
+          ]
+        },
+        "externalId": {
+          "type": "string"
+        },
+        "externalIdType": {
+          "type": "string",
+          "enum": [
+            "BVID",
+            "SEASON_ID",
+            "EPISODE_ID",
+            "MEDIA_ID"
+          ]
+        },
+        "qualityPolicy": {
+          "const": "HIGHEST_AVAILABLE"
+        },
+        "archivePolicy": {
+          "type": "string",
+          "enum": [
+            "AUTO",
+            "NONE"
+          ]
+        },
+        "units": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MediaUnit"
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Output"
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "contentId",
+        "contentRevision",
+        "contentKind",
+        "externalId",
+        "externalIdType",
+        "qualityPolicy",
+        "archivePolicy",
+        "units",
+        "outputs"
+      ],
+      "additionalProperties": false
+    },
+    "FileEvidence": {
+      "type": "object",
+      "properties": {
+        "outputId": {
+          "type": "string"
+        },
+        "relativePath": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "mediaKinds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "VIDEO",
+              "AUDIO",
+              "SUBTITLE",
+              "DANMAKU",
+              "FILE",
+              "PHOTO",
+              "DOCUMENT",
+              "METADATA"
+            ]
+          }
+        },
+        "durationSeconds": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "verified": {
+          "const": true
+        }
+      },
+      "required": [
+        "outputId",
+        "relativePath",
+        "sizeBytes",
+        "sha256",
+        "mediaKinds",
+        "durationSeconds",
+        "verified"
+      ],
+      "additionalProperties": false
+    },
+    "OperationType": {
+      "type": "string",
+      "enum": [
+        "VALIDATE_TARGET",
+        "SYNC_BIL_SOURCE",
+        "FETCH_BIL_METADATA",
+        "DOWNLOAD_MEDIA",
+        "UPLOAD_ARTIFACT",
+        "VERIFY_ARCHIVE",
+        "SCAN_TEL_SAVED",
+        "LIST_QUARK_TREE",
+        "TRANSFER_QUARK_ITEMS",
+        "RECONCILE_QUARK_TRANSFER",
+        "SELECT_LOCAL_DIRECTORY",
+        "LIST_DRIVE_FOLDERS",
+        "VALIDATE_DRIVE_TARGET"
+      ]
+    },
+    "ResultPayload": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/FileEvidence"
+              },
+              {
+                "$ref": "#/$defs/ArchivedFile"
+              }
+            ]
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "ArchivedFile": {
+      "type": "object",
+      "properties": {
+        "outputId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relativePath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sizeBytes": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "remoteId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "remoteName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "verified": {
+          "const": true
+        }
+      },
+      "required": [
+        "outputId",
+        "relativePath",
+        "sizeBytes",
+        "sha256",
+        "remoteId",
+        "remoteName",
+        "verified"
+      ],
+      "additionalProperties": false
+    },
+    "ResultError": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retryAfterSeconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "completedEffects": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "pendingEffects": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryAfterSeconds",
+        "completedEffects",
+        "pendingEffects"
+      ],
+      "additionalProperties": false
+    },
+    "QuarkTransferReconcilePayload": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "shareId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "minLength": 1
+        },
+        "targetFolderId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "targetFolderRevision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "originalOperationId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "shareId",
+        "url",
+        "targetFolderId",
+        "targetFolderRevision",
+        "originalOperationId"
+      ],
+      "additionalProperties": false
+    },
+    "QuarkTransferReconcileResult": {
+      "type": "object",
+      "properties": {
+        "shareId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "targetFolderId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "targetFolderRevision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CloudNode"
+          }
+        },
+        "complete": {
+          "type": "boolean",
+          "description": "True proves the full transferred tree is known. False may only authorize resuming the original operation when safeToResume is true and all prior writes have a determinate outcome."
+        },
+        "safeToResume": {
+          "type": "boolean",
+          "description": "When complete is false, true proves every issued write has a determinate result and all remaining steps were not sent. It never authorizes creating a new logical transfer operation."
+        }
+      },
+      "required": [
+        "shareId",
+        "targetFolderId",
+        "targetFolderRevision",
+        "nodes",
+        "complete"
+      ],
+      "additionalProperties": false
+    },
+    "Result": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "runnerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "leaseId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fencingToken": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "SUCCEEDED",
+            "PAUSED",
+            "CANCELLED",
+            "RETRYABLE_ERROR",
+            "NEEDS_ACTION",
+            "RESULT_UNKNOWN"
+          ]
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ResultPayload"
+            },
+            {
+              "$ref": "#/$defs/QuarkTransferReconcileResult"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ResultError"
+            }
+          ]
+        }
+      },
+      "required": [
+        "eventId",
+        "runnerId",
+        "leaseId",
+        "attempt",
+        "fencingToken",
+        "status",
+        "result",
+        "error"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "SUCCEEDED"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "result": {
+                "type": "object"
+              },
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "RETRYABLE_ERROR",
+                  "NEEDS_ACTION",
+                  "RESULT_UNKNOWN"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "$ref": "#/$defs/ResultError"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Register": {
+      "type": "object",
+      "properties": {
+        "runnerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "protocolVersion": {
+          "const": 1
+        },
+        "capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/OperationType"
+          }
+        },
+        "tools": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "facts": {
+          "type": "object",
+          "properties": {
+            "mount": {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "type": "string"
+                },
+                "reasonCode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "observedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "state",
+                "reasonCode",
+                "observedAt"
+              ],
+              "additionalProperties": true
+            },
+            "accountState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "directoryPicker": {
+              "type": "object",
+              "properties": {
+                "available": {
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "hostId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "available",
+                "reasonCode",
+                "hostId"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "runnerId",
+        "protocolVersion",
+        "capabilities",
+        "tools"
+      ],
+      "additionalProperties": false
+    },
+    "RegisterResponse": {
+      "type": "object",
+      "properties": {
+        "runnerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "protocolVersion": {
+          "const": 1
+        },
+        "heartbeatSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "leaseSeconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "runnerId",
+        "protocolVersion",
+        "heartbeatSeconds",
+        "leaseSeconds"
+      ],
+      "additionalProperties": false
+    },
+    "AcquireRequest": {
+      "type": "object",
+      "properties": {
+        "runnerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/OperationType"
+          }
+        }
+      },
+      "required": [
+        "runnerId",
+        "capabilities"
+      ],
+      "additionalProperties": false
+    },
+    "AcquireResponse": {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/Operation"
+            }
+          ]
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "HeartbeatRequest": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "runnerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fencingToken": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "eventId",
+        "runnerId",
+        "operationId",
+        "attempt",
+        "fencingToken",
+        "sequence"
+      ],
+      "additionalProperties": false
+    },
+    "HeartbeatResponse": {
+      "type": "object",
+      "properties": {
+        "desiredAction": {
+          "type": "string",
+          "enum": [
+            "CONTINUE",
+            "PAUSE",
+            "CANCEL"
+          ]
+        },
+        "leaseExpiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "desiredAction",
+        "leaseExpiresAt"
+      ],
+      "additionalProperties": false
+    },
+    "FactsRequest": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "runnerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "leaseId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fencingToken": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "facts": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "eventId",
+        "runnerId",
+        "leaseId",
+        "attempt",
+        "fencingToken",
+        "sequence",
+        "facts"
+      ],
+      "additionalProperties": false
+    },
+    "FactsAck": {
+      "type": "object",
+      "properties": {
+        "ackId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "ackId",
+        "eventId"
+      ],
+      "additionalProperties": false
+    },
+    "ResultAck": {
+      "type": "object",
+      "properties": {
+        "ackId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "SUCCEEDED",
+            "PAUSED",
+            "CANCELLED",
+            "WAITING_RETRY",
+            "NEEDS_ACTION",
+            "FAILED"
+          ]
+        }
+      },
+      "required": [
+        "ackId",
+        "eventId",
+        "taskId",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "SuccessEnvelope": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RegisterResponse"
+            },
+            {
+              "$ref": "#/$defs/AcquireResponse"
+            },
+            {
+              "$ref": "#/$defs/HeartbeatResponse"
+            },
+            {
+              "$ref": "#/$defs/FactsAck"
+            },
+            {
+              "$ref": "#/$defs/ResultAck"
+            }
+          ]
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "data",
+        "requestId"
+      ],
+      "additionalProperties": false
+    },
+    "ErrorEnvelope": {
+      "type": "object",
+      "properties": {
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "action": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "details": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "retryable",
+            "action",
+            "details"
+          ],
+          "additionalProperties": false
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "error",
+        "requestId"
+      ],
+      "additionalProperties": false
+    },
+    "Issue": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "taskId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "objectId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "WARNING",
+            "ERROR"
+          ]
+        },
+        "occurredAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "read": {
+          "type": "boolean"
+        },
+        "resolved": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "taskId",
+        "objectId",
+        "code",
+        "message",
+        "severity",
+        "occurredAt",
+        "updatedAt",
+        "read",
+        "resolved"
+      ]
+    },
+    "QuarkFolder": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "accountId": {
+          "type": "string"
+        },
+        "parentId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "const": "FOLDER"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "selectable": {
+          "type": "boolean"
+        },
+        "availability": {
+          "type": "string"
+        },
+        "availabilityReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "accountId",
+        "parentId",
+        "name",
+        "kind",
+        "revision",
+        "selectable",
+        "availability",
+        "availabilityReason",
+        "path"
+      ]
+    },
+    "CloudNode": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "shareId": {
+          "type": "string"
+        },
+        "parentId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "externalId": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "FILE",
+            "FOLDER"
+          ]
+        },
+        "relativePath": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]+$"
+        },
+        "modifiedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "availability": {
+          "type": "string"
+        },
+        "availabilityReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "downloadSummary": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "shareId",
+        "parentId",
+        "externalId",
+        "version",
+        "name",
+        "kind",
+        "relativePath",
+        "sizeBytes",
+        "modifiedAt",
+        "availability",
+        "availabilityReason",
+        "downloadSummary"
+      ]
+    },
+    "TelegramScanMessage": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "externalId": {
+          "type": "string"
+        },
+        "sentAt": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "groupId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "groupComplete": {
+          "type": "boolean"
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "externalId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "mediaType": {
+                "enum": [
+                  "VIDEO",
+                  "AUDIO",
+                  "PHOTO",
+                  "DOCUMENT",
+                  "UNKNOWN"
+                ]
+              },
+              "mimeType": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "sizeBytes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "externalId",
+              "name",
+              "mediaType",
+              "mimeType",
+              "sizeBytes"
+            ]
+          }
+        },
+        "sourceLinks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "authorTags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "channel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "externalId",
+        "sentAt",
+        "text",
+        "groupId",
+        "groupComplete",
+        "attachments",
+        "sourceLinks",
+        "authorTags",
+        "channel"
+      ]
+    }
+  }
+}

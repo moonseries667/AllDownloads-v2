@@ -1,0 +1,422 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AllDownloads Java-Go runner lifecycle",
+    "version": "1.0.0",
+    "description": "Private, same-host runner protocol. The server is loopback-only, rejects browser Origin headers, and uses the configured Bearer token. Repeated eventId plus identical content returns the original durable acknowledgement."
+  },
+  "servers": [
+    {
+      "url": "/internal/v1",
+      "description": "Same-host loopback runner control endpoint"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "paths": {
+    "/runners/register": {
+      "post": {
+        "operationId": "registerRunner",
+        "summary": "Register runner capabilities",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "runner.schema.json#/$defs/Register"
+              },
+              "examples": {
+                "localRunner": {
+                  "$ref": "runner-lifecycle.examples.json#/registerRequest"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Registered protocol and lease timing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "runner.schema.json#/$defs/SuccessEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "runner.schema.json#/$defs/RegisterResponse"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "registered": {
+                    "$ref": "runner-lifecycle.examples.json#/registerResponse"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/leases/acquire": {
+      "post": {
+        "operationId": "acquireOperation",
+        "summary": "Acquire at most one operation",
+        "description": "An idle queue returns HTTP 200 with data.operation set to null; it is not an empty response or a 204.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "runner.schema.json#/$defs/AcquireRequest"
+              },
+              "examples": {
+                "idleRunner": {
+                  "$ref": "runner-lifecycle.examples.json#/acquireRequest"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One leased operation or an explicit null when no work is available",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "runner.schema.json#/$defs/SuccessEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "runner.schema.json#/$defs/AcquireResponse"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "emptyQueue": {
+                    "$ref": "runner-lifecycle.examples.json#/acquireEmptyResponse"
+                  },
+                  "leasedOperation": {
+                    "$ref": "runner-lifecycle.examples.json#/acquireOperationResponse"
+                  },
+                  "readOnlyTransferReconciliation": {
+                    "$ref": "runner-lifecycle.examples.json#/transferReconcileOperationResponse"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/leases/{id}/heartbeat": {
+      "post": {
+        "operationId": "heartbeatLease",
+        "summary": "Renew a lease and read its control intent",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/LeaseId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "runner.schema.json#/$defs/HeartbeatRequest"
+              },
+              "examples": {
+                "nextSequence": {
+                  "$ref": "runner-lifecycle.examples.json#/heartbeatRequest"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Desired action and current lease expiry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "runner.schema.json#/$defs/SuccessEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "runner.schema.json#/$defs/HeartbeatResponse"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "continue": {
+                    "$ref": "runner-lifecycle.examples.json#/heartbeatResponse"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/operations/{id}/facts": {
+      "post": {
+        "operationId": "recordOperationFacts",
+        "summary": "Persist ordered execution facts",
+        "description": "Facts are durable and idempotent by eventId. sequence is a non-negative, per-operation ordering value; facts do not finalize the operation.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/OperationId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "runner.schema.json#/$defs/FactsRequest"
+              },
+              "examples": {
+                "progressFact": {
+                  "$ref": "runner-lifecycle.examples.json#/factsRequest"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Durable acknowledgement for this fact event",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "runner.schema.json#/$defs/SuccessEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "runner.schema.json#/$defs/FactsAck"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "accepted": {
+                    "$ref": "runner-lifecycle.examples.json#/factsResponse"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/operations/{id}/result": {
+      "post": {
+        "operationId": "reportOperationResult",
+        "summary": "Report a final operation outcome",
+        "description": "The lease proof binds runnerId, leaseId, attempt, and fencingToken. A successful download result may include verified files. Reposting the same eventId and body returns the persisted acknowledgement.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/OperationId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "runner.schema.json#/$defs/Result"
+              },
+              "examples": {
+                "downloadSucceeded": {
+                  "$ref": "runner-lifecycle.examples.json#/resultSucceededRequest"
+                },
+                "resultUnknown": {
+                  "$ref": "runner-lifecycle.examples.json#/resultUnknownRequest"
+                },
+                "transferReconciliation": {
+                  "$ref": "runner-lifecycle.examples.json#/transferReconcileResultRequest"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Durable task and result acknowledgement",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "runner.schema.json#/$defs/SuccessEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "runner.schema.json#/$defs/ResultAck"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "downloadSucceeded": {
+                    "$ref": "runner-lifecycle.examples.json#/resultSucceededResponse"
+                  },
+                  "resultUnknown": {
+                    "$ref": "runner-lifecycle.examples.json#/resultUnknownResponse"
+                  },
+                  "transferReconciliation": {
+                    "$ref": "runner-lifecycle.examples.json#/transferReconcileResultResponse"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/operations/{id}/reconcile": {
+      "post": {
+        "operationId": "reconcileOperationResult",
+        "summary": "Reconcile a retained result under its original lease proof",
+        "description": "This route accepts the same Result shape and returns the same stored acknowledgement for a repeated event. Provider-specific read-only transfer inspection is a RECONCILE_QUARK_TRANSFER operation acquired through the normal lease queue; it does not resend a save request.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/OperationId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "runner.schema.json#/$defs/Result"
+              },
+              "examples": {
+                "sameEventReplay": {
+                  "$ref": "runner-lifecycle.examples.json#/sameEventReplayRequest"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Original acknowledgement for an identical event, or accepted reconciled result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "runner.schema.json#/$defs/SuccessEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "runner.schema.json#/$defs/ResultAck"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "sameStoredAck": {
+                    "$ref": "runner-lifecycle.examples.json#/sameEventReplayResponse"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "opaque installation token",
+        "description": "Token is read from private runner configuration; it is never part of a request body or example. The server also requires a loopback peer and rejects browser Origin headers."
+      }
+    },
+    "parameters": {
+      "LeaseId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "OperationId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "responses": {
+      "InternalError": {
+        "description": "Authentication, lease, validation, conflict, or internal transaction error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "runner.schema.json#/$defs/ErrorEnvelope"
+            },
+            "examples": {
+              "staleLease": {
+                "$ref": "runner-lifecycle.examples.json#/staleLeaseError"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
