@@ -24,6 +24,7 @@ import type { ServerIssue } from "./notifications/store";
 import { api, dataRevision, isDemo } from "./api/client";
 import { notifyError } from "./notifications/notify";
 import { platformName } from "./format";
+import { taskPollingDelay, type PollingTaskPage } from "./task-polling";
 const route = useRoute(),
   router = useRouter(),
   collapsed = ref(false),
@@ -32,7 +33,7 @@ const route = useRoute(),
   results = ref<any[]>([]),
   searching = ref(false),
   issues = ref<ServerIssue[]>([]),
-  overview = ref<any>({}),
+  taskPage = ref<PollingTaskPage | null>(null),
   scenario = ref("normal"),
   connectionError = ref("");
 const nav = [
@@ -51,12 +52,12 @@ let loadRun = 0,
 async function load() {
   const run = ++loadRun;
   try {
-    const [nextOverview, nextIssues] = await Promise.all([
-      api.get("/overview"),
+    const [nextTasks, nextIssues] = await Promise.all([
+      api.get<PollingTaskPage>("/tasks?pageSize=200"),
       readAttentionIssues(),
     ]);
     if (run !== loadRun) return;
-    overview.value = nextOverview;
+    taskPage.value = nextTasks;
     issues.value = nextIssues;
     if (isDemo) scenario.value = (await api.get("/__demo/status")).scenario;
     connectionError.value = "";
@@ -91,13 +92,9 @@ watch(
 );
 async function poll() {
   if (!isDemo) {
-    await load();
     dataRevision.value++;
   }
-  timer = setTimeout(
-    poll,
-    document.hidden ? 15000 : overview.value.activeTasks ? 2000 : 10000,
-  );
+  timer = setTimeout(poll, taskPollingDelay(taskPage.value, document.hidden));
 }
 function keys(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
@@ -106,8 +103,8 @@ function keys(e: KeyboardEvent) {
   }
 }
 onMounted(() => {
-  load();
-  poll();
+  void load();
+  timer = setTimeout(poll, taskPollingDelay(taskPage.value, document.hidden));
   document.addEventListener("keydown", keys);
 });
 onBeforeUnmount(() => {
@@ -139,8 +136,8 @@ onBeforeUnmount(() => {
               ><component :is="item.icon" :size="19" /><span>{{
                 item.label
               }}</span
-              ><b v-if="item.path === '/tasks' && overview.issues">{{
-                overview.issues
+              ><b v-if="item.path === '/tasks' && issues.length">{{
+                issues.length
               }}</b></router-link
             ></template
           >
