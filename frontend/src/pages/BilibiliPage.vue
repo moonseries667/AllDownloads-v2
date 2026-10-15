@@ -1,23 +1,15 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onActivated, onBeforeUnmount } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 import {
   Plus,
   RefreshCw,
   Download,
   Info,
-  ExternalLink,
-  FolderHeart,
-  Library,
-  Clapperboard,
-  Layers,
   Search,
   LayoutGrid,
   List,
-  Settings2,
-  Pin,
   Check,
-  ArrowUpRight,
 } from "lucide-vue-next";
 import { ElMessageBox } from "element-plus";
 import { api, dataRevision, isDemo, notifyError, notifySuccess } from "../api/client";
@@ -26,10 +18,10 @@ import { formatDate, duration } from "../format";
 import StatusBadge from "../components/StatusBadge.vue";
 import SelectFilter from "../components/SelectFilter.vue";
 import DownloadPreview from "../components/DownloadPreview.vue";
+import BilibiliDetail from "../components/BilibiliDetail.vue";
 import SourceNavigation from "../components/SourceNavigation.vue";
 import PublishedDateFilter from "../components/PublishedDateFilter.vue";
-const route = useRoute(),
-  router = useRouter();
+const route = useRoute();
 const contents = ref<RecordData[]>([]),
   sources = ref<RecordData[]>([]),
   source = ref(""),
@@ -51,9 +43,7 @@ const addOpen = ref(false),
   links = ref(""),
   adding = ref(false),
   addResult = ref<RecordData[]>([]);
-const detail = ref<RecordData | null>(null),
-  parts = ref<RecordData[]>([]),
-  partIds = ref<string[]>([]),
+const detailId = ref<string | null>(null),
   detailOpen = ref(false),
   sourceOpen = ref(false),
   alias = ref(""),
@@ -236,17 +226,16 @@ function openPreview(id?: string) {
         };
   previewOpen.value = true;
 }
-async function showDetail(c: RecordData) {
-  detail.value = c;
+function showDetail(c: RecordData) {
+  detailId.value = c.id;
   detailOpen.value = true;
-  try {
-    parts.value = (
-      await api.get("/bilibili/contents/" + c.id + "/parts")
-    ).items;
-    partIds.value = parts.value.map((p) => p.id);
-  } catch (e) {
-    notifyError(e);
-  }
+}
+function cardDuration(c: RecordData) {
+  const seconds = c.durationSeconds ?? (c.mediaUnits?.length === 1 ? c.mediaUnits[0].durationSeconds : null);
+  return duration(seconds);
+}
+function unitCount(c: RecordData) {
+  return c.mediaUnits?.length ?? c.downloadSummary.totalCount ?? 0;
 }
 async function addSources() {
   adding.value = true;
@@ -467,11 +456,11 @@ async function removeSource() {
               >
                 <Check v-if="isSelected(c.id)" :size="15" /></button
               ><span class="video-duration">{{
-                c.durationSeconds == null ? '时长未知' : duration(c.durationSeconds)
+                cardDuration(c)
               }}</span
-              ><span class="part-tag" v-if="c.downloadSummary.totalCount > 1"
+              ><span class="part-tag" v-if="unitCount(c) > 1"
                 >{{ c.kind === "SERIES" ? "剧集" : c.kind === "MOVIE" ? "版本" : "多 P" }} ·
-                {{ c.downloadSummary.totalCount }}</span
+                {{ unitCount(c) }}</span
               >
             </div>
             <div class="video-info">
@@ -484,11 +473,11 @@ async function removeSource() {
                 >{{ c.title }}</a
               >
               <div class="video-author">
-                {{ (typeof c.author === 'string' ? c.author : c.author?.name) || '作者未知'
+                {{ c.author?.name || '作者未知'
                 }}<span>{{
                   sources.find((s) => c.sourceIds.includes(s.id))?.alias ||
                   sources.find((s) => c.sourceIds.includes(s.id))?.title ||
-                  "用户添加"
+                  "暂无有效来源"
                 }}</span>
               </div>
               <p class="video-published">发布于 {{ c.publishedAt ? formatDate(c.publishedAt).slice(0, 10) : '未知日期' }}</p>
@@ -572,9 +561,9 @@ async function removeSource() {
         ></template
       ></el-dialog
     >
-    <el-dialog v-model="sourceOpen" title="管理来源" width="490px"
+    <el-dialog v-model="sourceOpen" title="管理来源" width="490px" :close-on-click-modal="!sourceSaving" :close-on-press-escape="!sourceSaving" :show-close="!sourceSaving"
       ><label class="field-label">显示别名</label
-      ><el-input v-model="alias" placeholder="保留原名称时留空" />
+      ><el-input v-model="alias" :disabled="sourceSaving" placeholder="保留原名称时留空" />
       <div class="setting-inline">
         <span>置顶来源</span><el-switch :model-value="pinned" :loading="sourceSaving" :disabled="sourceSaving" aria-label="置顶来源" @change="changePinned" />
       </div>
@@ -585,103 +574,11 @@ async function removeSource() {
       <template #footer><div class="source-dialog-actions">
         <el-button type="danger" plain :disabled="sourceSaving" @click="removeSource"
           >移除来源</el-button
-        ><el-button @click="sourceOpen = false">取消</el-button
+        ><el-button :disabled="sourceSaving" @click="sourceOpen = false">取消</el-button
         ><el-button type="primary" :loading="sourceSaving" @click="saveSource">保存</el-button></div></template
       ></el-dialog
     >
-    <el-drawer v-model="detailOpen" title="内容详情" size="520px"
-      ><template v-if="detail"
-        ><img class="detail-cover" :src="detail.coverUrl" alt="演示封面" />
-        <h2>{{ detail.title }}</h2>
-        <p class="muted">
-          {{ detail.author }} · {{ duration(detail.durationSeconds) }}
-        </p>
-        <p class="detail-description">{{ detail.description }}</p>
-        <dl class="detail-facts">
-          <dt>原始标识</dt>
-          <dd>{{ detail.externalId }}</dd>
-          <dt>信息更新时间</dt>
-          <dd>{{ formatDate(detail.updatedAt) }}</dd>
-          <dt>下载状态</dt>
-          <dd><StatusBadge :state="detail.downloadSummary.state" /></dd>
-          <dt>归档状态</dt>
-          <dd>
-            <StatusBadge
-              :state="detail.archiveSummary.state"
-              :label="
-                detail.archiveSummary.state === 'NOT_REQUESTED'
-                  ? '尚未归档'
-                  : undefined
-              "
-            />
-          </dd>
-          <dt>来源关系</dt>
-          <dd>
-            {{
-              sources
-                .filter((s) => detail!.sourceIds.includes(s.id))
-                .map((s) => s.alias || s.title)
-                .join("、") || "来源已移除"
-            }}
-          </dd>
-        </dl>
-        <el-alert
-          v-if="detail.availability !== 'AVAILABLE'"
-          :title="detail.availabilityReason"
-          type="warning"
-          :closable="false"
-        />
-        <h3>
-          {{ detail.type === "SERIES" ? "第一季 · 选择剧集" : "选择媒体部分" }}
-        </h3>
-        <el-checkbox-group v-model="partIds" class="part-list"
-          ><el-checkbox v-for="p in parts" :key="p.id" :value="p.id"
-            >{{ p.title }}
-            <span class="muted">{{
-              duration(p.durationSeconds)
-            }}</span></el-checkbox
-          ></el-checkbox-group
-        ><el-button
-          type="primary"
-          :icon="Download"
-          :disabled="!partIds.length"
-          @click="
-            previewSelection = {
-              mode: 'EXPLICIT',
-              resource: 'BILIBILI_PARTS',
-              ids: [...partIds],
-            };
-            previewOpen = true;
-          "
-          >预览所选部分</el-button
-        >
-        <div class="detail-links">
-          <a
-            :href="detail.originalUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            >在 B 站打开 <ExternalLink :size="14" /></a
-          ><button
-            @click="
-              detailOpen = false;
-              router.push(
-                '/downloads?platform=BILIBILI' +
-                  (source ? '&sourceId=' + source : ''),
-              );
-            "
-          >
-            查看下载记录</button
-          ><button
-            @click="
-              detailOpen = false;
-              router.push('/archives?platform=BILIBILI');
-            "
-          >
-            查看归档
-          </button>
-        </div></template
-      ></el-drawer
-    >
+    <BilibiliDetail v-model="detailOpen" :content-id="detailId" @saved="notifySuccess('选定内容已保存；下载清单将使用这些选项。')" />
     <DownloadPreview
       v-model="previewOpen"
       platform="BILIBILI"

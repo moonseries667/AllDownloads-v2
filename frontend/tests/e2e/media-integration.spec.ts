@@ -1,0 +1,38 @@
+import { test, expect } from "@playwright/test";
+
+test("list, cross-source detail saves and download preview share the same media choice", async ({ page }) => {
+  await page.goto("/bilibili");
+  await page.getByRole("textbox", { name: "搜索视频标题" }).fill("把镜头交给山野");
+  const card = page.locator(".video-card");
+  await expect(card).toHaveCount(1);
+  await card.getByRole("button", { name: "详情", exact: true }).click();
+  const detail = page.getByRole("dialog", { name: "内容详情" });
+  await detail.getByRole("button", { name: "全不选", exact: true }).click();
+  await detail.getByRole("checkbox", { name: "正片：音频", exact: true }).check();
+  await detail.getByRole("button", { name: "保存选定内容" }).click();
+  await expect(detail).toBeHidden();
+  await expect(page.locator(".selection-bar")).toHaveCount(0);
+  await card.locator(".video-cover").click();
+  await page.getByRole("navigation", { name: "Bilibili 来源" }).getByRole("button", { name: "灵感与知识", exact: true }).click();
+  await expect(card).toHaveCount(1);
+  await card.getByRole("button", { name: "详情", exact: true }).click();
+  await expect(detail.getByRole("checkbox", { name: "正片：音频", exact: true })).toBeChecked();
+  await expect(detail.getByRole("checkbox", { name: "正片：视频", exact: true })).not.toBeChecked();
+  await detail.getByRole("button", { name: "关闭", exact: true }).click();
+  await page.getByRole("button", { name: "预览下载清单", exact: true }).click();
+  const preview = page.getByRole("dialog", { name: "确认下载清单" });
+  await expect(preview.getByRole("button", { name: "提交下载", exact: true })).toBeEnabled();
+  await preview.getByRole("button", { name: "返回选择", exact: true }).click();
+  await card.getByRole("button", { name: "详情", exact: true }).click();
+  await detail.getByRole("button", { name: "全不选", exact: true }).click();
+  await detail.getByRole("checkbox", { name: /English/ }).check();
+  await detail.getByRole("button", { name: "保存选定内容" }).click();
+  await page.getByRole("button", { name: "预览下载清单", exact: true }).click();
+  await expect(preview.getByRole("columnheader", { name: "大小", exact: true })).toBeVisible();
+  await preview.getByRole("button", { name: "提交下载", exact: true }).click();
+  await expect(preview).toBeHidden();
+  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("alldownloads.demo.feedback1.v2")!));
+  expect(state.orders).toHaveLength(2);
+  expect(state.orders[0].items[0].selectedTrackIds).toEqual(["b1-p1-sub-en"]);
+  expect(state.orders[0].items[0].outputs.map((o: { kind: string }) => o.kind)).toEqual(["SUBTITLE"]);
+});
