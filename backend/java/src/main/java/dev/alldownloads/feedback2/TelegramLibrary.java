@@ -17,7 +17,8 @@ public final class TelegramLibrary extends DomainSql {
         "CREATE TABLE IF NOT EXISTS f2_tel_batches(id TEXT PRIMARY KEY,account_id TEXT NOT NULL,min_sent TEXT,directory TEXT UNIQUE)",
         "CREATE TABLE IF NOT EXISTS f2_tel_messages(account_id TEXT NOT NULL,external_id TEXT NOT NULL,unit_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(account_id,external_id))",
         "CREATE TABLE IF NOT EXISTS f2_tel_units(id TEXT PRIMARY KEY,account_id TEXT NOT NULL,batch_id TEXT NOT NULL,complete INTEGER NOT NULL DEFAULT 0,eligible INTEGER NOT NULL DEFAULT 0,task_id TEXT,payload TEXT,status TEXT NOT NULL DEFAULT 'PENDING')",
-        "CREATE TABLE IF NOT EXISTS f2_tel_pages(event_id TEXT PRIMARY KEY,body TEXT NOT NULL)"); }
+        "CREATE TABLE IF NOT EXISTS f2_tel_pages(event_id TEXT PRIMARY KEY,body TEXT NOT NULL)",
+        "CREATE TABLE IF NOT EXISTS f2_tel_files(task_id TEXT NOT NULL,output_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(task_id,output_id))"); }
     public ObjectNode beginScan(String accountId,String taskId) throws SQLException {
         writing(); require(accountId!=null && !accountId.isBlank(),"INVALID_INPUT");
         exec("INSERT OR IGNORE INTO f2_tel_accounts(id) VALUES(?)",accountId);
@@ -115,20 +116,36 @@ public final class TelegramLibrary extends DomainSql {
             for(var a:attachments)for(var output:frozen.path("outputs"))if(output.path("attachmentId").equals(a.path("id")))
                 ((ObjectNode)a).put(output.path("kind").asText().equals("METADATA")?"metadataRelativePath":"relativePath",output.path("relativePath").asText());
         } else for(var m:members) for(var a:m.path("attachments")) attachments.add(publicAttachment(r[0],m,a));
-        for(var a:attachments) ((ObjectNode)a).put("downloadState",r[3].equals("VERIFIED")?"VERIFIED":r[3].equals("NEEDS_ACTION")?"NEEDS_ACTION":"QUEUED");
+        int completed=0;
+        for(var a:attachments) {
+            String aid=a.path("id").asText();boolean verified=r[3].equals("VERIFIED") || row("SELECT output_id FROM f2_tel_files WHERE task_id=? AND output_id=?",r[4],aid)!=null && row("SELECT output_id FROM f2_tel_files WHERE task_id=? AND output_id=?",r[4],aid+"-metadata")!=null;
+            if(verified)completed++;((ObjectNode)a).put("downloadState",verified?"VERIFIED":r[3].equals("NEEDS_ACTION")?"NEEDS_ACTION":"QUEUED");
+        }
         out.put("text",text.toString()); out.set("messageIds",ids); out.set("attachments",attachments); out.set("sourceLinks",links);
-        out.set("downloadSummary",obj().put("state",r[3].equals("VERIFIED")?"COMPLETE":r[3].equals("NEEDS_ACTION")?"NEEDS_ACTION":"QUEUED").put("completed",r[3].equals("VERIFIED")?attachments.size():0).put("total",attachments.size())); return out;
+        out.set("downloadSummary",obj().put("state",r[3].equals("VERIFIED")?"COMPLETE":r[3].equals("NEEDS_ACTION")?"NEEDS_ACTION":"QUEUED").put("completed",completed).put("total",attachments.size())); return out;
     }
     public List<String> incompleteTasks(String accountId,Set<String> resourceIds) throws SQLException {
         List<String> out=new ArrayList<>(); for(var r:rows("SELECT id,task_id FROM f2_tel_units WHERE account_id=? AND eligible=1 AND status<>'VERIFIED' AND task_id IS NOT NULL",accountId)) if(resourceIds==null || resourceIds.contains(r[0])) out.add(r[1]); return out;
     }
-    public void downloadResult(String taskId,boolean complete) throws SQLException { writing(); exec("UPDATE f2_tel_units SET status=? WHERE task_id=?",complete?"VERIFIED":"NEEDS_ACTION",taskId); }
+    private void downloadResult(String taskId,boolean complete) throws SQLException { exec("UPDATE f2_tel_units SET status=? WHERE task_id=?",complete?"VERIFIED":"NEEDS_ACTION",taskId); }
+    public void downloadFacts(String taskId,JsonNode files,boolean succeeded) throws SQLException {
+        writing();var unit=row("SELECT payload FROM f2_tel_units WHERE task_id=?",taskId);require(unit!=null,"NOT_FOUND");ObjectNode payload=read(unit[0]);Map<String,JsonNode> expected=new HashMap<>();payload.path("outputs").forEach(o->expected.put(o.path("id").asText(),o));
+        require(files.isArray(),"VERIFICATION_FAILED");Set<String> seen=new HashSet<>();
+        for(var f:files) {
+            String id=text(f,"outputId");JsonNode output=expected.get(id);require(output!=null&&seen.add(id)&&f.path("verified").asBoolean()&&output.path("relativePath").equals(f.path("relativePath")),"VERIFICATION_FAILED");
+            require(text(f,"sizeBytes").matches("0|[1-9][0-9]*")&&text(f,"sha256").matches("[0-9a-fA-F]{64}"),"VERIFICATION_FAILED");
+            if(output.hasNonNull("sizeBytes"))require(output.path("sizeBytes").equals(f.path("sizeBytes")),"VERIFICATION_FAILED");
+            exec("INSERT INTO f2_tel_files VALUES(?,?,?) ON CONFLICT(task_id,output_id) DO UPDATE SET body=excluded.body",taskId,id,f.toString());
+        }
+        if(succeeded)require(seen.equals(expected.keySet()),"VERIFICATION_FAILED");downloadResult(taskId,succeeded);
+    }
     private ObjectNode freeze(String account,String unit,String directory) throws SQLException {
         List<ObjectNode> members=members(unit); ArrayNode attachments=array(),outputs=array(),ids=array(); Set<String> names=new HashSet<>();
         String base="Telegram/"+directory+"/"+members.getFirst().path("externalId").asText();
         for(var m:members) { ids.add(m.path("externalId").asText()); for(var a:m.path("attachments")) {
             ObjectNode item=publicAttachment(account,m,a); String name=segment(item.path("name").asText()); String candidate=name; int n=2;
-            while(!names.add(candidate.toLowerCase(Locale.ROOT))) candidate=name+" ("+(n++)+")";
+            while(names.contains(candidate.toLowerCase(Locale.ROOT))||names.contains((candidate+".metadata.json").toLowerCase(Locale.ROOT)))candidate=name+" ("+(n++)+")";
+            names.add(candidate.toLowerCase(Locale.ROOT));names.add((candidate+".metadata.json").toLowerCase(Locale.ROOT));
             String path=base+"/"+candidate; attachments.add(item);
             String kind=item.path("mediaType").asText(); if(kind.equals("UNKNOWN")) kind="DOCUMENT";
             ObjectNode output=obj().put("id",item.path("id").asText()).put("attachmentId",item.path("id").asText()).put("relativePath",path).put("kind",kind);output.set("sizeBytes",item.path("sizeBytes"));output.set("trackIds",array());outputs.add(output);

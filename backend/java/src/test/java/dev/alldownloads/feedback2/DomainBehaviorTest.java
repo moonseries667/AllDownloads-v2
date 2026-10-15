@@ -71,8 +71,14 @@ class DomainBehaviorTest {
     }
     @Test void partialDownloadNeverMarksPhotosVerifiedAndRetryKeepsFrozenPlan() throws Exception {
         tel.beginScan("tel-test","scan");tel.acceptPage("scan","p",page("1",message("1","VIDEO","PHOTO")),this::enqueue);
-        String task=tel.incompleteTasks("tel-test",null).getFirst();String frozen=downloads().getFirst().toString();tel.downloadResult(task,false);db.commit();db.close();connect();
-        assertEquals(List.of(task),tel.incompleteTasks("tel-test",null));assertEquals("NEEDS_ACTION",tel.messages("tel-test").get(0).path("attachments").get(1).path("downloadState").asText());assertEquals(frozen,downloads().getFirst().toString());tel.downloadResult(task,true);assertTrue(tel.incompleteTasks("tel-test",null).isEmpty());
+        String task=tel.incompleteTasks("tel-test",null).getFirst();String frozen=downloads().getFirst().toString();ArrayNode files=evidence(downloads().getFirst());ArrayNode partial=json.createArrayNode().add(files.get(0)).add(files.get(1));tel.downloadFacts(task,partial,false);db.commit();db.close();connect();
+        assertEquals(List.of(task),tel.incompleteTasks("tel-test",null));assertEquals("NEEDS_ACTION",tel.messages("tel-test").get(0).path("attachments").get(1).path("downloadState").asText());assertEquals(1,tel.messages("tel-test").get(0).path("downloadSummary").path("completed").asInt());assertEquals(frozen,downloads().getFirst().toString());
+        assertEquals("VERIFICATION_FAILED",assertThrows(DomainSql.DomainError.class,()->tel.downloadFacts(task,partial,true)).code);db.rollback();tel.downloadFacts(task,files,true);assertTrue(tel.incompleteTasks("tel-test",null).isEmpty());
+    }
+    ArrayNode evidence(ObjectNode payload) {ArrayNode files=json.createArrayNode();for(var o:payload.path("outputs"))files.add(json.createObjectNode().put("outputId",o.path("id").asText()).put("relativePath",o.path("relativePath").asText()).put("sizeBytes",o.hasNonNull("sizeBytes")?o.path("sizeBytes").asText():"1").put("sha256","a".repeat(64)).put("verified",true));return files;}
+    @Test void attachmentNamesCannotCollideWithAnotherAttachmentsSidecar() throws Exception {
+        ObjectNode m=message("1","VIDEO","DOCUMENT");((ObjectNode)m.path("attachments").get(0)).put("name","media.mp4");((ObjectNode)m.path("attachments").get(1)).put("name","media.mp4.metadata.json");tel.beginScan("tel-test","scan");tel.acceptPage("scan","p",page("1",m),this::enqueue);
+        Set<String> paths=new HashSet<>();for(var o:downloads().getFirst().path("outputs"))assertTrue(paths.add(o.path("relativePath").asText().toLowerCase(Locale.ROOT)));assertEquals(4,paths.size());
     }
     @Test void notificationsHaveStableIdentityAndAcknowledgementCannotResolve() throws Exception {
         ObjectNode first=issues.record("task","resource","NETWORK_TEMPORARY","ERROR");String id=first.path("id").asText();issues.acknowledge(id);issues.record("task","resource","NETWORK_TEMPORARY","ERROR");db.commit();db.close();connect();
