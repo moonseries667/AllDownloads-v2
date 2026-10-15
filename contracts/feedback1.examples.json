@@ -1,0 +1,258 @@
+{
+  "notice": "Synthetic contract examples, not live account or media data.",
+  "source": {
+    "id": "source-fixture",
+    "platform": "BILIBILI",
+    "kind": "FAVORITE",
+    "title": "影像收藏",
+    "alias": null,
+    "url": "https://www.bilibili.com/medialist/detail/ml1",
+    "status": "READY",
+    "lastSyncedAt": "2026-10-15T00:00:00Z",
+    "itemCount": 1,
+    "revision": "1",
+    "pinned": false,
+    "navigationGroup": "FAVORITES",
+    "displayLabel": "收藏夹-影像收藏"
+  },
+  "content": {
+    "id": "content-fixture",
+    "platform": "BILIBILI",
+    "externalId": "BV1Fixture",
+    "externalIdType": "BVID",
+    "kind": "SINGLE",
+    "revision": "fixture-v1",
+    "title": "隔离验证示例",
+    "coverUrl": null,
+    "sourceIds": [
+      "source-fixture"
+    ],
+    "originalUrl": "https://www.bilibili.com/video/BV1Fixture",
+    "availability": "AVAILABLE",
+    "availabilityReason": null,
+    "downloadSummary": {
+      "state": "NOT_REQUESTED"
+    },
+    "archiveSummary": {
+      "state": "NOT_REQUESTED"
+    },
+    "updatedAt": "2026-10-15T00:00:00Z",
+    "publishedAt": "2026-10-14T16:00:00Z",
+    "author": {
+      "id": "fixture-author",
+      "name": "测试作者"
+    },
+    "description": "仅用于契约及本地替身，不代表真实平台内容。",
+    "seasonId": null,
+    "sources": [
+      {
+        "id": "source-fixture",
+        "platform": "BILIBILI",
+        "kind": "FAVORITE",
+        "title": "影像收藏",
+        "alias": null,
+        "url": "https://www.bilibili.com/medialist/detail/ml1",
+        "status": "READY",
+        "lastSyncedAt": "2026-10-15T00:00:00Z",
+        "itemCount": 1,
+        "revision": "1",
+        "pinned": false,
+        "navigationGroup": "FAVORITES",
+        "displayLabel": "收藏夹-影像收藏"
+      }
+    ],
+    "mediaUnits": [
+      {
+        "id": "unit-fixture",
+        "contentId": "content-fixture",
+        "externalId": "fixture-cid",
+        "title": "",
+        "index": 1,
+        "kind": "MAIN",
+        "language": null,
+        "languageLabel": null,
+        "durationSeconds": 12,
+        "availability": "AVAILABLE",
+        "availabilityReason": null,
+        "tracks": [
+          {
+            "id": "video-fixture",
+            "kind": "VIDEO",
+            "available": true,
+            "reasonCode": null,
+            "language": null,
+            "languageLabel": null,
+            "subtitleOrigin": "NOT_APPLICABLE",
+            "durationSeconds": 12,
+            "sizeBytes": null
+          },
+          {
+            "id": "audio-fixture",
+            "kind": "AUDIO",
+            "available": true,
+            "reasonCode": null,
+            "language": null,
+            "languageLabel": null,
+            "subtitleOrigin": "NOT_APPLICABLE",
+            "durationSeconds": 12,
+            "sizeBytes": null
+          },
+          {
+            "id": "subtitle-fixture",
+            "kind": "SUBTITLE",
+            "available": true,
+            "reasonCode": null,
+            "language": "zh-CN",
+            "languageLabel": "简体中文",
+            "subtitleOrigin": "HUMAN",
+            "durationSeconds": null,
+            "sizeBytes": null
+          },
+          {
+            "id": "danmaku-fixture",
+            "kind": "DANMAKU",
+            "available": true,
+            "reasonCode": null,
+            "language": null,
+            "languageLabel": null,
+            "subtitleOrigin": "NOT_APPLICABLE",
+            "durationSeconds": null,
+            "sizeBytes": null
+          }
+        ]
+      }
+    ],
+    "warnings": []
+  },
+  "previewRequest": {
+    "platform": "BILIBILI",
+    "selection": {
+      "mode": "EXPLICIT",
+      "resource": "BILIBILI_CONTENTS",
+      "ids": [
+        "content-fixture"
+      ],
+      "mediaSelections": [
+        {
+          "contentId": "content-fixture",
+          "contentRevision": "fixture-v1",
+          "trackIds": [
+            "video-fixture",
+            "audio-fixture"
+          ]
+        }
+      ]
+    },
+    "target": {
+      "id": "target-fixture",
+      "revision": "1"
+    }
+  },
+  "operation": {
+    "protocolVersion": 1,
+    "operationId": "op-fixture",
+    "taskId": "task-fixture",
+    "attempt": 1,
+    "leaseId": "lease-fixture",
+    "runnerId": "runner-fixture",
+    "fencingToken": "1",
+    "leaseExpiresAt": "2026-10-15T00:01:30Z",
+    "operationType": "DOWNLOAD_MEDIA",
+    "platform": "BILIBILI",
+    "accountRef": null,
+    "resourceKey": "fixture-selection-and-target",
+    "storageRevision": "1",
+    "destination": {
+      "rootId": "root-fixture",
+      "rootPath": "C:/IsolatedFixture/Downloads",
+      "relativePath": "Bilibili/影像收藏(收藏夹)/隔离验证示例(BV1Fixture)"
+    },
+    "payload": {
+      "schemaVersion": 1,
+      "contentId": "content-fixture",
+      "contentRevision": "fixture-v1",
+      "contentKind": "SINGLE",
+      "externalId": "BV1Fixture",
+      "externalIdType": "BVID",
+      "qualityPolicy": "HIGHEST_AVAILABLE",
+      "archivePolicy": "NONE",
+      "units": [
+        {
+          "id": "unit-fixture",
+          "contentId": "content-fixture",
+          "externalId": "fixture-cid",
+          "title": "",
+          "index": 1,
+          "kind": "MAIN",
+          "language": null,
+          "languageLabel": null,
+          "durationSeconds": 12,
+          "availability": "AVAILABLE",
+          "availabilityReason": null,
+          "tracks": [
+            {
+              "id": "video-fixture",
+              "kind": "VIDEO",
+              "available": true,
+              "reasonCode": null,
+              "language": null,
+              "languageLabel": null,
+              "subtitleOrigin": "NOT_APPLICABLE",
+              "durationSeconds": 12,
+              "sizeBytes": null
+            },
+            {
+              "id": "audio-fixture",
+              "kind": "AUDIO",
+              "available": true,
+              "reasonCode": null,
+              "language": null,
+              "languageLabel": null,
+              "subtitleOrigin": "NOT_APPLICABLE",
+              "durationSeconds": 12,
+              "sizeBytes": null
+            }
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output-fixture",
+          "relativePath": "Bilibili/影像收藏(收藏夹)/隔离验证示例(BV1Fixture)/media.mp4",
+          "trackIds": [
+            "video-fixture",
+            "audio-fixture"
+          ],
+          "kind": "MUXED",
+          "sizeBytes": null
+        }
+      ]
+    }
+  },
+  "result": {
+    "eventId": "result-fixture",
+    "runnerId": "runner-fixture",
+    "leaseId": "lease-fixture",
+    "attempt": 1,
+    "fencingToken": "1",
+    "status": "SUCCEEDED",
+    "result": {
+      "files": [
+        {
+          "outputId": "output-fixture",
+          "relativePath": "Bilibili/影像收藏(收藏夹)/隔离验证示例(BV1Fixture)/media.mp4",
+          "sizeBytes": "1234",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "mediaKinds": [
+            "VIDEO",
+            "AUDIO"
+          ],
+          "durationSeconds": 12,
+          "verified": true
+        }
+      ],
+      "warnings": []
+    },
+    "error": null
+  }
+}
