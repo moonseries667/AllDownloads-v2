@@ -44,7 +44,7 @@ class DomainBehaviorTest {
         tel.acceptPage("scan","page",page("7",message("1"),message("2","PHOTO"),message("3","DOCUMENT"),message("4","PHOTO","DOCUMENT"),message("5","AUDIO"),message("6","VIDEO","PHOTO","DOCUMENT"),message("7","UNKNOWN")),this::enqueue);
         assertEquals(2,tel.messages("tel-test").size());assertEquals("7",tel.watcher("tel-test").path("scanState").path("cursorMessageId").asText());assertTrue(tel.watcher("tel-test").path("scanState").path("initialScanCompleted").asBoolean());
         assertEquals(8,downloads().stream().mapToInt(n->n.path("outputs").size()).sum());assertEquals(4,downloads().stream().mapToInt(n->n.path("attachments").size()).sum());
-        for(var p:downloads())for(var a:p.path("attachments"))assertEquals(a.path("relativePath").asText()+".metadata.json",a.path("metadataRelativePath").asText());
+        for(var m:tel.messages("tel-test"))for(var a:m.path("attachments"))assertEquals(a.path("relativePath").asText()+".metadata.json",a.path("metadataRelativePath").asText());
         db.commit();db.close();connect();assertEquals("7",tel.beginScan("tel-test","scan2").path("afterMessageId").asText());tel.acceptPage("scan2","empty",page("7"),this::enqueue);assertEquals(2,downloads().size());
     }
     @Test void mimeFactsQualifyButFilenameAndTextDoNot() throws Exception {
@@ -105,5 +105,13 @@ class DomainBehaviorTest {
         ObjectNode file=folder.deepCopy().put("id","file").put("externalId","file").put("parentId","dir").put("name","课.mp4").put("kind","FILE").put("relativePath","课程/课.mp4").put("sizeBytes","0");ArrayNode nodes=json.createArrayNode().add(folder).add(file);
         quark.acceptNodes(share,nodes,false);assertEquals("SNAPSHOT_INCOMPLETE",assertThrows(DomainSql.DomainError.class,()->quark.expand(Set.of("dir"),null,null)).code);quark.acceptNodes(share,nodes,true);ArrayNode frozen=quark.expand(Set.of("dir"),null,null);assertEquals(1,frozen.size());assertEquals("0",frozen.get(0).path("sizeBytes").asText());assertEquals("Quark/12345678/课程/课.mp4",frozen.get(0).path("plannedRelativePath").asText());
         nodes.add(file.deepCopy().put("id","new").put("externalId","new").put("name","new.mp4").put("relativePath","课程/new.mp4"));quark.acceptNodes(share,nodes,true);assertEquals(1,frozen.size());quark.validateFrozen(frozen);file.put("version","v2");quark.acceptNodes(share,nodes,true);assertThrows(DomainSql.DomainError.class,()->quark.validateFrozen(frozen));
+    }
+    @Test void providerShareRootOutsideContentNodesDoesNotRemoveUnrelatedFolders() throws Exception {
+        root();quark.acceptTree(tree("0",folder("folder-a","0","课程"),folder("unrelated","0","其他")));
+        ObjectNode req=((ObjectNode)examples.path("quarkSharedTarget")).deepCopy();for(var e:req.path("entries"))((ObjectNode)e).put("targetFolderRevision","v1");
+        String share=quark.addShares(req,this::enqueue).path("items").get(0).path("shareId").asText();
+        ObjectNode result=tree(null,folder("0",null,"我的云盘"),folder("folder-a","0","课程"),folder("managed","folder-a","转存目录")).put("shareId",share);
+        ((ArrayNode)result.path("nodes")).add(json.createObjectNode().put("id","f").put("shareId",share).put("parentId","managed").put("externalId","f").put("version","1").put("name","音频.ogg").put("kind","FILE").put("relativePath","音频.ogg").put("availability","AVAILABLE").putNull("sizeBytes"));
+        quark.acceptTree(result);assertTrue(quark.folder("quark-test","unrelated").path("selectable").asBoolean());assertEquals(1,quark.expand(Set.of("f"),null,null).size());assertEquals("Quark/12345678/音频.ogg",quark.expand(Set.of("f"),null,null).get(0).path("plannedRelativePath").asText());
     }
 }

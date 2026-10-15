@@ -110,7 +110,11 @@ public final class TelegramLibrary extends DomainSql {
         List<ObjectNode> members=members(id); ObjectNode first=members.getFirst(); ObjectNode out=obj().put("id",id).put("accountId",r[0]).put("externalId",first.path("externalId").asText()).put("sentAt",first.path("sentAt").asText()).put("groupId",nullable(first,"groupId")).put("eligible",true).put("taskId",r[4]);
         ArrayNode ids=array(),attachments=array(),links=array(); StringJoiner text=new StringJoiner("\n\n");
         for(var m:members) { ids.add(m.path("externalId").asText()); if(!m.path("text").asText().isBlank()) text.add(m.path("text").asText()); m.path("sourceLinks").forEach(links::add); }
-        if(r[2]!=null) attachments=read(r[2]).withArray("attachments").deepCopy(); else for(var m:members) for(var a:m.path("attachments")) attachments.add(publicAttachment(r[0],m,a));
+        if(r[2]!=null) {
+            ObjectNode frozen=read(r[2]);attachments=frozen.withArray("attachments").deepCopy();
+            for(var a:attachments)for(var output:frozen.path("outputs"))if(output.path("attachmentId").equals(a.path("id")))
+                ((ObjectNode)a).put(output.path("kind").asText().equals("METADATA")?"metadataRelativePath":"relativePath",output.path("relativePath").asText());
+        } else for(var m:members) for(var a:m.path("attachments")) attachments.add(publicAttachment(r[0],m,a));
         for(var a:attachments) ((ObjectNode)a).put("downloadState",r[3].equals("VERIFIED")?"VERIFIED":r[3].equals("NEEDS_ACTION")?"NEEDS_ACTION":"QUEUED");
         out.put("text",text.toString()); out.set("messageIds",ids); out.set("attachments",attachments); out.set("sourceLinks",links);
         out.set("downloadSummary",obj().put("state",r[3].equals("VERIFIED")?"COMPLETE":r[3].equals("NEEDS_ACTION")?"NEEDS_ACTION":"QUEUED").put("completed",r[3].equals("VERIFIED")?attachments.size():0).put("total",attachments.size())); return out;
@@ -125,7 +129,7 @@ public final class TelegramLibrary extends DomainSql {
         for(var m:members) { ids.add(m.path("externalId").asText()); for(var a:m.path("attachments")) {
             ObjectNode item=publicAttachment(account,m,a); String name=segment(item.path("name").asText()); String candidate=name; int n=2;
             while(!names.add(candidate.toLowerCase(Locale.ROOT))) candidate=name+" ("+(n++)+")";
-            String path=base+"/"+candidate; item.put("relativePath",path).put("metadataRelativePath",path+".metadata.json"); attachments.add(item);
+            String path=base+"/"+candidate; attachments.add(item);
             String kind=item.path("mediaType").asText(); if(kind.equals("UNKNOWN")) kind="DOCUMENT";
             ObjectNode output=obj().put("id",item.path("id").asText()).put("attachmentId",item.path("id").asText()).put("relativePath",path).put("kind",kind);output.set("sizeBytes",item.path("sizeBytes"));output.set("trackIds",array());outputs.add(output);
             ObjectNode metadataOutput=obj().put("id",item.path("id").asText()+"-metadata").put("attachmentId",item.path("id").asText()).put("relativePath",path+".metadata.json").put("kind","METADATA").putNull("sizeBytes");metadataOutput.set("trackIds",array());outputs.add(metadataOutput);

@@ -16,7 +16,7 @@ public final class QuarkCatalog extends DomainSql {
         "CREATE TABLE IF NOT EXISTS f2_quark_shares(id TEXT PRIMARY KEY,account_id TEXT NOT NULL,external_id TEXT NOT NULL,folder_key TEXT NOT NULL COLLATE NOCASE UNIQUE,body TEXT NOT NULL,tree_complete INTEGER NOT NULL DEFAULT 0,UNIQUE(account_id,external_id))",
         "CREATE TABLE IF NOT EXISTS f2_quark_nodes(share_id TEXT NOT NULL,id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(share_id,id))"); }
     public void acceptTree(ObjectNode result) throws SQLException {
-        writing();String account=text(result,"accountId"),parent=nullable(result,"parentId"); boolean complete=result.path("complete").asBoolean();
+        writing();String account=text(result,"accountId"),parent=nullable(result,"parentId"),share=nullable(result,"shareId"); boolean complete=result.path("complete").asBoolean();
         require(result.path("folders").isArray(),"PROVIDER_CHANGED"); Set<String> included=new HashSet<>();
         for(var f:result.path("folders")) {
             require(account.equals(text(f,"accountId")),"PROVIDER_CHANGED"); require("FOLDER".equals(text(f,"kind")),"PROVIDER_CHANGED");
@@ -27,12 +27,12 @@ public final class QuarkCatalog extends DomainSql {
         List<String[]> roots=rows("SELECT id FROM f2_quark_folders WHERE account_id=? AND parent_id IS NULL",account); require(roots.size()==1,"PROVIDER_CHANGED");
         String actualParent=parent==null?roots.getFirst()[0]:parent; folder(account,actualParent); // Checks complete, acyclic parent chain.
         for(String id:included) folder(account,id);
-        if(complete) for(var r:rows("SELECT id,body FROM f2_quark_folders WHERE account_id=? AND parent_id=?",account,actualParent)) if(!included.contains(r[0])) {
+        if(complete && share==null) for(var r:rows("SELECT id,body FROM f2_quark_folders WHERE account_id=? AND parent_id=?",account,actualParent)) if(!included.contains(r[0])) {
             ObjectNode removed=read(r[1]).put("availability","REMOVED").put("selectable",false).put("availabilityReason","目标文件夹已删除或移动。");
             exec("UPDATE f2_quark_folders SET body=? WHERE account_id=? AND id=?",removed.toString(),account,r[0]);
         }
-        exec("INSERT INTO f2_quark_scopes VALUES(?,?,?) ON CONFLICT(account_id,parent_id) DO UPDATE SET complete=excluded.complete",account,actualParent,complete?1:0);
-        String share=nullable(result,"shareId"); if(share!=null) acceptNodes(share,result.path("nodes"),complete);
+        if(share==null)exec("INSERT INTO f2_quark_scopes VALUES(?,?,?) ON CONFLICT(account_id,parent_id) DO UPDATE SET complete=excluded.complete",account,actualParent,complete?1:0);
+        if(share!=null) acceptNodes(share,result.path("nodes"),complete);
     }
     public ObjectNode folders(String account,String parent) throws SQLException {
         var roots=rows("SELECT id FROM f2_quark_folders WHERE account_id=? AND parent_id IS NULL",account);
@@ -104,7 +104,14 @@ public final class QuarkCatalog extends DomainSql {
             for(var n:byId.values()) {
                 String id=n.path("id").asText();if(!n.path("kind").asText().equals("FILE")||exclude!=null&&exclude.contains(id))continue;
                 String current=id;Set<String> visited=new HashSet<>();boolean include=false;
-                while(current!=null) {require(visited.add(current),"PROVIDER_CHANGED");if(selected.contains(current))include=true;ObjectNode p=byId.get(current);require(p!=null,"SNAPSHOT_INCOMPLETE");current=nullable(p,"parentId");}
+                while(current!=null) {
+                    require(visited.add(current),"PROVIDER_CHANGED");if(exclude!=null&&exclude.contains(current)){include=false;break;}if(selected.contains(current))include=true;
+                    ObjectNode p=byId.get(current);
+                    if(p==null) { // Provider lists descendants, so the actual share root is a folder fact, not a content node.
+                        folder(share(sr[0]).path("accountId").asText(),current);break;
+                    }
+                    current=nullable(p,"parentId");
+                }
                 if(include && added.add(id)) {ObjectNode frozen=n.deepCopy();frozen.put("plannedRelativePath","Quark/"+sr[2]+"/"+text(n,"relativePath"));out.add(frozen);}
             }
         }
