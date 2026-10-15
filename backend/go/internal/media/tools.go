@@ -107,6 +107,16 @@ func (t *Tools) Check(ctx context.Context) error {
 	return nil
 }
 func (t *Tools) Inspect(ctx context.Context, path string, expected []string) (Probe, error) {
+	return t.inspect(ctx, path, expected, true)
+}
+
+// InspectContaining validates an unchanged platform attachment. Unlike selected
+// Bilibili outputs it may legitimately contain additional audio/subtitle streams.
+func (t *Tools) InspectContaining(ctx context.Context, path string, expected []string) (Probe, error) {
+	return t.inspect(ctx, path, expected, false)
+}
+
+func (t *Tools) inspect(ctx context.Context, path string, expected []string, exact bool) (Probe, error) {
 	if err := t.Check(ctx); err != nil {
 		return Probe{}, err
 	}
@@ -141,7 +151,7 @@ func (t *Tools) Inspect(ctx context.Context, path string, expected []string) (Pr
 			return Probe{}, Fail("MEDIA_STREAM_MISSING", "VERIFY", false)
 		}
 	}
-	if len(probe.Streams) != len(expected) {
+	if exact && len(probe.Streams) != len(expected) {
 		return Probe{}, Fail("UNEXPECTED_MEDIA_STREAM", "VERIFY", false)
 	}
 	return probe, nil

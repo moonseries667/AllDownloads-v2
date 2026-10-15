@@ -27,6 +27,22 @@ type StorageWorker struct {
 	Drives      map[string]*drive.Client
 }
 
+func (w *StorageWorker) SupportsOperation(op Operation) bool {
+	if !validPlatform(op.Platform) {
+		return false
+	}
+	switch op.OperationType {
+	case "SELECT_LOCAL_DIRECTORY":
+		return w.Picker != nil
+	case "LIST_DRIVE_FOLDERS", "VALIDATE_DRIVE_TARGET", "UPLOAD_ARTIFACT":
+		return len(w.Drives) > 0
+	}
+	if adapter, ok := w.Next.(interface{ SupportsPlatform(string) bool }); ok {
+		return adapter.SupportsPlatform(op.Platform)
+	}
+	return w.Next != nil && op.Platform == "BILIBILI"
+}
+
 func (w *StorageWorker) Capabilities() []string {
 	caps := []string{}
 	if w.Next != nil {
