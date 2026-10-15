@@ -502,7 +502,11 @@
             "AUDIO",
             "MUXED",
             "SUBTITLE",
-            "DANMAKU"
+            "DANMAKU",
+            "FILE",
+            "PHOTO",
+            "DOCUMENT",
+            "METADATA"
           ]
         },
         "sizeBytes": {
@@ -511,6 +515,12 @@
             "null"
           ],
           "pattern": "^[0-9]+$"
+        },
+        "attachmentId": {
+          "type": "string"
+        },
+        "nodeId": {
+          "type": "string"
         }
       },
       "required": [
@@ -559,7 +569,8 @@
           "type": "string",
           "enum": [
             "BILIBILI_CONTENTS",
-            "BILIBILI_PARTS"
+            "BILIBILI_PARTS",
+            "QUARK_NODES"
           ]
         },
         "ids": {
@@ -599,7 +610,8 @@
         "platform": {
           "type": "string",
           "enum": [
-            "BILIBILI"
+            "BILIBILI",
+            "QUARK"
           ]
         },
         "selection": {
@@ -635,10 +647,16 @@
           "type": "string"
         },
         "contentId": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "partId": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "title": {
           "type": "string"
@@ -697,6 +715,9 @@
         },
         "archiveState": {
           "type": "string"
+        },
+        "nodeId": {
+          "type": "string"
         }
       },
       "required": [
@@ -737,7 +758,8 @@
         "platform": {
           "type": "string",
           "enum": [
-            "BILIBILI"
+            "BILIBILI",
+            "QUARK"
           ]
         },
         "expiresAt": {
@@ -1128,13 +1150,18 @@
             "FETCH_BIL_METADATA",
             "DOWNLOAD_MEDIA",
             "UPLOAD_ARTIFACT",
-            "VERIFY_ARCHIVE"
+            "VERIFY_ARCHIVE",
+            "SCAN_TEL_SAVED",
+            "LIST_QUARK_TREE",
+            "TRANSFER_QUARK_ITEMS"
           ]
         },
         "platform": {
           "type": "string",
           "enum": [
-            "BILIBILI"
+            "BILIBILI",
+            "TELEGRAM",
+            "QUARK"
           ]
         },
         "accountRef": {
@@ -1303,7 +1330,11 @@
               "VIDEO",
               "AUDIO",
               "SUBTITLE",
-              "DANMAKU"
+              "DANMAKU",
+              "FILE",
+              "PHOTO",
+              "DOCUMENT",
+              "METADATA"
             ]
           }
         },
@@ -1416,6 +1447,292 @@
         "tools"
       ],
       "additionalProperties": false
+    },
+    "Issue": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "taskId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "objectId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "WARNING",
+            "ERROR"
+          ]
+        },
+        "occurredAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "read": {
+          "type": "boolean"
+        },
+        "resolved": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "taskId",
+        "objectId",
+        "code",
+        "message",
+        "severity",
+        "occurredAt",
+        "updatedAt",
+        "read",
+        "resolved"
+      ]
+    },
+    "QuarkFolder": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "accountId": {
+          "type": "string"
+        },
+        "parentId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "const": "FOLDER"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "selectable": {
+          "type": "boolean"
+        },
+        "availability": {
+          "type": "string"
+        },
+        "availabilityReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "accountId",
+        "parentId",
+        "name",
+        "kind",
+        "revision",
+        "selectable",
+        "availability",
+        "availabilityReason",
+        "path"
+      ]
+    },
+    "CloudNode": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "shareId": {
+          "type": "string"
+        },
+        "parentId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "externalId": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "FILE",
+            "FOLDER"
+          ]
+        },
+        "relativePath": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]+$"
+        },
+        "modifiedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "availability": {
+          "type": "string"
+        },
+        "availabilityReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "downloadSummary": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "shareId",
+        "parentId",
+        "externalId",
+        "version",
+        "name",
+        "kind",
+        "relativePath",
+        "sizeBytes",
+        "modifiedAt",
+        "availability",
+        "availabilityReason",
+        "downloadSummary"
+      ]
+    },
+    "TelegramScanMessage": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "externalId": {
+          "type": "string"
+        },
+        "sentAt": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "groupId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "groupComplete": {
+          "type": "boolean"
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "externalId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "mediaType": {
+                "enum": [
+                  "VIDEO",
+                  "AUDIO",
+                  "PHOTO",
+                  "DOCUMENT",
+                  "UNKNOWN"
+                ]
+              },
+              "mimeType": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "sizeBytes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "externalId",
+              "name",
+              "mediaType",
+              "mimeType",
+              "sizeBytes"
+            ]
+          }
+        },
+        "sourceLinks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "authorTags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "channel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "externalId",
+        "sentAt",
+        "text",
+        "groupId",
+        "groupComplete",
+        "attachments",
+        "sourceLinks",
+        "authorTags",
+        "channel"
+      ]
     }
   }
 }
