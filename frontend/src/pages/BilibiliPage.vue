@@ -579,6 +579,7 @@ async function removeSource() {
       ></el-dialog
     >
     <BilibiliDetail v-model="detailOpen" :content-id="detailId" @saved="notifySuccess('选定内容已保存；下载清单将使用这些选项。')" />
+
     <DownloadPreview
       v-model="previewOpen"
       platform="BILIBILI"

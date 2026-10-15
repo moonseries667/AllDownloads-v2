@@ -80,6 +80,7 @@ onBeforeUnmount(() => generation++);
           <dt>归档状态</dt><dd>{{ archiveLabels[content.archiveSummary.state] || '归档状态待确认' }}</dd>
           <dt>来源</dt><dd><ul v-if="content.sources.length"><li v-for="source in content.sources" :key="source.id">{{ source.displayLabel }}</li></ul><span v-else>暂无有效来源</span></dd>
         </dl>
+        <a class="text-control" :href="'/downloads?platform=BILIBILI&contentId=' + encodeURIComponent(content.id)">查看下载记录</a>
         <el-alert v-if="content.availability !== 'AVAILABLE'" :title="content.availabilityReason || '可下载状态待确认'" type="warning" :closable="false" />
         <p v-for="warning in content.warnings" :key="warning" class="detail-warning">{{ warning }}</p>
         <div class="media-heading"><h3>选择下载内容</h3><div>

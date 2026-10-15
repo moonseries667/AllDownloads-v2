@@ -1,0 +1,17 @@
+import { createApp } from "vue";
+import { createRouter, createWebHashHistory } from "vue-router";
+import ElementPlus from "element-plus";
+import "element-plus/dist/index.css";
+import "../../src/style.css";
+import DownloadsHost from "./DownloadsHost.vue";
+import DownloadsPage from "../../src/pages/DownloadsPage.vue";
+import BilibiliPage from "../../src/pages/BilibiliPage.vue";
+import { createApi, dataRevision } from "../../src/api/client";
+import { createDownloadManagementApi } from "../../src/api/download-management";
+import { downloadManagementKey } from "../../src/download-management";
+import { createDownloadFixture } from "../download-fixture";
+const stored = sessionStorage.getItem("download-fixture");
+const fixture = createDownloadFixture(stored ? JSON.parse(stored) : undefined, rows => sessionStorage.setItem("download-fixture", JSON.stringify(rows)));
+const router = createRouter({ history: createWebHashHistory(), routes: [{ path: "/downloads", component: DownloadsPage }, { path: "/bilibili", component: BilibiliPage }, { path: "/tasks", component: { template: "<p>任务测试占位</p>" } }, { path: "/:pathMatch(.*)*", redirect: "/downloads" }] });
+(window as any).downloadTest = { ...fixture, refresh: () => dataRevision.value++ };
+createApp(DownloadsHost).use(router).use(ElementPlus).provide(downloadManagementKey, createDownloadManagementApi(createApi(fixture.transport))).mount("#app");
