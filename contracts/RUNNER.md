@@ -1,5 +1,7 @@
 # Java 与 Go 执行协议
 
+第三部分独立子项执行、部分停止收据、上传固定目标与原生/Drive 目录操作见 [第三部分冻结契约](FEEDBACK-PART3.md)。
+
 第一部分实际 HTTP 字段、媒体执行 payload 和目录验证见 [第一部分冻结契约](FEEDBACK-PART1.md) 与 [机器 schema](runner.schema.json)。
 
 ## 1 所有权与通信
