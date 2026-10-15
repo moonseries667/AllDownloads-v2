@@ -2,7 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { createSeed } from "../../src/api/fixtures";
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript((seed) => localStorage.setItem("alldownloads.demo.feedback1.v2", JSON.stringify(seed)), createSeed());
+  await page.addInitScript((seed) => localStorage.setItem("alldownloads.demo.feedback2.v3", JSON.stringify(seed)), createSeed());
 });
 
 async function addShares(page: Page) {
@@ -19,7 +19,7 @@ async function choose(page: Page, field: string, names: string[]) {
   await expect(browser).not.toBeVisible();
 }
 async function storedShares(page: Page) {
-  return page.evaluate(() => JSON.parse(localStorage.getItem("alldownloads.demo.feedback1.v2")!).shares.filter((share: { externalShareId: string }) => share.externalShareId.startsWith("Folder")));
+  return page.evaluate(() => JSON.parse(localStorage.getItem("alldownloads.demo.feedback2.v3")!).shares.filter((share: { externalShareId: string }) => share.externalShareId.startsWith("Folder")));
 }
 
 test("Quark navigates the actual root and nested folders, then freezes one target for the batch", async ({ page }) => {
@@ -37,10 +37,10 @@ test("Quark navigates the actual root and nested folders, then freezes one targe
   await browser.getByRole("button", { name: "上一级" }).click();
   await expect(browser.locator(".folder-current")).toHaveText("当前文件夹：学习资料/课程");
   await browser.getByRole("button", { name: "使用此文件夹" }).click();
-  const orderCount = await page.evaluate(() => JSON.parse(localStorage.getItem("alldownloads.demo.feedback1.v2")!).orders.length);
+  const orderCount = await page.evaluate(() => JSON.parse(localStorage.getItem("alldownloads.demo.feedback2.v3")!).orders.length);
   await submit.click();
   await expect.poll(() => storedShares(page)).toMatchObject([{ targetFolderId: "folder-course", targetFolderRevision: "1" }, { targetFolderId: "folder-course", targetFolderRevision: "1" }]);
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("alldownloads.demo.feedback1.v2")!).orders.length)).toBe(orderCount);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("alldownloads.demo.feedback2.v3")!).orders.length)).toBe(orderCount);
 });
 
 test("Quark switches between batch and per-entry targets without reusing hidden values", async ({ page }) => {

@@ -1,5 +1,5 @@
 import { ref } from "vue";
-import { ElNotification } from "element-plus";
+import { notifyError as attentionError, notifySuccess as attentionSuccess } from "../notifications/notify";
 import type { Transport } from "./types";
 import { createDemoTransport } from "./demo";
 export const dataRevision = ref(0);
@@ -51,7 +51,11 @@ export function createHttpTransport(base = "/api/v1"): Transport {
 const transport: Transport = isDemo
   ? createDemoTransport()
   : createHttpTransport(import.meta.env.VITE_API_BASE || "/api/v1");
-export function createApi(transport: Transport, onMutation = () => { dataRevision.value++; }) {
+export function createApi(transport: Transport, onMutation = () => { dataRevision.value++; }, onError: (error: unknown) => void = () => {}) {
+const request: Transport["request"] = async (method, path, body, headers) => {
+  try { return await transport.request(method, path, body, headers); }
+  catch (error) { onError(error); throw error; }
+};
 const mutation = async <T = any>(
   method: string,
   path: string,
@@ -61,12 +65,12 @@ const mutation = async <T = any>(
   const headers: Record<string, string> = {};
   if (method === "POST") headers["Idempotency-Key"] = crypto.randomUUID();
   if (revision) headers["If-Match"] = revision.startsWith('"') ? revision : '"' + revision + '"';
-  const result = await transport.request<T>(method, path, body, headers);
+  const result = await request<T>(method, path, body, headers);
   onMutation();
   return result;
 };
 return {
-  get: <T = any>(path: string) => transport.request<T>("GET", path),
+  get: <T = any>(path: string) => request<T>("GET", path),
   post: <T = any>(path: string, body?: unknown, revision?: string) =>
     mutation<T>("POST", path, body, revision),
   patch: <T = any>(path: string, body?: unknown, revision?: string) =>
@@ -75,28 +79,8 @@ return {
     mutation<T>("DELETE", path, undefined, revision),
 };
 }
-export const api = createApi(transport);
-const recentErrors = new Map<string, number>();
-export function notifyError(error: unknown) {
-  const message = error instanceof Error ? error.message : "请求失败，请重试";
-  const now = Date.now();
-  if (now - (recentErrors.get(message) ?? 0) < 60000) return;
-  for (const [key, time] of recentErrors)
-    if (now - time >= 60000) recentErrors.delete(key);
-  recentErrors.set(message, now);
-  ElNotification({
-    title: "操作未完成",
-    message,
-    type: "error",
-    position: "top-right",
-  });
-}
+export const api = createApi(transport, undefined, attentionError);
+export const notifyError = attentionError;
 export function notifySuccess(message: string) {
-  ElNotification({
-    title: isDemo ? "演示操作已记录" : "已受理",
-    message,
-    type: "success",
-    position: "top-right",
-    duration: 3000,
-  });
+  return attentionSuccess(message, isDemo ? "演示操作已记录" : "已受理");
 }

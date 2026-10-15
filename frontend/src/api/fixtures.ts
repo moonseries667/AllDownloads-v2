@@ -123,19 +123,23 @@ export function createSeed() {
   const messages: RecordData[] = [
     {
       id: "m1",
+      eligible: true, messageIds: ["1001", "1004"], groupComplete: true,
       externalId: "1001",
       sentAt: "2026-10-12T01:15:30Z",
       text: "周末山间录音与拍摄笔记。\n\n保留环境声的层次，也保留风穿过树林的停顿。\n附件包含视频和现场录音；此消息为虚构演示数据。",
       attachments: [
         attachment("att1", "山间记录.mp4", "VERIFIED"),
         attachment("att2", "树林环境声.wav", "NEEDS_ACTION", "audio/wav"),
+        { ...attachment("att4", "同组山间照片.jpg", "QUEUED", "PHOTO"), messageId: "m4", relativePath: null, metadataRelativePath: null },
+        { ...attachment("att5", "同组拍摄笔记.pdf", "QUEUED", "DOCUMENT"), relativePath: null, metadataRelativePath: null },
       ],
       groupId: "g1",
       sourceLinks: [],
-      downloadSummary: ds("PARTIAL", 1, 2),
+      downloadSummary: ds("PARTIAL", 1, 4),
     },
     {
       id: "m2",
+      eligible: false, messageIds: ["1002"], groupComplete: true,
       externalId: "1002",
       sentAt: "2026-10-13T06:24:10Z",
       text: "关于工作流的三条笔记\n1. 先收录信息\n2. 按需要下载\n3. 核对后再归档",
@@ -146,6 +150,7 @@ export function createSeed() {
     },
     {
       id: "m3",
+      eligible: true, messageIds: ["1003"], groupComplete: true,
       externalId: "1003",
       sentAt: "2026-10-14T11:05:00Z",
       text: "设计分享会的音频，留给周末慢慢听。",
@@ -162,6 +167,12 @@ export function createSeed() {
       downloadSummary: ds("QUEUED", 0, 1),
     },
   ];
+  // Java already decides eligibility; these are contract fixtures, not browser-side filtering rules.
+  messages.push(
+    { id: "m-photo-only", externalId: "1005", eligible: false, messageIds: ["1005"], groupId: null, groupComplete: true, sentAt: date, text: "仅照片示例", sourceLinks: [], attachments: [{ ...attachment("att-photo-only", "照片.jpg", "NOT_REQUESTED", "PHOTO"), messageId: "m-photo-only" }], downloadSummary: ds("NOT_REQUESTED", 0, 0) },
+    { id: "m-document-only", externalId: "1006", eligible: false, messageIds: ["1006"], groupId: null, groupComplete: true, sentAt: date, text: "仅普通文件示例", sourceLinks: [], attachments: [{ ...attachment("att-document-only", "资料.zip", "NOT_REQUESTED", "DOCUMENT"), messageId: "m-document-only" }], downloadSummary: ds("NOT_REQUESTED", 0, 0) },
+    { id: "m-photo-document", externalId: "1007", eligible: false, messageIds: ["1007"], groupId: null, groupComplete: true, sentAt: date, text: "照片加普通文件示例", sourceLinks: [], attachments: [attachment("att-photo", "照片.jpg", "NOT_REQUESTED", "PHOTO"), attachment("att-document", "资料.pdf", "NOT_REQUESTED", "DOCUMENT")], downloadSummary: ds("NOT_REQUESTED", 0, 0) },
+  );
   const resources: RecordData[] = messages
     .filter((m) => m.attachments.length)
     .map((m, i) => ({
@@ -188,7 +199,8 @@ export function createSeed() {
       externalShareId: "abcd12345678",
       title: "影像与设计资料",
       targetFolderId: "folder-learning",
-      targetPath: "/学习资料/影像与设计",
+      targetFolderRevision: "1",
+      targetPath: "学习资料",
       shareFolderKey: "12345678",
       watchEnabled: true,
       updateState: "UPDATED",
@@ -202,7 +214,8 @@ export function createSeed() {
       externalShareId: "designABcd2026",
       title: "设计公开课",
       targetFolderId: "folder-learning",
-      targetPath: "/学习资料/设计公开课",
+      targetFolderRevision: "1",
+      targetPath: "学习资料",
       shareFolderKey: "ABcd2026",
       watchEnabled: false,
       updateState: "NEEDS_ACTION",
@@ -472,7 +485,7 @@ export function createSeed() {
   ];
   seedMedia(contents, parts);
   return {
-    version: 2,
+    version: 3,
     scenario: "normal",
     contents,
     parts,

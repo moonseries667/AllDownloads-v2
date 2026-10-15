@@ -238,7 +238,7 @@ describe("demo transport business boundaries", () => {
     expect(h.transport.inspect().watcher.enabled).toBe(false);
   });
 
-  it("accepts public, private, topic, comment and thread links, then deduplicates exact repeats", async () => {
+  it("keeps legacy link parsing but rejects removed Telegram download entry", async () => {
     const links = [
       "https://t.me/channelTest/123",
       "https://t.me/c/123456789/321",
@@ -249,50 +249,15 @@ describe("demo transport business boundaries", () => {
     expect(validateTelegramLinks(links)).toEqual(links.slice(0, 4));
 
     const h = harness();
-    const before = h.transport.inspect();
-    const result = (await h.request("POST", "/telegram/link-downloads", {
-      accountId: "tg-main",
-      links,
-    })) as any;
-    expect(result.count).toBe(4);
-    const added = newTasksSince(
-      h,
-      new Set(before.tasks.map((task) => task.id)),
-    );
-    expect(added).toHaveLength(1);
-    expect(added[0].platform).toBe("TELEGRAM");
-    expect(added[0].kind).toBe("DOWNLOAD");
-  });
-
-  it("accepts exactly 200 distinct Telegram message links", async () => {
-    const links = Array.from(
-      { length: 200 },
-      (_, index) => "https://t.me/channelTest/" + (index + 1),
-    );
-    const h = harness();
-    const result = (await h.request("POST", "/telegram/link-downloads", {
-      accountId: "tg-main",
-      links,
-    })) as any;
-    expect(result.count).toBe(200);
-  });
-
-  it("rejects a Telegram batch larger than 200 without creating a task", async () => {
-    const links = Array.from(
-      { length: 201 },
-      (_, index) => "https://t.me/channelTest/" + (index + 1),
-    );
-    const h = harness();
     const before = h.transport.inspect().tasks.length;
-
-    await expectCode(
-      h.request("POST", "/telegram/link-downloads", {
-        accountId: "tg-main",
-        links,
-      }),
-      "INVALID_INPUT",
-    );
+    await expectCode(h.request("POST", "/telegram/link-downloads", { accountId: "tg-main", links }), "FEATURE_REMOVED");
     expect(h.transport.inspect().tasks).toHaveLength(before);
+  });
+
+  it("retains the legacy parser boundary without exposing a download entry", () => {
+    const links = Array.from({ length: 200 }, (_, index) => "https://t.me/channelTest/" + (index + 1));
+    expect(validateTelegramLinks(links)).toHaveLength(200);
+    expect(() => validateTelegramLinks([...links, "https://t.me/channelTest/201"])).toThrow();
   });
 
   it("does not allow PAUSE for Telegram tasks", async () => {

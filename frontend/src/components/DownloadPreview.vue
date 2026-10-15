@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount } from "vue";
 import { ArrowDownAZ, ArrowUpAZ, Download, FolderOpen, RefreshCw } from "lucide-vue-next";
-import { api, notifySuccess } from "../api/client";
+import { api, notifyError, notifySuccess } from "../api/client";
 import { downloadApi, selectionWithSavedMedia } from "../api/feedback";
 import type { DownloadTarget, Platform, Selection, Preview } from "../api/types";
 import { mediaSelectionSession } from "../media-selection";
@@ -92,7 +92,7 @@ function cancelTarget() {
 }
 async function validateTarget() {
   const path = targetPath.value.trim();
-  if (!path) { targetError.value = "请输入产品运行主机上的本机目录。"; return; }
+  if (!path) { targetError.value = "请输入产品运行主机上的本机目录。"; notifyError(new Error(targetError.value)); return; }
   const g = ++targetGeneration;
   validating.value = true;
   targetError.value = "";
@@ -104,8 +104,8 @@ async function validateTarget() {
         if (g !== targetGeneration) return;
         if (result.status === "VALIDATING") { targetTimer = setTimeout(read, 2000); return; }
         validating.value = false;
-        if (result.status !== "VALID") { targetError.value = String(result.error?.message || "目录校验未通过，请选择其他目录。"); return; }
-        if (result.archivePolicy !== "NONE") { targetError.value = "此目标没有确认本批不归档，请重新校验目录。"; return; }
+        if (result.status !== "VALID") { targetError.value = String(result.error?.message || "目录校验未通过，请选择其他目录。"); notifyError(new Error(targetError.value)); return; }
+        if (result.archivePolicy !== "NONE") { targetError.value = "此目标没有确认本批不归档，请重新校验目录。"; notifyError(new Error(targetError.value)); return; }
         target.value = result;
         editingTarget.value = false;
         invalidate("本批下载目录已更改，请点击“刷新”确认新的清单。仅影响本批次，不进入归档。");

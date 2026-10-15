@@ -5,7 +5,7 @@ import type { RecordData, Selection, Transport } from "./types";
 import { defaultDemoTarget, demoBilibiliPreview, demoContent, demoSource, filterDemoContents, sortedContentPage } from "./demo-bilibili";
 import { demoQuarkFolderPage, validateDemoQuarkTarget } from "./quark-folder-fixtures";
 import { demoQuarkPreview } from "./demo-quark";
-const key = "alldownloads.demo.feedback1.v2";
+const key = "alldownloads.demo.feedback2.v3";
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const fail = (code: string, message: string): never => {
   throw Object.assign(new Error(message), { code });
@@ -19,7 +19,7 @@ export function createDemoTransport(
   if (persist) {
     try {
       const saved = JSON.parse(localStorage.getItem(key) || "null");
-      if (saved?.version === 2) state = saved;
+      if (saved?.version === 3) state = saved;
     } catch {
       /* A corrupt demo cache is replaced with isolated fixtures. */
     }
@@ -92,6 +92,7 @@ export function createDemoTransport(
     return filterDemoContents(state.contents, filters);
   }
   function preview(body: RecordData) {
+    if (body.platform === "TELEGRAM" || body.selection?.resource === "TELEGRAM_ATTACHMENTS") fail("FEATURE_REMOVED", "Telegram 仅支持收藏夹增量下载");
     const selection = body.selection as Selection;
     if (!selection) fail("EMPTY_SELECTION", "请选择内容");
     let entries: RecordData[] = [];
@@ -273,7 +274,7 @@ export function createDemoTransport(
             platform: c.platform,
             url: "/bilibili?q=" + encodeURIComponent(c.title),
           })),
-          ...state.resources.map((r) => ({
+          ...state.messages.filter((message) => message.eligible === true).map((r) => ({
             id: r.id,
             title: r.text.split("\n")[0],
             platform: "TELEGRAM",
@@ -373,7 +374,7 @@ export function createDemoTransport(
     }
     if (path === "/telegram/messages" || path === "/telegram/resources") {
       const items = path.endsWith("messages")
-        ? state.messages
+        ? state.messages.filter((message) => message.eligible === true)
         : state.resources;
       return list(
         items.filter(
@@ -419,7 +420,7 @@ export function createDemoTransport(
         : r;
     }
     if (path.match(/^\/telegram\/messages\/[^/]+$/))
-      return find(state.messages, path.split("/")[3]);
+      return find(state.messages.filter((message) => message.eligible === true), path.split("/")[3]);
     if (path === "/telegram/watcher") {
       if (method === "PATCH") {
         if (body.enabled && !state.watcher.scanState.initialScanCompleted)
@@ -451,18 +452,7 @@ export function createDemoTransport(
       state.watcher.scanState.activeTaskId = t.id as any;
       return { taskId: t.id, reused: !!active };
     }
-    if (path === "/telegram/link-downloads") {
-      const links = validateTelegramLinks(body.links);
-      return {
-        taskId: task(
-          "消息链接下载 · " + links.length + " 条",
-          "TELEGRAM",
-          "DOWNLOAD",
-          "解析消息与媒体组",
-        ).id,
-        count: links.length,
-      };
-    }
+    if (path === "/telegram/link-downloads") fail("FEATURE_REMOVED", "Telegram 仅支持收藏夹增量下载");
     if (path === "/telegram/retry-incomplete")
       return {
         taskId: task("补齐未完成附件", "TELEGRAM", "DOWNLOAD", "仅补齐失败附件")
@@ -708,7 +698,6 @@ export function createDemoTransport(
       if (["RETRY", "RECONCILE", "RESUME"].includes(body.action)) {
         t.status = "QUEUED";
         t.desiredAction = "CONTINUE";
-        t.error = null;
         t.allowedActions = ["CANCEL"];
       }
       t.revision = String(Number(t.revision) + 1);
@@ -716,21 +705,23 @@ export function createDemoTransport(
     }
     if (path === "/issues")
       return list(
-        state.tasks
-          .filter((t) => t.error)
-          .map((t) => ({
-            id: t.id,
-            title: t.title,
-            platform: t.platform,
-            phase: t.phase,
-            error: t.error,
-            acknowledged: state.acknowledged.includes(t.id),
-          })),
-        p,
-      );
+        state.tasks.filter((task) => task.error && (p.get("includeResolved") === "true" || task.status !== "SUCCEEDED" || task.error.severity === "WARNING"))
+          .map((task) => {
+            const issueId = task.id + ":" + task.error.code;
+            const read = state.acknowledged.includes(issueId);
+            return {
+              id: issueId, taskId: task.id, objectId: null, code: task.error.code,
+              message: task.error.message, severity: task.error.severity ?? "ERROR",
+              occurredAt: task.createdAt, updatedAt: task.updatedAt, read,
+              resolved: task.status === "SUCCEEDED" && task.error.severity !== "WARNING",
+              title: task.title, platform: task.platform, phase: task.phase, error: task.error, acknowledged: read,
+            };
+          }).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || a.id.localeCompare(b.id)), p);
     if (path.match(/^\/issues\/[^/]+\/acknowledge$/)) {
-      state.acknowledged.push(path.split("/")[2]);
-      return { acknowledged: true };
+      const issueId = decodeURIComponent(path.split("/")[2]);
+      if (!state.tasks.some((task) => task.error && task.id + ":" + task.error.code === issueId)) fail("NOT_FOUND", "问题记录不存在");
+      if (!state.acknowledged.includes(issueId)) state.acknowledged.push(issueId);
+      return { read: true, acknowledged: true };
     }
     fail("NOT_IMPLEMENTED", "此演示接口尚未实现：" + method + " " + path);
   }
