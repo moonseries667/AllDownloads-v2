@@ -468,6 +468,10 @@ class BusinessFlowTest {
     assertEquals("_CON", PathPlanner.safe("CON"));
     assertEquals("a_b_c", PathPlanner.safe("a:b?c"));
     assertTrue(PathPlanner.safe("x".repeat(500)).length() < 66);
+    assertTrue(
+        java.nio.charset.StandardCharsets.UTF_8
+            .newEncoder()
+            .canEncode(PathPlanner.safe("x".repeat(51) + "😀" + "y".repeat(30))));
   }
 
   @Test

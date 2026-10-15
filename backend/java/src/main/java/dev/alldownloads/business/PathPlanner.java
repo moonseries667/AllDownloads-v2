@@ -28,7 +28,10 @@ public final class PathPlanner {
     String base = value.split("\\.", 2)[0].toUpperCase(Locale.ROOT);
     if (base.matches("CON|PRN|AUX|NUL|CONIN\\$|CONOUT\\$|COM[1-9¹²³]|LPT[1-9¹²³]")
         || value.equalsIgnoreCase(".work")) value = "_" + value;
-    if (value.length() > 65) value = value.substring(0, 52) + "-" + digest(input).substring(0, 10);
+    if (value.length() > 65) {
+      int end = Character.isHighSurrogate(value.charAt(51)) ? 51 : 52;
+      value = value.substring(0, end) + "-" + digest(input).substring(0, 10);
+    }
     return value;
   }
 
