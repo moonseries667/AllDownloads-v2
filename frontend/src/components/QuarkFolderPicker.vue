@@ -57,7 +57,7 @@ onBeforeUnmount(close);
       <span>{{ modelValue ? (modelValue.path || "我的云盘") : "选择夸克文件夹" }}</span>
       <ChevronRight :size="16" aria-hidden="true" />
     </el-button>
-    <el-dialog v-model="visible" title="选择夸克文件夹" width="min(620px, calc(100vw - 48px))" append-to-body destroy-on-close @closed="close">
+    <el-dialog v-model="visible" title="选择夸克文件夹" class="quark-folder-dialog" width="min(620px, calc(100vw - 48px))" append-to-body destroy-on-close @closed="close">
       <section class="folder-browser" :aria-busy="loading">
         <nav class="folder-breadcrumbs" aria-label="夸克文件夹路径">
           <button type="button" :disabled="loading" @click="load()">我的云盘</button>
@@ -93,6 +93,9 @@ onBeforeUnmount(close);
 </template>
 
 <style scoped>
+:global(.el-dialog.quark-folder-dialog) { margin: 24px auto; max-height: calc(100dvh - 48px); display: flex; flex-direction: column; }
+:global(.quark-folder-dialog .el-dialog__body) { min-height: 0; overflow-y: auto; }
+:global(.quark-folder-dialog .el-dialog__header), :global(.quark-folder-dialog .el-dialog__footer) { flex-shrink: 0; }
 .quark-target-field, .target-trigger { width: 100%; min-width: 0; }
 .target-trigger { min-height: 40px; height: auto; text-align: left; }
 .target-trigger :deep(> span) { display: flex; gap: 10px; width: 100%; min-width: 0; }

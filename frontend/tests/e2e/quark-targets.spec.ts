@@ -1,4 +1,9 @@
 import { test, expect, type Page } from "@playwright/test";
+import { createSeed } from "../../src/api/fixtures";
+
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript((seed) => localStorage.setItem("alldownloads.demo.feedback1.v2", JSON.stringify(seed)), createSeed());
+});
 
 async function addShares(page: Page) {
   await page.goto("/quark/cloud");
@@ -14,7 +19,7 @@ async function choose(page: Page, field: string, names: string[]) {
   await expect(browser).not.toBeVisible();
 }
 async function storedShares(page: Page) {
-  return page.evaluate(() => JSON.parse(localStorage.getItem("alldownloads.demo.v1")!).shares.filter((share: { externalShareId: string }) => share.externalShareId.startsWith("Folder")));
+  return page.evaluate(() => JSON.parse(localStorage.getItem("alldownloads.demo.feedback1.v2")!).shares.filter((share: { externalShareId: string }) => share.externalShareId.startsWith("Folder")));
 }
 
 test("Quark navigates the actual root and nested folders, then freezes one target for the batch", async ({ page }) => {
@@ -32,16 +37,16 @@ test("Quark navigates the actual root and nested folders, then freezes one targe
   await browser.getByRole("button", { name: "上一级" }).click();
   await expect(browser.locator(".folder-current")).toHaveText("当前文件夹：学习资料/课程");
   await browser.getByRole("button", { name: "使用此文件夹" }).click();
-  const orderCount = await page.evaluate(() => JSON.parse(localStorage.getItem("alldownloads.demo.v1")!).orders.length);
+  const orderCount = await page.evaluate(() => JSON.parse(localStorage.getItem("alldownloads.demo.feedback1.v2")!).orders.length);
   await submit.click();
   await expect.poll(() => storedShares(page)).toMatchObject([{ targetFolderId: "folder-course", targetFolderRevision: "1" }, { targetFolderId: "folder-course", targetFolderRevision: "1" }]);
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("alldownloads.demo.v1")!).orders.length)).toBe(orderCount);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("alldownloads.demo.feedback1.v2")!).orders.length)).toBe(orderCount);
 });
 
 test("Quark switches between batch and per-entry targets without reusing hidden values", async ({ page }) => {
   await addShares(page);
   await choose(page, "本批转存目标夸克文件夹", ["学习资料", "课程"]);
-  const toggle = page.getByRole("switch", { name: "是否整批使用同一目录" });
+  const toggle = page.locator(".folder-mode-row .el-switch");
   await toggle.click();
   await expect(page.getByRole("button", { name: "第 1 条分享的目标文件夹" })).toContainText("学习资料/课程");
   await choose(page, "第 2 条分享的目标文件夹", ["收件箱", "课程"]);

@@ -6,7 +6,7 @@ export function previewFact(item: RecordData) {
     case "ARCHIVE_VERIFIED": return item.archiveState === "VERIFIED" ? "已归档" : "状态待确认";
     case "LOCAL_VERIFIED": return item.downloadState === "VERIFIED" ? "已下载" : "状态待确认";
     case "DOWNLOADING": return "正在下载";
-    case "RESOURCE_DELETED": return "原视频已删除";
+    case "RESOURCE_DELETED": return item.nodeId ? "源文件已删除" : "原视频已删除";
     case "PERMISSION_DENIED": return "无访问权限";
     case "REGION_RESTRICTED": return "地区限制";
     case "PAYMENT_REQUIRED": return "需要购买";
@@ -25,7 +25,7 @@ export function previewAction(item: RecordData, archivePolicy?: string) {
   const fact = previewFact(item);
   if (fact === "已归档" || fact === "已下载") return fact + "，无需下载";
   if (fact === "正在下载") return "正在下载，不重复创建";
-  if (["原视频已删除", "无访问权限", "地区限制", "需要购买"].includes(fact)) return fact + "，不能下载";
+  if (["原视频已删除", "源文件已删除", "无访问权限", "地区限制", "需要购买"].includes(fact)) return fact + "，不能下载";
   if (fact === "暂时获取失败") return "暂时获取失败，请稍后刷新";
   return "状态待确认，请刷新信息";
 }

@@ -80,6 +80,7 @@ describe("demo transport business boundaries", () => {
         {
           url: "https://pan.quark.cn/s/NewShare20261015",
           targetFolderId: "folder-inbox",
+          targetFolderRevision: "1",
         },
       ],
     })) as any;

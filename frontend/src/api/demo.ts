@@ -3,6 +3,8 @@ export { validateTelegramLinks } from "./telegram-links";
 import { createSeed, type DemoState } from "./fixtures";
 import type { RecordData, Selection, Transport } from "./types";
 import { defaultDemoTarget, demoBilibiliPreview, demoContent, demoSource, filterDemoContents, sortedContentPage } from "./demo-bilibili";
+import { demoQuarkFolderPage, validateDemoQuarkTarget } from "./quark-folder-fixtures";
+import { demoQuarkPreview } from "./demo-quark";
 const key = "alldownloads.demo.feedback1.v2";
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const fail = (code: string, message: string): never => {
@@ -94,47 +96,18 @@ export function createDemoTransport(
     if (!selection) fail("EMPTY_SELECTION", "请选择内容");
     let entries: RecordData[] = [];
     let ids = selection.ids ?? [];
-    if (selection.mode === "QUERY")
+    if (selection.mode === "QUERY" && body.platform === "BILIBILI")
       ids = filteredContents(selection.filters ?? {})
         .filter((c) => !selection.excludeIds?.includes(c.id))
         .map((c) => c.id);
-    if (!ids.length) fail("EMPTY_SELECTION", "请选择至少一项");
+    if (selection.mode === "EXPLICIT" && !ids.length) fail("EMPTY_SELECTION", "请选择至少一项");
     const target = body.target ? state.targets[body.target.id] : defaultDemoTarget(state.settings);
     if (!target || target.status !== "VALID") fail("INVALID_STORAGE_ROOT", "目标目录尚未通过校验");
     if (body.target && body.target.revision !== target.revision) fail("VERSION_CHANGED", "目标目录已变化，请重新校验");
     if (body.platform === "BILIBILI") {
       entries = demoBilibiliPreview(state.contents, state.parts, selection, ids, target);
     } else if (body.platform === "QUARK") {
-      const selected = new Set(ids);
-      let grew = true;
-      while (grew) {
-        grew = false;
-        for (const n of state.nodes)
-          if (n.parentId && selected.has(n.parentId) && !selected.has(n.id)) {
-            selected.add(n.id);
-            grew = true;
-          }
-      }
-      entries = state.nodes
-        .filter((n) => n.kind === "FILE" && selected.has(n.id))
-        .map((n) => ({
-          nodeId: n.id,
-          version: n.version,
-          title: n.name,
-          shareId: n.shareId,
-          relativePath:
-            "Quark/" +
-            find(state.shares, n.shareId).shareFolderKey +
-            "/" +
-            n.relativePath,
-          sizeBytes: n.sizeBytes,
-          decision:
-            n.downloadSummary.state === "VERIFIED" ? "REUSE" : "DOWNLOAD",
-          reason:
-            n.downloadSummary.state === "VERIFIED"
-              ? "已有已验证的同版本文件"
-              : null,
-        }));
+      entries = demoQuarkPreview(state.nodes, state.shares, selection, target);
     }
     if (!entries.length) fail("EMPTY_SELECTION", "所选范围没有可处理文件");
     const p = {
@@ -512,13 +485,11 @@ export function createDemoTransport(
               url: entry.url,
               error: { message: "无法识别夸克分享链接" },
             };
-          const full = match[1],
-            existing = state.shares.find((s) => s.externalShareId === full);
+          let target;
+          try { target = validateDemoQuarkTarget(entry.targetFolderId, entry.targetFolderRevision); }
+          catch (error) { return { url: entry.url, error: { code: (error as { code: string }).code, message: (error as Error).message } }; }
+          const full = match[1], existing = state.shares.find((share) => share.externalShareId === full);
           if (existing) return { shareId: existing.id, reused: true };
-          if (
-            !["folder-learning", "folder-inbox"].includes(entry.targetFolderId)
-          )
-            return { error: { message: "目标目录不存在" } };
           let len = Math.min(8, full.length),
             folder = full.slice(-len);
           while (
@@ -540,10 +511,8 @@ export function createDemoTransport(
             externalShareId: full,
             title: "新分享 " + folder,
             targetFolderId: entry.targetFolderId,
-            targetPath:
-              entry.targetFolderId === "folder-learning"
-                ? "/学习资料"
-                : "/收件箱",
+            targetFolderRevision: target.revision,
+            targetPath: target.path,
             shareFolderKey: folder,
             watchEnabled: true,
             updateState: "QUEUED",
@@ -564,25 +533,7 @@ export function createDemoTransport(
         }),
       };
     }
-    if (path === "/quark/folders")
-      return {
-        items: [
-          {
-            id: "folder-learning",
-            name: "学习资料",
-            path: "/学习资料",
-            parentId: null,
-          },
-          {
-            id: "folder-inbox",
-            name: "收件箱",
-            path: "/收件箱",
-            parentId: null,
-          },
-        ],
-        total: 2,
-        nextCursor: null,
-      };
+    if (path === "/quark/folders") return demoQuarkFolderPage(p);
     if (path === "/quark/nodes")
       return list(
         state.nodes.filter(

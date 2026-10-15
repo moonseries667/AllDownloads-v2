@@ -1142,6 +1142,9 @@ watch(
 </template>
 
 <style scoped>
+:global(.el-dialog.share-dialog) { margin: 24px auto; max-height: calc(100dvh - 48px); display: flex; flex-direction: column; }
+:global(.share-dialog .el-dialog__body) { min-height: 0; overflow-y: auto; }
+:global(.share-dialog .el-dialog__header), :global(.share-dialog .el-dialog__footer) { flex-shrink: 0; }
 .quark-page {
   --quark-primary: #166a59;
   --quark-primary-strong: #115647;
