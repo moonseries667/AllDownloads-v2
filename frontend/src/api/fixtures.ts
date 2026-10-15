@@ -1,4 +1,5 @@
 import type { RecordData } from "./types";
+import { seedMedia } from "./demo-bilibili";
 const date = "2026-10-15T08:30:00Z";
 const ds = (state = "NOT_REQUESTED", done = 0, total = 1) => ({
   state,
@@ -34,7 +35,7 @@ export function createSeed() {
     title,
     coverUrl: "/covers/cover-" + (i % 6) + ".svg",
     sourceIds:
-      i === 0 ? ["s1", "s2"] : i === 6 ? ["s3"] : i < 6 ? ["s1"] : ["s2"],
+      i === 0 ? ["s1", "s2"] : i === 6 ? ["s3"] : i === 11 ? ["s5"] : i === 7 ? ["s4"] : i < 6 ? ["s1"] : ["s2"],
     originalUrl: "https://www.bilibili.com/",
     availability: i === 10 ? "UNAVAILABLE" : "AVAILABLE",
     availabilityReason: i === 10 ? "当前账号无法访问该内容" : null,
@@ -469,8 +470,9 @@ export function createSeed() {
       cloudUrl: null,
     },
   ];
+  seedMedia(contents, parts);
   return {
-    version: 1,
+    version: 2,
     scenario: "normal",
     contents,
     parts,
@@ -520,6 +522,10 @@ export function createSeed() {
         revision: "1",
         pinned: false,
       },
+      { id: "s4", platform: "BILIBILI", kind: "USER_ADDED", title: "用户添加视频", alias: "",
+        url: "https://www.bilibili.com/video/BV1Demob8", status: "READY", lastSyncedAt: date, itemCount: 1, revision: "1", pinned: false },
+      { id: "s5", platform: "BILIBILI", kind: "MOVIE", title: "电影", alias: "",
+        url: "https://www.bilibili.com/bangumi/media/md400", status: "READY", lastSyncedAt: date, itemCount: 1, revision: "1", pinned: false },
     ],
     orders: [
       {
@@ -604,6 +610,7 @@ export function createSeed() {
       uploadConcurrency: 2,
     },
     previews: {} as Record<string, RecordData>,
+    targets: {} as Record<string, import("./types").DownloadTarget>,
     cleanups: {} as Record<string, RecordData>,
     authSessions: {} as Record<string, RecordData>,
     acknowledged: [] as string[],
