@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 )
 
@@ -54,6 +55,18 @@ func TestDownloadResumesOnlyMatchingStrongVersion(t *testing.T) {
 	}
 	if err := d.Fetch(context.Background(), source, path); Classify(err, "").Code != "PARTIAL_FILE_CORRUPT" {
 		t.Fatalf("corruption accepted: %v", err)
+	}
+}
+
+func TestLocalFileErrorsRemainLocalFacts(t *testing.T) {
+	for _, test := range []struct {
+		err  error
+		code string
+	}{{os.ErrPermission, "PERMISSION_DENIED"}, {os.ErrNotExist, "LOCAL_FILE_NOT_FOUND"}, {syscall.Errno(112), "DISK_FULL"}} {
+		failure := Classify(&os.PathError{Op: "write", Path: "private path", Err: test.err}, "PUBLISH")
+		if failure.Code != test.code || failure.Retryable || strings.Contains(failure.Error(), "private") {
+			t.Fatalf("incorrect local failure %v", failure)
+		}
 	}
 }
 func TestChangedRangeRejectedAndNoValidatorRestarts(t *testing.T) {
