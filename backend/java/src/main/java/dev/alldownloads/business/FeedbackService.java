@@ -39,11 +39,7 @@ public final class FeedbackService {
         List<String> taskIds=telegram.incompleteTasks(account,selected);List<JsonNode> items=new ArrayList<>();
         for(String taskId:taskIds) {
             ObjectNode task=store.get("task",taskId);String state=text(task,"status");
-            if(Set.of("FAILED","PAUSED","NEEDS_ACTION").contains(state))queue.retryKnownDownload(taskId);
-            else if(state.equals("CANCELLED")) {
-                String[] r=store.row("SELECT body FROM operations WHERE task_id=?",taskId);ObjectNode op=(ObjectNode)parse(r[0]);
-                String next=queue.enqueue("DOWNLOAD_MEDIA","TELEGRAM",text(op,"resourceKey"),op.path("destination"),text(op,"storageRevision"),op.path("payload"));queue.account(next,account);store.put("taskTarget",next,store.get("taskTarget",taskId));telegram.replaceTask(taskId,next);taskId=next;
-            }
+            if(Set.of("FAILED","PAUSED","NEEDS_ACTION","CANCELLED").contains(state))queue.retryKnownDownload(taskId);
             items.add(object("taskId",taskId));
         }
         return object("items",items,"taskIds",items.stream().map(n->text(n,"taskId")).toList());
@@ -67,7 +63,7 @@ public final class FeedbackService {
     public boolean complete(JsonNode op,JsonNode result) throws SQLException {
         String type=text(op,"operationType"),platform=text(op,"platform"),task=text(op,"taskId");
         if(type.equals("SCAN_TEL_SAVED")) {if(!text(op.path("payload"),"accountId").equals(required(result,"accountId")))throw Failure.conflict("VERIFICATION_FAILED");telegram.acceptPage(task,text(op,"operationId")+":"+op.path("attempt").asInt(),(ObjectNode)result,this::enqueue);return true;}
-        if(type.equals("LIST_QUARK_TREE")) {if(!text(op.path("payload"),"accountId").equals(required(result,"accountId")))throw Failure.conflict("VERIFICATION_FAILED");ObjectNode tree=((ObjectNode)result).deepCopy();if(op.path("payload").hasNonNull("shareId"))tree.set("shareId",op.path("payload").path("shareId"));quark.acceptTree(tree);return true;}
+        if(type.equals("LIST_QUARK_TREE")) {if(!text(op.path("payload"),"accountId").equals(required(result,"accountId"))||!op.path("payload").path("parentId").equals(result.path("parentId")))throw Failure.conflict("VERIFICATION_FAILED");ObjectNode tree=((ObjectNode)result).deepCopy();if(op.path("payload").hasNonNull("shareId"))tree.set("shareId",op.path("payload").path("shareId"));quark.acceptTree(tree);return true;}
         if(type.equals("TRANSFER_QUARK_ITEMS")) {if(!text(op.path("payload"),"shareId").equals(required(result,"shareId")))throw Failure.conflict("VERIFICATION_FAILED");quark.transferResult((ObjectNode)result);refreshTree(text(result,"shareId"));return true;}
         if(type.equals("DOWNLOAD_MEDIA")&&platform.equals("TELEGRAM")) {telegram.downloadFacts(task,result.path("files"),true);downloads.downloadResult(op,result);return true;}
         return false;

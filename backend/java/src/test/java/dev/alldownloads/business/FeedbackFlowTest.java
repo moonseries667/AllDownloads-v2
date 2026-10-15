@@ -40,6 +40,14 @@ class FeedbackFlowTest {
         JsonNode download=savedAlbum();ObjectNode watcher=store.tx(()->app.feedback.telegram.watcher("tel-test"));assertFalse(watcher.path("enabled").asBoolean());
         store.tx(()->app.feedback.telegram.setWatcher("tel-test",true,text(watcher,"revision")));clock.instant=clock.instant.plusSeconds(61);app.feedback.tick();String first=store.tx(()->app.feedback.telegram.activeTask("tel-test"));assertNotNull(first);app.feedback.tick();assertEquals(first,store.tx(()->app.feedback.telegram.activeTask("tel-test")));assertEquals(3,store.tx(()->store.rows("SELECT id FROM operations WHERE type='SCAN_TEL_SAVED'").size()));assertFalse(download.isNull());
     }
+    @Test void previousKnownFailureCannotAuthorizeRetryAfterASecondLeaseBecomesUnknown(){
+        JsonNode op=savedAlbum();ObjectNode failure=report(op,"NEEDS_ACTION",object("files",List.of()),object("code","NETWORK_TEMPORARY","completedEffects",List.of(),"pendingEffects",List.of()));store.tx(()->app.queue.result(text(op,"operationId"),failure,false));store.tx(()->app.feedback.retryIncomplete(object("accountId","tel-test")));assertFalse(acquire("DOWNLOAD_MEDIA").isNull());clock.instant=clock.instant.plusSeconds(91);store.tx(()->{app.queue.expire();return null;});
+        assertEquals("RECONCILE_REQUIRED",assertThrows(Failure.class,()->store.tx(()->app.feedback.retryIncomplete(object("accountId","tel-test")))).code);
+    }
+    @Test void explicitlyCompletingACancelledSavedDownloadRetainsOperationAndFrozenTarget(){
+        JsonNode op=savedAlbum();String task=text(op,"taskId");store.tx(()->app.queue.control(task,text(store.get("task",task),"revision"),"CANCEL"));store.tx(()->app.queue.result(text(op,"operationId"),report(op,"CANCELLED",object("files",List.of()),null),false));
+        store.tx(()->app.feedback.retryIncomplete(object("accountId","tel-test")));JsonNode retry=acquire("DOWNLOAD_MEDIA");assertEquals(op.path("operationId"),retry.path("operationId"));assertEquals(op.path("destination"),retry.path("destination"));success(retry,object("files",evidence(retry),"warnings",List.of()));
+    }
     String seedShare(){store.tx(()->{app.feedback.quark.acceptTree((ObjectNode)examples.path("quarkRoot"));return null;});ObjectNode result=store.tx(()->app.feedback.addShares(examples.path("quarkSharedTarget")));return result.path("items").get(0).path("shareId").asText();}
     ObjectNode node(String share,String id,String version){return object("id",id,"shareId",share,"parentId",null,"externalId",id,"version",version,"name",id+".mp4","kind","FILE","relativePath","课程/"+id+".mp4","sizeBytes","7","modifiedAt",null,"availability","AVAILABLE","availabilityReason",null,"downloadSummary",object("state","NOT_REQUESTED"));}
     @Test void quarkCustomTargetReusesOrdersAndNeverArchivesAfterRestartReplayOrNewNodes() throws Exception {

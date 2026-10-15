@@ -13,6 +13,7 @@
 - `mediaType=VIDEO/AUDIO` 或真实 `mimeType` 为 `video/*`、`audio/*` 可建立资格；UNKNOWN 且无可靠 MIME 不猜测。Go 不返回缩略图为独立附件。合格单元保留所有实际附件，UNKNOWN 附件作为 DOCUMENT 输出，不能丢弃。
 - 完成事实必须匹配冻结 outputs，每个附件和它的 METADATA 侧车均 verified=true，大小非负且校验值有效。失败或缺少照片/侧车不能将整个资源标记完成。重复扫描保持稳定资源、附件、任务及目录身份。
 - 旧 link-downloads 返回 410 FEATURE_REMOVED；手动预览不接受 TELEGRAM 平台/附件资源。已保留历史记录不删除。
+- retry-incomplete 对已知失败或已确认取消复用原 operationId、冻结目标和文件收据；关闭提示不触发它。后续租约失联/RESULT_UNKNOWN 必须先 RECONCILE，旧失败证据不能授权重新执行。已完成附件保持事实，整组成功仍须本次完整输出核验。
 
 ## 夸克
 

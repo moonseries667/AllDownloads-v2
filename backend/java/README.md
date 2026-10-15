@@ -1,10 +1,14 @@
 # Java 公共业务与持久调度
 
-## 第二部分领域模块（接入前）
+## 第二部分接口与业务
 
-契约基线 `6233234`，完整组与目标边界补充 `9e7886f`。`dev.alldownloads.feedback2` 使用调用方的 SQLite Connection 和事务，不新建业务数据库、HTTP 服务或平台调度器。`TelegramLibrary` 保存原始扫描事实、完整组资格与待处理单元，最终扫描页通过 Enqueue 接入公共操作队列；`IssueRepository` 提供稳定持久问题；`QuarkCatalog` 核验节点父链、冻结转存目标和展开文件版本。普通构造和查询不扫描平台。
+契约基线 `6233234`，完整组与目标边界补充 `9e7886f`。第二部分共享内核接入 `bb0ebdb` 消费第一部分 Java `a5dcded` 和 Go 基线；Go 平台模块 `81c2080` 与绑定 `aff9ac8` 已在本分支接入。精确结构见 [第二部分契约](../../contracts/FEEDBACK-PART2.md)、[payload schema](../../contracts/feedback2.schema.json) 及公共 OpenAPI。
 
-开工核验 B10/B11/B12 均只有契约，未有 Java 实现；现已新增上述领域能力和 `DomainBehaviorTest` 的 12 项 SQLite 用例。Maven verify 共 22 项通过，包括原核心恢复测试。公共 HTTP、订单快照和 Runner 接入等待第一部分已完成提交；此处不把领域测试称作集成通过。Carbon 上只用合成数据，真实 Telegram、夸克、Y7000P 与持续运行均未验证。
+开工核验 B10/B11/B12 均只有契约，未有 Java 平台业务。现有 `FeedbackController`、`FeedbackService`、`TelegramLibrary`、`QuarkCatalog` 接入唯一 BusinessStore/OperationQueue；通知复用第一部分 `objects/issue`，未建立第二套通知数据。普通构造/收藏 GET 不扫描，监控只处理用户已启用且完成初扫的账号。收藏资格在完整组上统一计算，全部实际附件及侧车必须有事实才能完成；失败部分、游标、已读状态和固定路径跨重启保留。
+
+夸克目录使用真实节点及父链，统一/逐条转存目标冻结到每条分享。QUARK_NODES 接入公共 DownloadService 的预览、目标、订单、输出占用、版本检查和 NONE 不归档规则；转存完成只接续目录刷新。失效目录不回退，未知文件大小保留 null。
+
+Java 的领域、共享队列和 HTTP 用例覆盖本部分正常/失败/重启边界，并保留第一部分所有测试。实际 Java + Go 进程、SQLite、文件/侧车与收据已完成隔离联调；31 份实际响应/操作/结果捕获通过 schema 校验。复现方式及替身边界见 [跨进程说明](../../tests/integration/FEEDBACK-PART2.md)。
 
 本机验证使用既有项目 Maven 3.9.16 缓存，临时 settings 仅选择已缓存的 aliyun-public 仓库；Java 21。沙盒访问旧缓存 JAR 的 toRealPath 被拒绝，因此该次离线 verify 经准确范围审批执行。未修改系统 Java、Maven 或代理。
 
@@ -26,7 +30,7 @@ Java 21 独占产品 SQLite、公共 HTTP、媒体选择和路径计划；Go 独
 | B08 Go 执行 | 文件发布/收据基础已有 | 由 Go 对话实现；Java 只接受精确清单、大小、SHA-256、媒体种类和 verified 事实 |
 | B09 跨进程 | 公共/内部 HTTP 均缺失 | `ApiController/RunnerController`、独立内部身份、租约/心跳/事实/结果/对账、持久订单和单事务后续调度 |
 
-第二部分一度误派，已按范围更正停止。仅保留已提交契约 `6233234`（增量文档末节和 schema 扩展）以及公共队列内问题记录辅助方法；没有实现 Telegram/夸克业务或第二部分公共路由，交由第二部分新对话接续。
+上述第一部分行为由原提交保留；第二部分由新 Java 对话接续，并通过原业务与 HTTP 测试验证未破坏第一部分行为。
 
 ## 构建与测试
 
@@ -69,6 +73,6 @@ java -jar target/alldownloads-backend-0.1.0-SNAPSHOT.jar --spring.config.additio
 
 ## 实质限制
 
-本轮 Java 提供第一部分 Bilibili 闭环；第二部分和其余原计划平台入口仍由对应任务实现。AUTO 后续归档任务可持久排队，但没有云端适配器/配置时不会成为 VERIFIED；本轮不执行真实上传，也不把挂载状态当云端事实。平台账号、付费/地区内容、实际 Bilibili 下载、真实挂载/归档、Y7000P 部署、电源断电与七天运行均未验收。Go 完成提交后的本地跨进程验证单独记录；模块单测不能冒充该验证。
+Java 已提供第二部分收藏夹、问题查询确认、夸克目录/分享及下载清单接口；Go 生产 Telegram/夸克会话客户端和真实转存 provider 尚未接入，默认 cmd/runner 仍只装配第一部分 Handler。隔离联调使用显式测试装配，不能作为生产可用声明。AUTO 后续归档任务可持久排队，但没有云端适配器/配置时不会成为 VERIFIED。真实账号、平台下载/转存、云端归档、Y7000P 部署、电源断电、界面视觉与七天运行均未验收。
 
 Refs [#2](https://github.com/moonseries667/AllDownloads-v2/issues/2)、[#4](https://github.com/moonseries667/AllDownloads-v2/issues/4)、[#5](https://github.com/moonseries667/AllDownloads-v2/issues/5)。
