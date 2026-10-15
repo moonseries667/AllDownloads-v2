@@ -169,7 +169,8 @@ export function demoBilibiliPreview(contents: RecordData[], parts: RecordData[],
     let reasonCode = "PENDING_DOWNLOAD", decision = "DOWNLOAD";
     if (content.availability !== "AVAILABLE") {
       decision = "BLOCKED";
-      reasonCode = part.tracks.find((track: MediaTrack) => track.reasonCode)?.reasonCode || "STATE_UNKNOWN";
+      reasonCode = content.availability === "REMOVED" ? "RESOURCE_DELETED"
+        : part.tracks.find((track: MediaTrack) => track.reasonCode)?.reasonCode || "STATE_UNKNOWN";
     } else if (target.archivePolicy === "NONE") reasonCode = "CUSTOM_TARGET_NO_ARCHIVE";
     else if (outputs.length && outputs.every((output) => content.demoActiveOutputs.includes(outputKey(output)))) { reasonCode = "DOWNLOADING"; decision = "REUSE"; }
     else if (outputs.length && outputs.every((output) => content.demoLocalOutputs.includes(outputKey(output)))) {
@@ -182,8 +183,10 @@ export function demoBilibiliPreview(contents: RecordData[], parts: RecordData[],
         ? outputs.reduce((sum, o) => sum + BigInt(o.sizeBytes), 0n).toString() : null,
       decision, reasonCode, reason: content.availabilityReason || "", selectedTrackIds: tracks.map((track) => track.id),
       mergePolicy: mux ? "MUX" : "SEPARATE", outputs,
-      downloadState: ["LOCAL_VERIFIED", "ARCHIVE_VERIFIED"].includes(reasonCode) ? "VERIFIED" : content.downloadSummary.state,
-      archiveState: reasonCode === "ARCHIVE_VERIFIED" ? "VERIFIED" : content.archiveSummary.state };
+      downloadState: reasonCode === "CUSTOM_TARGET_NO_ARCHIVE" ? "NOT_REQUESTED"
+        : ["LOCAL_VERIFIED", "ARCHIVE_VERIFIED"].includes(reasonCode) ? "VERIFIED" : content.downloadSummary.state,
+      archiveState: target.archivePolicy === "NONE" ? "NOT_REQUESTED"
+        : reasonCode === "ARCHIVE_VERIFIED" ? "VERIFIED" : content.archiveSummary.state };
     item.actionLabel = previewAction(item, target.archivePolicy);
     return [item];
   });
