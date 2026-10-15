@@ -120,7 +120,11 @@ func wait(ctx context.Context, delay time.Duration) error {
 	}
 }
 func (r *Runner) runOperation(ctx context.Context, op Operation) error {
-	if op.ProtocolVersion != 1 || op.RunnerID != r.ID || op.Attempt < 1 || op.OperationID == "" || op.LeaseID == "" || op.Platform != "BILIBILI" {
+	supportedPlatform := op.Platform == "BILIBILI"
+	if adapter, ok := r.Worker.(interface{ SupportsPlatform(string) bool }); ok {
+		supportedPlatform = adapter.SupportsPlatform(op.Platform)
+	}
+	if op.ProtocolVersion != 1 || op.RunnerID != r.ID || op.Attempt < 1 || op.OperationID == "" || op.LeaseID == "" || !supportedPlatform {
 		return errors.New("invalid acquired operation")
 	}
 	if token, err := strconv.ParseUint(op.FencingToken, 10, 64); err != nil || token == 0 {
@@ -173,6 +177,17 @@ func (r *Runner) runOperation(ctx context.Context, op Operation) error {
 		if failure.Retryable {
 			result.Status = "RETRYABLE_ERROR"
 		}
+		completed := []string{}
+		for _, file := range files {
+			completed = append(completed, file.OutputID)
+		}
+		result.Error = &ResultError{Code: failure.Code, Message: failure.Error(), CompletedEffects: completed, PendingEffects: []string{"unfinished frozen outputs"}}
+		// Platform adapters expose controlled messages and precise remaining
+		// outputs without making the shared runner parse provider error strings.
+		var structured interface{ RunnerFailure() (string, *ResultError) }
+		if errors.As(execErr, &structured) {
+			result.Status, result.Error = structured.RunnerFailure()
+		}
 		if desired == "CANCEL" {
 			result.Status = "CANCELLED"
 		} else if desired == "PAUSE" {
@@ -180,11 +195,6 @@ func (r *Runner) runOperation(ctx context.Context, op Operation) error {
 		} else if desired == "LEASE_LOST" || ctx.Err() != nil {
 			result.Status = "RESULT_UNKNOWN"
 		}
-		completed := []string{}
-		for _, file := range files {
-			completed = append(completed, file.OutputID)
-		}
-		result.Error = &ResultError{Code: failure.Code, Message: failure.Error(), CompletedEffects: completed, PendingEffects: []string{"unfinished frozen outputs"}}
 	}
 	record.Files = files
 	record.Result = &result
