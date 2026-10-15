@@ -26,6 +26,11 @@ def main():
         validate(name, examples[key])
     for key in ["operation", "result"]:
         Draft202012Validator(RUNNER).validate(examples[key])
+    management = json.loads((ROOT / "contracts/feedback3.examples.json").read_text(encoding="utf-8"))
+    for project in management["projects"]:
+        validate("DownloadProject", project)
+    validate("DirectorySelection", management["directoryCancelled"])
+    validate("DriveTarget", management["driveTarget"])
     Draft202012Validator({"$ref": "#/$defs/DownloadPayload", "$defs": RUNNER["$defs"]}).validate(examples["operation"]["payload"])
     if len(sys.argv) > 1:
         captures = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
@@ -35,6 +40,9 @@ def main():
         operation = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
         Draft202012Validator(RUNNER).validate(operation)
         Draft202012Validator({"$ref": "#/$defs/DownloadPayload", "$defs": RUNNER["$defs"]}).validate(operation["payload"])
+    if len(sys.argv) > 3:
+        for capture in json.loads(Path(sys.argv[3]).read_text(encoding="utf-8")):
+            validate(capture["schema"], capture["data"])
     print("Contract schemas, examples and supplied captures validated")
 
 

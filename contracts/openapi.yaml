@@ -1342,6 +1342,12 @@
                         },
                         "reused": {
                           "type": "boolean"
+                        },
+                        "projectIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         }
                       },
                       "required": [

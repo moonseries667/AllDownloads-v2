@@ -14,9 +14,13 @@ public final class DownloadService {
     private final CatalogService catalog;
     private final OperationQueue queue;
     private final PathPlanner paths;
+    private DownloadManagement management;
+    private StorageSettings storageSettings;
+    public void management(DownloadManagement value,StorageSettings settings) {management=value;storageSettings=settings;}
     public DownloadService(BusinessStore store,CatalogService catalog,OperationQueue queue) {this.store=store;this.catalog=catalog;this.queue=queue;paths=new PathPlanner(store);}
     public void configureDefault(String path) throws SQLException {
         ObjectNode old=store.optional("target","default");
+        if(old!=null&&store.optional("settings","global")!=null)return;
         if(old!=null&&text(old,"path").equals(path))return;
         String revision=old==null?"1":Long.toString(Long.parseLong(text(old,"revision"))+1);
         ObjectNode target=object("id","default","revision",revision,"status",path.isBlank()?"INVALID":"VALIDATING","path",path,"label",path.isBlank()?"尚未配置下载目录":path,"rootId",null,"archivePolicy","AUTO","error",path.isBlank()?object("code","INVALID_STORAGE_ROOT","message","尚未配置下载目录"):null);
@@ -24,13 +28,13 @@ public final class DownloadService {
         store.put("target","default",target);
         if(!path.isBlank())queue.enqueue("VALIDATE_TARGET","BILIBILI","target:default:"+revision,null,revision,object("schemaVersion",1,"targetId","default","path",path));
     }
-    public ObjectNode settings() throws SQLException {ObjectNode target=store.get("target","default");return object("downloadRoot",target.path("path"),"storageRevision",target.path("revision"),"timezone","Asia/Shanghai","archiveDestinationLabel",null,"defaultTarget",target);}
+    public ObjectNode settings() throws SQLException {return storageSettings.settings();}
     public ObjectNode validateTarget(JsonNode request) throws SQLException {
         String path=required(request,"path");validatePath(path);String targetId=id();
         ObjectNode target=object("id",targetId,"revision","1","status","VALIDATING","path",path,"label",path,"rootId",null,"archivePolicy","NONE","error",null);store.put("target",targetId,target);
         String task=queue.enqueue("VALIDATE_TARGET","BILIBILI","target:"+targetId,null,"1",object("schemaVersion",1,"targetId",targetId,"path",path));return object("targetId",targetId,"taskId",task);
     }
-    private static void validatePath(String path) {if(path.length()>220||path.startsWith("\\\\")||path.startsWith("//")||path.indexOf('\0')>=0||!Path.of(path).isAbsolute())throw new Failure(422,"INVALID_STORAGE_ROOT","必须是运行主机的本机绝对目录");}
+    static void validatePath(String path) {if(path.length()>220||path.startsWith("\\\\")||path.startsWith("//")||path.indexOf('\0')>=0||!Path.of(path).isAbsolute())throw new Failure(422,"INVALID_STORAGE_ROOT","必须是运行主机的本机绝对目录");}
     public void targetResult(JsonNode operation,JsonNode result) throws SQLException {
         String targetId=required(operation.path("payload"),"targetId");if(!targetId.equals(required(result,"targetId"))||!result.path("writable").asBoolean(false))throw Failure.conflict("VERIFICATION_FAILED");
         ObjectNode target=store.get("target",targetId);String canonical=required(result,"canonicalPath");validatePath(canonical);
@@ -129,7 +133,7 @@ public final class DownloadService {
     public ObjectNode getPreview(String id) throws SQLException {ObjectNode preview=store.get("preview",id);if(!Instant.parse(text(preview,"expiresAt")).isAfter(store.clock.instant()))preview.put("status","EXPIRED");return preview;}
     public ObjectNode submit(JsonNode request) throws SQLException {
         if(request.size()!=1)throw Failure.bad("INVALID_INPUT","Submit only the previewId; refresh changes first");String previewId=required(request,"previewId");ObjectNode preview=getPreview(previewId);
-        String[] prior=store.row("SELECT body FROM objects WHERE kind='order' AND json_extract(body,'$.previewId')=?",previewId);if(prior!=null) {JsonNode order=parse(prior[0]);return object("orderId",order.path("id"),"taskIds",order.path("taskIds"),"reused",true);}
+        String[] prior=store.row("SELECT body FROM objects WHERE kind='order' AND json_extract(body,'$.previewId')=?",previewId);if(prior!=null) {JsonNode order=parse(prior[0]);return object("orderId",order.path("id"),"projectIds",order.path("projectIds"),"taskIds",order.path("taskIds"),"reused",true);}
         if(!text(preview,"status").equals("READY"))throw Failure.conflict("PREVIEW_EXPIRED");JsonNode target=preview.path("target");ObjectNode current=store.get("target",text(target,"id"));
         if(!current.equals(target)||text(target,"id").equals("default")&&!text(preview,"storageRevision").equals(text(store.get("target","default"),"revision")))throw Failure.conflict("STORAGE_CHANGED");
         List<JsonNode> items=list(preview.path("items"));for(JsonNode item:items)if(!text(store.get("content",text(item,"contentId")),"revision").equals(text(item,"version")))throw Failure.conflict("VERSION_CHANGED");
@@ -154,11 +158,14 @@ public final class DownloadService {
             String task=queue.enqueue("DOWNLOAD_MEDIA","BILIBILI",text(plan,"key"),plan.path("destination"),text(preview,"storageRevision"),payload);store.put("taskTarget",task,target);tasks.add(task);
             for(JsonNode output:missing)store.update("INSERT INTO output_claims VALUES(?,?,?) ON CONFLICT(root_id,output_id) DO UPDATE SET task_id=excluded.task_id",text(target,"rootId"),text(output,"id"),task);
         }
-        String orderId=id();ObjectNode order=object("id",orderId,"previewId",previewId,"status",tasks.isEmpty()?"SUCCEEDED":"QUEUED","target",target,"archivePolicy",preview.path("archivePolicy"),"items",items,"taskIds",tasks,"createdAt",store.now());store.put("order",orderId,order);return object("orderId",orderId,"taskIds",tasks,"reused",tasks.isEmpty());
+        String orderId=id();ObjectNode order=object("id",orderId,"previewId",previewId,"status",tasks.isEmpty()?"SUCCEEDED":"QUEUED","target",target,"archivePolicy",preview.path("archivePolicy"),"items",items,"taskIds",tasks,"createdAt",store.now());store.put("order",orderId,order);List<String> projects=management.registerOrder(order);return object("orderId",orderId,"projectIds",projects,"taskIds",tasks,"reused",tasks.isEmpty());
     }
     public void downloadResult(JsonNode operation,JsonNode result) throws SQLException {
+        recordDownloadFiles(operation,result,true);
+    }
+    public void recordDownloadFiles(JsonNode operation,JsonNode result,boolean complete) throws SQLException {
         JsonNode payload=operation.path("payload");Map<String,JsonNode> expected=new HashMap<>();for(JsonNode output:payload.path("outputs"))expected.put(text(output,"id"),output);
-        if(!result.path("files").isArray()||result.path("files").size()!=expected.size())throw Failure.conflict("VERIFICATION_FAILED");
+        if(!result.path("files").isArray()||(complete&&result.path("files").size()!=expected.size()))throw Failure.conflict("VERIFICATION_FAILED");
         Set<String> seen=new HashSet<>();List<JsonNode> files=new ArrayList<>();
         JsonNode target=store.get("taskTarget",text(operation,"taskId"));
         for(JsonNode file:result.path("files")) {
@@ -169,11 +176,6 @@ public final class DownloadService {
         }
         for(JsonNode file:files)store.put("file",text(operation.path("destination"),"rootId")+":"+text(file,"id"),file);
         updateContentSummary(text(payload,"contentId"));
-        String desired=text(store.get("task",text(operation,"taskId")),"desiredAction");
-        if(text(payload,"archivePolicy").equals("AUTO")&&!desired.equals("CANCEL")) {
-            String archiveTask=queue.enqueue("UPLOAD_ARTIFACT","BILIBILI","archive:"+text(operation,"operationId"),operation.path("destination"),text(operation,"storageRevision"),object("schemaVersion",1,"contentId",payload.path("contentId"),"archivePolicy","AUTO","files",files));
-            if(desired.equals("PAUSE"))queue.control(archiveTask,"1","PAUSE");
-        }
         for(JsonNode warning:result.path("warnings"))if(warning.isTextual())queue.issue(text(operation,"taskId"),text(payload,"contentId"),"SUPPLEMENT_WARNING","WARNING");
     }
     private void updateContentSummary(String contentId) throws SQLException {
@@ -181,5 +183,5 @@ public final class DownloadService {
         for(JsonNode file:store.all("file"))if(text(file,"contentId").equals(contentId)&&text(file,"contentRevision").equals(text(content,"revision"))&&text(file,"localState").equals("VERIFIED"))actual.addAll(strings(file.path("trackIds")));
         content.set("downloadSummary",object("state",!expected.isEmpty()&&actual.containsAll(expected)?"VERIFIED":actual.isEmpty()?"NOT_REQUESTED":"PARTIAL","completedTracks",actual.size(),"totalTracks",expected.size()));store.put("content",contentId,content);
     }
-    public ObjectNode order(String id) throws SQLException {ObjectNode order=store.get("order",id);List<String> states=new ArrayList<>();for(String task:strings(order.path("taskIds")))states.add(text(store.get("task",task),"status"));boolean blocked=list(order.path("items")).stream().anyMatch(i->text(i,"decision").equals("BLOCKED"));String state=states.isEmpty()||states.stream().allMatch("SUCCEEDED"::equals)?blocked?"PARTIAL":"SUCCEEDED":states.stream().anyMatch(s->Set.of("FAILED","NEEDS_ACTION").contains(s))?"NEEDS_ACTION":states.stream().anyMatch("RUNNING"::equals)?"RUNNING":states.getFirst();order.put("status",state);return order;}
+    public ObjectNode order(String id) throws SQLException {ObjectNode order=store.get("order",id);List<String> states=new ArrayList<>();for(String task:strings(order.path("taskIds")))states.add(text(store.get("task",task),"status"));boolean blocked=list(order.path("items")).stream().anyMatch(i->text(i,"decision").equals("BLOCKED"));String state=states.isEmpty()||states.stream().allMatch("SUCCEEDED"::equals)?blocked?"PARTIAL":"SUCCEEDED":states.stream().anyMatch(s->Set.of("FAILED","NEEDS_ACTION").contains(s))?"NEEDS_ACTION":states.stream().anyMatch("RUNNING"::equals)?"RUNNING":states.getFirst();order.put("status",state);return management.enrichOrder(order);}
 }

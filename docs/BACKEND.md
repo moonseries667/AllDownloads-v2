@@ -1,5 +1,7 @@
 # 后端职责与稳定性要求
 
+第三部分下载实例、取消、上传资格和目录设置的接口以 [第三部分冻结契约](../contracts/FEEDBACK-PART3.md) 为准。`DownloadManagement` 复用 `BusinessStore` 与 `OperationQueue`，不增加业务数据库或 Runner；`StorageSettings` 保存目录选择、验证与设置快照。所有结果、项目文件事实与唯一上传任务在同一事务中提交。运行取消只改变持久意图，失联继续待核对，完整性始终基于原项目 outputs。
+
 ## 1 技术与职责决策
 
 采用 Java 业务应用与 Go 执行程序两个自有常驻程序。Java 使用 Java 21 LTS、Spring Boot 稳定版和 JDBC；Go 使用仍受官方支持的稳定版本。实际补丁版本、构建工具与依赖在首次建骨架时统一锁定，禁止使用浮动 latest 或预览版本作为可复现构建依据。

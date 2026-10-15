@@ -13,10 +13,14 @@ public final class BusinessApplication {
     public final OperationQueue queue;
     public final CatalogService catalog;
     public final DownloadService downloads;
+    public final StorageSettings storageSettings;
+    public final DownloadManagement management;
     public BusinessApplication(BusinessStore store,String defaultRoot) {
         this.store=store;queue=new OperationQueue(store);catalog=new CatalogService(store,queue);downloads=new DownloadService(store,catalog,queue);
+        storageSettings=new StorageSettings(store,queue);management=new DownloadManagement(store,queue,storageSettings);downloads.management(management,storageSettings);
         queue.onCompletion(this::complete);
-        store.tx(()->{downloads.configureDefault(defaultRoot);queue.expire();return null;});
+        queue.onOutcome(this::outcome);
+        store.tx(()->{downloads.configureDefault(defaultRoot);queue.expire();management.promote();return null;});
     }
     private void complete(JsonNode operation,JsonNode result) throws SQLException {
         switch(text(operation,"operationType")) {
@@ -24,9 +28,18 @@ public final class BusinessApplication {
             case "SYNC_BIL_SOURCE" -> catalog.importSource(operation,result);
             case "FETCH_BIL_METADATA" -> catalog.importContent(result.path("content"),null);
             case "DOWNLOAD_MEDIA" -> downloads.downloadResult(operation,result);
+            case "UPLOAD_ARTIFACT" -> management.uploadResult(operation,result);
+            case "SELECT_LOCAL_DIRECTORY" -> storageSettings.selectionResult(operation,result);
+            case "LIST_DRIVE_FOLDERS" -> storageSettings.foldersResult(operation,result);
+            case "VALIDATE_DRIVE_TARGET" -> storageSettings.driveValidationResult(operation,result);
             // No cloud adapter is enabled in this increment: never accept a bare success as archive proof.
             default -> throw Failure.conflict("UNSUPPORTED_RESULT");
         }
+    }
+    private void outcome(JsonNode operation,JsonNode request) throws SQLException {
+        if(text(operation,"operationType").equals("DOWNLOAD_MEDIA")&&!text(request,"status").equals("SUCCEEDED")&&request.path("result").path("files").size()>0)
+            downloads.recordDownloadFiles(operation,request.path("result"),false);
+        storageSettings.outcome(operation,request);management.promote();
     }
     public ObjectNode overview() throws SQLException {
         queue.expire();List<JsonNode> services=new ArrayList<>();services.add(object("id","java","required",true,"state","ACTIVE","reasonCode",null,"lastSeenAt",store.now()));

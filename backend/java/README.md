@@ -1,5 +1,13 @@
 # Java 公共业务与持久调度
 
+第三部分契约为 [FEEDBACK-PART3.md](../../contracts/FEEDBACK-PART3.md)。`DownloadManagement` 在既有业务事务中维护提交批次、下载项目、可取消子项及唯一上传记录；`StorageSettings` 实现原生目录请求、Drive 目录分页、validate/save 和冻结目标。公开 `/download-projects` 用于管理，`/download-orders` 保留提交批次；归档页面只查询 `/archives`。
+
+开工核验：B13 在前序仅有批次/执行任务，缺少管理实例；B14 已有任务级持久意图，缺少消费者与子项范围；B15 已有单操作完成后的上传入队，但不是项目完整性判断；B16 只有批次目录验证，无原生选择和全局保存；B17 仅有语义，无目录模型/实现。第三部分复用原 HTTP、SQLite、租约及输出占用，新增管理领域与控制路由，未另建 Runner。
+
+`ManagementFlowTest` 覆盖精确 contentId/分页、共享消费者取消、运行停止确认、部分发布、完成竞争、失联对账、重启、显式新批次补齐与上传冻结；`StorageSettingsTest` 覆盖原生取消/不可用/迟到结果、设置冲突、Drive 重名/分页/权限变化；`ManagementHttpTest` 使用真实回环 HTTP 并生成 schema 校验样本。它们使用合成执行事实，不能替代实际 Go 文件执行或原生弹框。
+
+第三部分 schema 复现：在项目隔离 Python 环境安装 `tests/integration/requirements.txt`，仓库根目录运行 `python tests/integration/validate_contracts.py backend/java/target/contract-captures.json backend/java/target/runner-capture.json backend/java/target/management-captures.json`。先执行下述 Maven verify 生成样本。原生 Windows 对话框、真实 Drive、Y7000P 部署与长期运行不在本轮已验收范围。
+
 Java 21 独占产品 SQLite、公共 HTTP、媒体选择和路径计划；Go 独占平台访问、目录探测与文件执行。第一部分契约提交为 `d508c7a`，见 [增量语义](../../contracts/FEEDBACK-PART1.md)、[OpenAPI](../../contracts/openapi.yaml) 和 [Runner schema](../../contracts/runner.schema.json)。旧 M1 `TaskStore` 与 fixture 测试保留，产品入口使用 `BusinessStore`/`OperationQueue`，不启动第二套队列。
 
 ## 开工核验与第一部分实现

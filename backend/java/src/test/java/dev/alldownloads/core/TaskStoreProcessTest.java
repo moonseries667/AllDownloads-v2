@@ -44,8 +44,7 @@ class TaskStoreProcessTest {
             assertTrue(child.isAlive());
             child.destroyForcibly();
             assertTrue(child.waitFor(5, TimeUnit.SECONDS));
-            try (TaskStore reopened = new TaskStore(database,
-                    Clock.fixed(Instant.parse("2026-10-15T00:00:00Z"), ZoneOffset.UTC))) {
+            try (TaskStore reopened = reopenAfterExit(database)) {
                 Task restored = reopened.get(id);
                 assertEquals(Status.QUEUED, restored.status());
                 assertEquals("process-storage-revision", restored.request().storageRevision());
@@ -53,6 +52,18 @@ class TaskStoreProcessTest {
         } finally {
             if (child.isAlive()) { child.destroyForcibly(); child.waitFor(5, TimeUnit.SECONDS); }
             reader.shutdownNow();
+        }
+    }
+
+    private static TaskStore reopenAfterExit(Path database) throws Exception {
+        long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(5);
+        while(true) {
+            try {return new TaskStore(database,Clock.fixed(Instant.parse("2026-10-15T00:00:00Z"),ZoneOffset.UTC));}
+            catch(java.io.IOException failure) {
+                // Process termination and the release of its Windows file handles need not be observed together.
+                if(!"Control directory is already in use".equals(failure.getMessage())||System.nanoTime()>=deadline)throw failure;
+                Thread.sleep(50);
+            }
         }
     }
 

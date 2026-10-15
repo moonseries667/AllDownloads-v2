@@ -30,7 +30,7 @@ public class ApiController {
     @GetMapping("/download-previews/{id}") public ResponseEntity<JsonNode> getPreview(@PathVariable String id) {return read(()->app.downloads.getPreview(id));}
     @GetMapping("/download-previews/{id}/items") public ResponseEntity<JsonNode> previewItems(@PathVariable String id,@RequestParam Map<String,String> query) {return read(()->CatalogService.page(list(app.downloads.getPreview(id).path("items")),query,id));}
     @PostMapping("/download-orders") public ResponseEntity<JsonNode> submit(@RequestHeader("Idempotency-Key") String key,@RequestBody JsonNode body) {return write("order",key,body,()->app.downloads.submit(body));}
-    @GetMapping("/download-orders") public ResponseEntity<JsonNode> orders(@RequestParam Map<String,String> query) {return read(()->{List<JsonNode> out=new ArrayList<>();for(JsonNode order:app.store.all("order"))out.add(app.downloads.order(text(order,"id")));return CatalogService.page(out,query,"orders");});}
+    @GetMapping("/download-orders") public ResponseEntity<JsonNode> orders(@RequestParam Map<String,String> query) {return read(()->app.management.orders(query));}
     @GetMapping("/download-orders/{id}") public ResponseEntity<JsonNode> order(@PathVariable String id) {return read(()->app.downloads.order(id));}
     @GetMapping("/tasks") public ResponseEntity<JsonNode> tasks(@RequestParam Map<String,String> query) {return read(()->{app.queue.expire();return CatalogService.page(app.store.all("task"),query,"tasks");});}
     @GetMapping("/tasks/{id}") public ResponseEntity<JsonNode> task(@PathVariable String id) {return read(()->{app.queue.expire();return app.store.get("task",id);});}

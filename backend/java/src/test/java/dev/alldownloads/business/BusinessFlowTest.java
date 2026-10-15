@@ -61,6 +61,7 @@ class BusinessFlowTest {
     }
     @Test void targetRevisionAndExpiryRejectUnsubmittedPreview() {
         ObjectNode p=preview(request("video-fixture"));store.tx(()->{app.downloads.configureDefault(temp.resolve("changed").toString());return null;});assertCode("STORAGE_CHANGED",()->submit(p));
+        JsonNode changed=acquire("VALIDATE_TARGET");complete(changed,object("targetId","default","rootId","root-changed","canonicalPath",temp.resolve("changed").toString(),"writable",true));
         ObjectNode custom=preview(custom(request("audio-fixture"),"alternate"));clock.now=clock.now.plusSeconds(601);assertCode("PREVIEW_EXPIRED",()->submit(custom));
     }
     @Test void exactOutputCoverageDoesNotTurnAudioOnlyIntoWholeContentReuse() {
