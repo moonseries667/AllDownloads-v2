@@ -1,5 +1,13 @@
 # Java 业务核心（M1 隔离替身阶段）
 
+## 第二部分领域模块（接入前）
+
+契约基线 `6233234`，完整组与目标边界补充 `9e7886f`。`dev.alldownloads.feedback2` 使用调用方的 SQLite Connection 和事务，不新建业务数据库、HTTP 服务或平台调度器。`TelegramLibrary` 保存原始扫描事实、完整组资格与待处理单元，最终扫描页通过 Enqueue 接入公共操作队列；`IssueRepository` 提供稳定持久问题；`QuarkCatalog` 核验节点父链、冻结转存目标和展开文件版本。普通构造和查询不扫描平台。
+
+开工核验 B10/B11/B12 均只有契约，未有 Java 实现；现已新增上述领域能力和 `DomainBehaviorTest` 的 12 项 SQLite 用例。Maven verify 共 22 项通过，包括原核心恢复测试。公共 HTTP、订单快照和 Runner 接入等待第一部分已完成提交；此处不把领域测试称作集成通过。Carbon 上只用合成数据，真实 Telegram、夸克、Y7000P 与持续运行均未验证。
+
+本机验证使用既有项目 Maven 3.9.16 缓存，临时 settings 仅选择已缓存的 aliyun-public 仓库；Java 21。沙盒访问旧缓存 JAR 的 toRealPath 被拒绝，因此该次离线 verify 经准确范围审批执行。未修改系统 Java、Maven 或代理。
+
 Java 21 独占 SQLite 任务、租约、幂等请求、执行事实确认与后续操作；Go 不连接此数据库。本模块尚未接入公共 HTTP 和 Java-Go HTTP。当前模型只供内部合成 fixture 测试，不能作为 #2 的冻结协议，也不代表任何平台下载、上传或归档完成。
 
 ## 构建与测试
