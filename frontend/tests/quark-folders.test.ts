@@ -7,7 +7,7 @@ describe("Quark folder selection contract (6233234)", () => {
   it("reads the actual root and builds root-to-leaf paths without using display paths as identity", () => {
     expect(selectableFolder(page())).toEqual({ id: "0", revision: "1", path: "" });
     const result = page("folder-camera");
-    result.parent!.path = "this-display-field-is-not-an-identity";
+    result.parent = { ...result.parent!, path: "this-display-field-is-not-an-identity" };
     expect(folderPath(result)).toBe("学习资料/课程/摄影");
     expect(selectableFolder(result)).toEqual({ id: "folder-camera", revision: "1", path: "学习资料/课程/摄影" });
     expect(result.items).toEqual([]);

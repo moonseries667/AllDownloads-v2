@@ -525,11 +525,15 @@ async function submitShares() {
       (entry) =>
         !entry.error && !entry.reused && (entry.shareId || entry.taskId),
     ).length;
-    notifySuccess(
-      "转存与追更请求已受理" +
-        (acceptedCount ? " " + acceptedCount + " 条" : "") +
-        "；下载仍需单独选择文件。",
-    );
+    const failed = shareCreateResult.value.entries.filter((entry) => entry.error);
+    if (failed.length) {
+      notifyError(new Error(failed.length + " 条分享未受理：" + entryResultText(failed[0]!)));
+    }
+    if (acceptedCount) {
+      notifySuccess("已受理 " + acceptedCount + " 条转存与追更请求；下载仍需单独选择文件。");
+    } else if (!failed.length) {
+      notifySuccess("已复用已有分享，请在分享列表查看当前状态。");
+    }
   } catch (error) {
     shareFormError.value =
       error instanceof Error
