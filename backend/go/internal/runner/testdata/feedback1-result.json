@@ -1,0 +1,26 @@
+{
+  "eventId": "result-fixture",
+  "runnerId": "runner-fixture",
+  "leaseId": "lease-fixture",
+  "attempt": 1,
+  "fencingToken": "1",
+  "status": "SUCCEEDED",
+  "result": {
+    "files": [
+      {
+        "outputId": "output-fixture",
+        "relativePath": "Bilibili/影像收藏(收藏夹)/隔离验证示例(BV1Fixture)/media.mp4",
+        "sizeBytes": "1234",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "mediaKinds": [
+          "VIDEO",
+          "AUDIO"
+        ],
+        "durationSeconds": 12,
+        "verified": true
+      }
+    ],
+    "warnings": []
+  },
+  "error": null
+}
