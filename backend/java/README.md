@@ -30,14 +30,29 @@ Java 21 独占产品 SQLite、公共 HTTP、媒体选择和路径计划；Go 独
 
 Carbon 验证复用旧后端已下载的锁定 Maven/依赖缓存，使用隔离测试目录；缓存中的依赖来自 `aliyun-public` 镜像，因此离线构建使用相同 mirror id 的临时 settings。该主机路径不进入产品配置。Windows Wrapper 修复了普通目录 Target=null 时的空数组索引；未更换 Wrapper 或依赖版本。
 
-`BusinessFlowTest` 验证第一部分业务、排序/日期/分页、置顶/重启、季身份、空选择、AI 排除、未知大小、目录/资源变更、精确去重和 NONE 的重试/重启/重放。`HttpBoundaryTest` 启动真实回环 Spring HTTP 与临时 SQLite，验证 envelope、幂等、ETag 和内部身份隔离。原 `TaskStoreTest/TaskStoreProcessTest` 保留原事务/进程恢复用例。业务单测使用合成 Go 事实，不当作真实文件或平台验收。
+当前 Maven verify 共 29 项通过。`BusinessFlowTest` 验证第一部分业务、排序/日期/分页、置顶/重启、季身份、空选择、AI 排除、未知大小、目录/资源/权限变更、精确去重和 NONE 的重试/重启/重放。`HttpBoundaryTest` 启动真实回环 Spring HTTP 与临时 SQLite，验证 envelope、幂等、ETag 和内部身份隔离。原 `TaskStoreTest/TaskStoreProcessTest` 保留原事务/进程恢复用例。业务单测使用合成 Go 事实，不当作真实文件或平台验收。
+
+Windows 进程测试在确认子进程退出后最多等待五秒重新取得文件锁，处理内核句柄关闭延迟；仍须在期限内恢复相同已提交任务，不降低持久化断言。下载部分失败/暂停/取消时仅保存已核验的文件子集，不误报整体完成；本机可恢复错误按相同 operationId 与收据继续。
 
 schema 校验（在仓库根目录，Python 项目隔离环境安装测试依赖）：
 
 ```powershell
-python -m pip install -r tests/integration/requirements.txt
-python tests/integration/validate_contracts.py backend/java/target/contract-captures.json backend/java/target/runner-capture.json
+python -m venv backend/java/target/integration-env
+.\backend\java\target\integration-env\Scripts\python.exe -m pip install -r tests/integration/requirements.txt
+.\backend\java\target\integration-env\Scripts\python.exe tests/integration/validate_contracts.py backend/java/target/contract-captures.json backend/java/target/runner-capture.json
 ```
+
+## Java–Go 跨进程验证
+
+已在本分支集成 Go `9a05540` 与 `963da9a`，完成真实 Java jar、Go runner、SQLite 和 FFmpeg 9.0.2 的本地进程链路。输入由脚本现场生成并经回环 HTTP 提供，不访问 Bilibili/业务账号。验证内容：新增来源只取资料不下载；明确选择音视频合并及人工字幕 JSON/弹幕 XML；本批指定目录实际输出且默认根无文件；Java 持久提交结果后故意丢应答，再重启 Java/Go 重放同一 ack，媒体 GET 数不增加；NONE 在结果重放后没有上传操作；媒体 HTTP 404 返回待处理而非 RESOURCE_DELETED。公共响应同时校验共享 schema。
+
+复现（仓库根目录；先按各模块 README 构建 Java jar 与 Go runner）：
+
+```powershell
+.\backend\java\target\integration-env\Scripts\python.exe tests/integration/feedback1_process.py --java '<Java 21>/bin/java.exe' --runner '<本工作树>/backend/go/bin/runner.exe' --ffmpeg '<FFmpeg 9.0.2>/bin/ffmpeg.exe' --ffprobe '<FFmpeg 9.0.2>/bin/ffprobe.exe'
+```
+
+脚本使用 `backend/java/target/feedback1-*` 隔离目录，成功后保留 SQLite、结果捕获和临时文件供检查，均不入 Git；每次最多等待启动 30 秒、子进程 60 秒。内部测试凭据只在脚本子进程间传递，不打印、不放入参数或公共响应。Go race 检查在高负载时出现一次测试夹具的短租约时序失败；单包串行 `go test -race -count=1 -p=1 ./...` 复测通过，未修改 Go 测试或关闭 race。Go vet/build 已通过。
 
 ## 隔离启动与用户复现
 
@@ -61,6 +76,6 @@ java -jar target/alldownloads-backend-0.1.0-SNAPSHOT.jar --spring.config.additio
 
 ## 实质限制
 
-本轮 Java 提供第一部分 Bilibili 闭环；第二部分和其余原计划平台入口仍由对应任务实现。AUTO 后续归档任务可持久排队，但没有云端适配器/配置时不会成为 VERIFIED；本轮不执行真实上传，也不把挂载状态当云端事实。平台账号、付费/地区内容、实际 Bilibili 下载、真实挂载/归档、Y7000P 部署、电源断电与七天运行均未验收。Go 完成提交后的本地跨进程验证单独记录；模块单测不能冒充该验证。
+本轮 Java 提供第一部分 Bilibili 闭环；第二部分和其余原计划平台入口仍由对应任务实现。AUTO 后续归档任务可持久排队，但没有云端适配器/配置时不会成为 VERIFIED；本轮不执行真实上传，也不把挂载状态当云端事实。平台账号、付费/地区内容、实际 Bilibili 下载、真实挂载/归档、Y7000P 部署、电源断电与七天运行均未验收。未知副作用须由执行端携收据对账；浏览器不会提供接受后无动作的 RECONCILE。当前模块和本地跨进程通过不能冒充真实平台验收。
 
 Refs [#2](https://github.com/moonseries667/AllDownloads-v2/issues/2)、[#4](https://github.com/moonseries667/AllDownloads-v2/issues/4)、[#5](https://github.com/moonseries667/AllDownloads-v2/issues/5)。

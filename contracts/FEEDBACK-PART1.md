@@ -63,6 +63,10 @@ Operation：`protocolVersion,operationId,taskId,attempt,leaseId,runnerId,fencing
 * DOWNLOAD_MEDIA：`{schemaVersion:1,contentId,contentRevision,contentKind,externalId,externalIdType,qualityPolicy:"HIGHEST_AVAILABLE",archivePolicy:"AUTO"|"NONE",units:MediaUnit[],outputs:Output[]}`，units.tracks 只含明确选择，outputs 明确合并关系与成品路径。destination.relativePath 是内容基目录，outputs.relativePath 是相对 rootPath 的完整路径。成功 `{files:[{outputId,relativePath,sizeBytes,sha256,mediaKinds:string[],durationSeconds:null|number,verified:true}],warnings:string[]}`；必须恰好覆盖所有 outputs，并核对媒体流。Go 先发布/验证并持久收据才报告。失败不可伪造完整结果。
 * UPLOAD_ARTIFACT/VERIFY_ARCHIVE：沿用旧语义；本轮没有真实云端配置/能力则保持排队或 NEEDS_ACTION，不执行占位成功。
 
+文件补充格式：本轮人工字幕保留平台结构化 JSON 并以 `.json` 命名，弹幕保留 `.xml`；不得把 JSON 伪装成 SRT。输入轨道大小不等于封装后的成品大小，预览输出大小未知时保持 null。
+
+DOWNLOAD_MEDIA 的失败/暂停/取消 result 可以包含已经验证的完整文件子集。Java 校验并持久这些事实，但不把整项标为完成、不排上传。已安全停止的本机 RETRYABLE_ERROR 可按同一 operationId 和冻结计划恢复，由 Go 的每输出收据跳过完成文件；RESULT_UNKNOWN 和远程写入仍须对账，不能直接重试。公共任务的 allowedActions 只列当前实现能力；尚不能由浏览器主动触发 Runner 对账的 NEEDS_ACTION 不提供无效 RECONCILE 按钮，Go 重启仍会主动重放未确认收据。
+
 兼容：旧 fixture WRITE_FIXTURE/VERIFY_FIXTURE 不暴露到产品公共 API。旧前端无 mediaSelections 的请求仍默认全部可选项；新增枚举/模型由本轮前端同步消费。已有源站元数据与真实平台适配未验证时，公共返回 UNKNOWN/NEEDS_ACTION，不能用样例自动填充真实目录。
 
 ## 第二部分增量（同一 v1 协议）
