@@ -5,7 +5,7 @@ export default defineConfig({
   workers: 1,
   timeout: 30000,
   use: {
-    baseURL: "http://127.0.0.1:5173",
+    baseURL: "http://127.0.0.1:5181",
     channel: "chrome",
     headless: true,
     viewport: { width: 1440, height: 900 },
@@ -13,9 +13,9 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   webServer: {
-    command: "npm run dev",
-    url: "http://127.0.0.1:5173",
-    reuseExistingServer: true,
+    command: "node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5181 --strictPort",
+    url: "http://127.0.0.1:5181",
+    reuseExistingServer: false,
     timeout: 30000,
   },
   reporter: "list",

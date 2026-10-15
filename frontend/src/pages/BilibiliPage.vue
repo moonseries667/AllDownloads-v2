@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onActivated } from "vue";
+import { ref, computed, watch, onMounted, onActivated, onBeforeUnmount } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   Plus,
@@ -20,12 +20,14 @@ import {
   ArrowUpRight,
 } from "lucide-vue-next";
 import { ElMessageBox } from "element-plus";
-import { api, dataRevision, notifyError, notifySuccess } from "../api/client";
+import { api, dataRevision, isDemo, notifyError, notifySuccess } from "../api/client";
 import type { RecordData, Selection } from "../api/types";
 import { formatDate, duration } from "../format";
 import StatusBadge from "../components/StatusBadge.vue";
 import SelectFilter from "../components/SelectFilter.vue";
 import DownloadPreview from "../components/DownloadPreview.vue";
+import SourceNavigation from "../components/SourceNavigation.vue";
+import PublishedDateFilter from "../components/PublishedDateFilter.vue";
 const route = useRoute(),
   router = useRouter();
 const contents = ref<RecordData[]>([]),
@@ -34,7 +36,7 @@ const contents = ref<RecordData[]>([]),
   q = ref(""),
   type = ref(""),
   state = ref(""),
-  sort = ref("original"),
+  sort = ref("PUBLISHED_DESC"),
   dateFrom = ref(""),
   dateTo = ref(""),
   page = ref(1),
@@ -43,7 +45,6 @@ const contents = ref<RecordData[]>([]),
   error = ref("");
 const selectedIds = ref<string[]>([]),
   querySelection = ref(false),
-  frozenFilters = ref<Record<string, string>>({}),
   frozenIds = ref<string[]>([]),
   exclude = ref<string[]>([]);
 const addOpen = ref(false),
@@ -58,6 +59,13 @@ const detail = ref<RecordData | null>(null),
   alias = ref(""),
   pinned = ref(false),
   editingSource = ref<RecordData | null>(null);
+const sourceSaving = ref(false), sourceError = ref(""), sourceFeedback = ref("");
+const platformSummary = ref<RecordData | null>(null), summaryError = ref("");
+const summaryLabels: Record<string, string> = { ACTIVE: "可用", READY: "可用", AUTH_REQUIRED: "需要登录", NOT_CONFIGURED: "未配置", UNKNOWN: "待确认", RUNNING: "刷新中", QUEUED: "等待刷新", IDLE: "暂无刷新任务", NEEDS_ACTION: "需要处理", FAILED: "刷新失败" };
+async function loadSummary() {
+  try { platformSummary.value = (await api.get("/overview")).bilibili || null; summaryError.value = ""; }
+  catch (e) { platformSummary.value = null; summaryError.value = (e as Error).message; }
+}
 const previewOpen = ref(false),
   previewSelection = ref<Selection>({
     mode: "EXPLICIT",
@@ -71,21 +79,9 @@ const filters = computed(() => ({
   state: state.value,
   from: dateFrom.value,
   to: dateTo.value,
+  sort: sort.value,
 }));
-const filtered = computed(() => {
-  const rows = contents.value.filter(
-    (c) =>
-      (!source.value || c.sourceIds.includes(source.value)) &&
-      (!q.value || c.title.toLowerCase().includes(q.value.toLowerCase())) &&
-      (!type.value || c.type === type.value) &&
-      (!state.value || c.downloadSummary.state === state.value) &&
-      (!dateFrom.value || c.publishedAt >= dateFrom.value) &&
-      (!dateTo.value || c.publishedAt.slice(0, 10) <= dateTo.value),
-  );
-  return sort.value === "published"
-    ? [...rows].sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))
-    : rows;
-});
+const filtered = computed(() => contents.value);
 const visible = computed(() =>
   filtered.value.slice((page.value - 1) * 6, page.value * 6),
 );
@@ -103,7 +99,7 @@ const filterData = [
     key: "type",
     options: [
       { value: "", label: "全部" },
-      { value: "VIDEO", label: "单视频" },
+      { value: "SINGLE", label: "单视频" },
       { value: "MULTIPART", label: "多 P 视频" },
       { value: "SERIES", label: "番剧" },
       { value: "MOVIE", label: "电影" },
@@ -121,31 +117,46 @@ const filterData = [
     ],
   },
 ];
-const kindLabel: Record<string, string> = {
-  FAVORITE: "收藏夹",
-  COLLECTION: "合集",
-  SERIES: "番剧",
-  USER_ADDED: "用户添加",
-  MOVIE: "电影",
-};
+let loadRun = 0;
+async function readPages(path: string, query: Record<string, string> = {}) {
+  const rows: RecordData[] = [], seen = new Set<string>();
+  let cursor = "";
+  do {
+    const params = new URLSearchParams(Object.entries({ ...query, pageSize: "200", cursor }).filter(([, value]) => value !== ""));
+    const result = await api.get(path + "?" + params);
+    rows.push(...result.items);
+    cursor = result.nextCursor || "";
+    if (cursor && seen.has(cursor)) throw new Error("列表分页游标重复，请刷新后重试");
+    seen.add(cursor);
+  } while (cursor);
+  return rows;
+}
 async function load() {
+  const run = ++loadRun;
+  if (dateFrom.value && dateTo.value && dateFrom.value > dateTo.value) { loading.value = false; return; }
   loading.value = true;
   try {
     const [c, s] = await Promise.all([
-      api.get("/bilibili/contents"),
-      api.get("/bilibili/sources"),
+      readPages("/bilibili/contents", { ...filters.value }),
+      readPages("/bilibili/sources"),
     ]);
-    contents.value = c.items;
-    sources.value = s.items;
+    if (run !== loadRun) return;
+    contents.value = c;
+    sources.value = s;
+    page.value = Math.min(page.value, Math.max(1, Math.ceil(c.length / 6)));
     error.value = "";
   } catch (e) {
-    error.value = (e as Error).message;
+    if (run === loadRun) error.value = (e as Error).message;
   } finally {
-    loading.value = false;
+    if (run === loadRun) loading.value = false;
   }
 }
 watch(dataRevision, load);
-watch([source, q, type, state, dateFrom, dateTo], () => (page.value = 1));
+watch(dataRevision, loadSummary);
+watch([source, type, state, dateFrom, dateTo, sort], () => { page.value = 1; load(); });
+let searchTimer: ReturnType<typeof setTimeout>;
+watch(q, () => { page.value = 1; clearTimeout(searchTimer); searchTimer = setTimeout(load, 180); });
+onBeforeUnmount(() => clearTimeout(searchTimer));
 watch(
   () => route.query.q,
   (value) => {
@@ -154,6 +165,7 @@ watch(
   { immediate: true },
 );
 onMounted(load);
+onMounted(loadSummary);
 let refreshed = false;
 onActivated(async () => {
   if (refreshed) return;
@@ -175,7 +187,11 @@ function isSelected(id: string) {
 }
 function toggle(id: string) {
   if (querySelection.value) {
-    if (!frozenIds.value.includes(id)) return;
+    if (!frozenIds.value.includes(id)) {
+      selectedIds.value = [...frozenIds.value.filter(x => !exclude.value.includes(x)), id];
+      querySelection.value = false;
+      return;
+    }
     exclude.value = isSelected(id)
       ? [...exclude.value, id]
       : exclude.value.filter((x) => x !== id);
@@ -183,6 +199,14 @@ function toggle(id: string) {
     selectedIds.value = isSelected(id)
       ? selectedIds.value.filter((x) => x !== id)
       : [...selectedIds.value, id];
+}
+function addSelection(id: string) {
+  if (isSelected(id)) return;
+  if (querySelection.value && !frozenIds.value.includes(id)) {
+    selectedIds.value = frozenIds.value.filter(x => !exclude.value.includes(x));
+    querySelection.value = false;
+  }
+  toggle(id);
 }
 function clear() {
   selectedIds.value = [];
@@ -192,7 +216,6 @@ function clear() {
 }
 function selectAll() {
   querySelection.value = true;
-  frozenFilters.value = { ...filters.value };
   frozenIds.value = filtered.value.map((c) => c.id);
   exclude.value = [];
   selectedIds.value = [];
@@ -202,10 +225,9 @@ function openPreview(id?: string) {
     ? { mode: "EXPLICIT", resource: "BILIBILI_CONTENTS", ids: [id] }
     : querySelection.value
       ? {
-          mode: "QUERY",
+          mode: "EXPLICIT",
           resource: "BILIBILI_CONTENTS",
-          filters: { ...frozenFilters.value },
-          excludeIds: [...exclude.value],
+          ids: frozenIds.value.filter(id => !exclude.value.includes(id)),
         }
       : {
           mode: "EXPLICIT",
@@ -256,18 +278,44 @@ function editSource(s: RecordData) {
   alias.value = s.alias;
   pinned.value = s.pinned;
   sourceOpen.value = true;
+  sourceError.value = "";
+  sourceFeedback.value = "";
 }
-async function saveSource() {
+async function persistSource(changes: RecordData) {
+  if (sourceSaving.value || !editingSource.value) return false;
+  sourceSaving.value = true;
+  sourceError.value = "";
+  sourceFeedback.value = "";
   try {
-    await api.patch(
+    const updated = await api.patch(
       "/bilibili/sources/" + editingSource.value!.id,
-      { alias: alias.value, pinned: pinned.value },
+      changes,
       editingSource.value!.revision,
     );
+    editingSource.value = updated;
+    pinned.value = updated.pinned;
+    sources.value = sources.value.map(s => s.id === updated.id ? updated : s);
+    return true;
+  } catch (e) {
+    sourceError.value = (e as Error).message;
+    // Re-read the persisted value after conflicts or a lost response.
+    try {
+      const latest = (await readPages("/bilibili/sources")).find(s => s.id === editingSource.value!.id);
+      if (latest) { editingSource.value = latest; pinned.value = latest.pinned; }
+    } catch { pinned.value = editingSource.value!.pinned; }
+    notifyError(e);
+    return false;
+  } finally {
+    sourceSaving.value = false;
+  }
+}
+async function changePinned(value: string | number | boolean) {
+  if (await persistSource({ pinned: Boolean(value) })) sourceFeedback.value = pinned.value ? "已置顶，刷新后保留" : "已取消置顶，刷新后保留";
+}
+async function saveSource() {
+  if (await persistSource({ alias: alias.value })) {
     sourceOpen.value = false;
     notifySuccess("来源显示设置已更新");
-  } catch (e) {
-    notifyError(e);
   }
 }
 async function removeSource() {
@@ -297,11 +345,14 @@ async function removeSource() {
   <div class="bilibili-page">
     <div class="page-header">
       <div>
-        <div class="page-eyebrow">内容库 / BILIBILI</div>
-        <h1 class="page-title">收藏值得留下的内容</h1>
-        <p class="page-subtitle">
-          浏览信息，按需下载。每一份内容，都有独立的归档记录。
-        </p>
+        <h1 class="page-title bilibili-heading">Bilibili <span v-if="isDemo" class="demo-indicator">隔离演示</span></h1>
+        <div class="platform-summary" aria-label="Bilibili 摘要" aria-live="polite">
+          <span>账号 <strong>{{ summaryLabels[platformSummary?.accountState] || '待确认' }}</strong></span>
+          <span>资料 <strong>{{ summaryLabels[platformSummary?.refreshState] || '状态未知' }}</strong></span>
+          <span>已下载 <strong>{{ platformSummary?.downloadCount ?? '—' }}</strong></span>
+          <span>已归档 <strong>{{ platformSummary?.archiveCount ?? '—' }}</strong></span>
+        </div>
+        <p v-if="summaryError" class="text-danger" role="status">摘要暂不可用：{{ summaryError }}</p>
       </div>
       <div class="toolbar">
         <el-button :icon="RefreshCw" @click="refresh">刷新信息</el-button
@@ -324,68 +375,7 @@ async function removeSource() {
       :closable="false"
     />
     <div class="library-layout">
-      <aside class="source-panel">
-        <div class="source-heading">
-          我的来源<span>{{ sources.length }}</span>
-        </div>
-        <button
-          class="source-link"
-          :class="{ selected: !source }"
-          @click="source = ''"
-        >
-          <Library :size="17" /><span>全部内容</span
-          ><small>{{ contents.length }}</small>
-        </button>
-        <template
-          v-for="kind in [
-            'FAVORITE',
-            'COLLECTION',
-            'SERIES',
-            'USER_ADDED',
-            'MOVIE',
-          ]"
-          :key="kind"
-          ><div class="source-group">{{ kindLabel[kind] }}</div>
-          <div
-            v-for="s in sources
-              .filter((x) => x.kind === kind)
-              .sort((a, b) => Number(b.pinned) - Number(a.pinned))"
-            :key="s.id"
-            class="source-row"
-          >
-            <button
-              class="source-link"
-              :class="{ selected: source === s.id }"
-              @click="source = s.id"
-            >
-              <component
-                :is="
-                  kind === 'FAVORITE'
-                    ? FolderHeart
-                    : kind === 'SERIES'
-                      ? Clapperboard
-                      : Layers
-                "
-                :size="16"
-              /><span>{{ s.alias || s.title }}</span
-              ><Pin v-if="s.pinned" :size="12" /></button
-            ><button
-              class="source-edit icon-button"
-              :aria-label="'设置来源 ' + s.title"
-              @click="editSource(s)"
-            >
-              <Settings2 :size="14" />
-            </button>
-          </div>
-          <p v-if="!sources.some((s) => s.kind === kind)" class="source-empty">
-            尚未添加
-          </p></template
-        >
-        <div class="source-hint">
-          <Info :size="17" />
-          <p>添加和刷新来源只收录信息，下载由你决定。</p>
-        </div>
-      </aside>
+      <SourceNavigation v-model="source" :sources="sources" @edit="editSource" />
       <section class="library-content">
         <div class="content-toolbar">
           <h2>
@@ -427,32 +417,13 @@ async function removeSource() {
           "
         />
         <div class="filter-secondary">
-          <div class="toolbar">
-            <label
-              >发布于
-              <input
-                type="date"
-                v-model="dateFrom"
-                aria-label="发布时间起始日期" /></label
-            ><span>—</span
-            ><input
-              type="date"
-              v-model="dateTo"
-              aria-label="发布时间结束日期"
-            /><el-button
-              link
-              @click="
-                dateFrom = '';
-                dateTo = '';
-              "
-              >清除日期</el-button
-            >
-          </div>
-          <el-select v-model="sort" aria-label="排序方式" style="width: 135px"
-            ><el-option label="原站顺序" value="original" /><el-option
-              label="最新发布"
-              value="published"
-          /></el-select>
+          <PublishedDateFilter v-model:from="dateFrom" v-model:to="dateTo" />
+          <el-select v-model="sort" aria-label="排序方式" class="sort-select">
+            <el-option label="标题正序" value="TITLE_ASC" />
+            <el-option label="标题逆序" value="TITLE_DESC" />
+            <el-option label="最新视频" value="PUBLISHED_DESC" />
+            <el-option label="最早视频" value="PUBLISHED_ASC" />
+          </el-select>
         </div>
         <div class="library-meta">
           <span
@@ -469,7 +440,7 @@ async function removeSource() {
             link
             type="primary"
             @click="selectAll"
-            :disabled="!filtered.length"
+            :disabled="!filtered.length || loading || !!error || (!!dateFrom && !!dateTo && dateFrom > dateTo)"
             >全选筛选结果（{{ filtered.length }}）</el-button
           >
         </div>
@@ -483,62 +454,59 @@ async function removeSource() {
             :key="c.id"
             class="video-card"
             :class="{ chosen: isSelected(c.id) }"
+            @click="addSelection(c.id)"
           >
             <div class="video-cover">
-              <a
-                :href="c.originalUrl"
-                target="_blank"
-                rel="noopener noreferrer"
-                :aria-label="'在 B 站打开 ' + c.title"
-                ><img :src="c.coverUrl" :alt="c.title + ' · 演示封面'" /><span
-                  class="cover-external"
-                  ><ArrowUpRight :size="18" /></span></a
-              ><button
+              <img v-if="c.coverUrl" :src="c.coverUrl" :alt="c.title + '封面'" />
+              <span v-else class="cover-placeholder">暂无封面</span>
+              <button
                 class="cover-checkbox"
                 :aria-label="'选择 ' + c.title"
                 :aria-pressed="isSelected(c.id)"
-                @click="toggle(c.id)"
+                @click.stop="toggle(c.id)"
               >
                 <Check v-if="isSelected(c.id)" :size="15" /></button
               ><span class="video-duration">{{
-                duration(c.durationSeconds)
+                c.durationSeconds == null ? '时长未知' : duration(c.durationSeconds)
               }}</span
               ><span class="part-tag" v-if="c.downloadSummary.totalCount > 1"
-                >{{ c.type === "SERIES" ? "剧集" : "多 P" }} ·
+                >{{ c.kind === "SERIES" ? "剧集" : c.kind === "MOVIE" ? "版本" : "多 P" }} ·
                 {{ c.downloadSummary.totalCount }}</span
               >
             </div>
             <div class="video-info">
               <a
                 class="video-title"
+                @click.stop
                 :href="c.originalUrl"
                 target="_blank"
                 rel="noopener noreferrer"
                 >{{ c.title }}</a
               >
               <div class="video-author">
-                {{ c.author
+                {{ (typeof c.author === 'string' ? c.author : c.author?.name) || '作者未知'
                 }}<span>{{
                   sources.find((s) => c.sourceIds.includes(s.id))?.alias ||
                   sources.find((s) => c.sourceIds.includes(s.id))?.title ||
                   "用户添加"
                 }}</span>
               </div>
+              <p class="video-published">发布于 {{ c.publishedAt ? formatDate(c.publishedAt).slice(0, 10) : '未知日期' }}</p>
               <div class="video-status">
-                <StatusBadge :state="c.downloadSummary.state" /><span
+                <StatusBadge :state="c.downloadSummary.state" :label="c.downloadSummary.state === 'VERIFIED' ? '已下载' : undefined" /><span
                   v-if="c.archiveSummary.state !== 'NOT_REQUESTED'"
                   class="archive-mini"
-                  >云端：<StatusBadge :state="c.archiveSummary.state"
+                  >云端：<StatusBadge :state="c.archiveSummary.state" :label="c.archiveSummary.state === 'VERIFIED' ? '已归档' : undefined"
                 /></span>
               </div>
               <div class="video-actions">
-                <el-button link :icon="Info" @click="showDetail(c)"
+                <el-button link :icon="Info" @click.stop="showDetail(c)"
                   >详情</el-button
                 ><el-button
                   link
                   type="primary"
                   :icon="Download"
-                  @click="openPreview(c.id)"
+                  @click.stop="openPreview(c.id)"
                   >下载</el-button
                 >
               </div>
@@ -608,17 +576,17 @@ async function removeSource() {
       ><label class="field-label">显示别名</label
       ><el-input v-model="alias" placeholder="保留原名称时留空" />
       <div class="setting-inline">
-        <span>置顶来源</span
-        ><el-switch v-model="pinned" aria-label="置顶来源" />
+        <span>置顶来源</span><el-switch :model-value="pinned" :loading="sourceSaving" :disabled="sourceSaving" aria-label="置顶来源" @change="changePinned" />
       </div>
-      <p class="muted">此处只管理来源关系和显示属性。</p>
-      <template #footer
-        ><el-button type="danger" plain @click="removeSource"
+      <p v-if="sourceSaving" role="status">正在保存来源设置…</p>
+      <p v-if="sourceFeedback" class="text-primary" role="status">{{ sourceFeedback }}</p>
+      <p v-if="sourceError" class="text-danger" role="alert">{{ sourceError }}</p>
+      <p class="muted">置顶立即保存，别名点击保存后生效。</p>
+      <template #footer><div class="source-dialog-actions">
+        <el-button type="danger" plain :disabled="sourceSaving" @click="removeSource"
           >移除来源</el-button
         ><el-button @click="sourceOpen = false">取消</el-button
-        ><el-button type="primary" @click="saveSource"
-          >保存</el-button
-        ></template
+        ><el-button type="primary" :loading="sourceSaving" @click="saveSource">保存</el-button></div></template
       ></el-dialog
     >
     <el-drawer v-model="detailOpen" title="内容详情" size="520px"
