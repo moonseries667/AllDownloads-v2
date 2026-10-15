@@ -2,6 +2,8 @@
 
 基线为 `6233234` 中 [第二部分增量](FEEDBACK-PART1.md#第二部分增量同一-v1-协议)。本文件明确完整组、根目录和错误恢复的边界，不创建另一套 API。既有字段和第一部分模型继续适用。共同输入样例见 [feedback2.examples.json](feedback2.examples.json)。
 
+扫描、目录、分享请求与结果的精确 payload 结构见 [feedback2.schema.json](feedback2.schema.json)，引用已有 runner schema 的共享模型；不把根协议中允许任意对象的占位结构当作字段校验。
+
 ## Telegram
 
 - `externalId` 为消息的正十进制 ID，`afterMessageId`、`scannedThroughMessageId` 为非负十进制 ID，按数值比较，不按字符串排序。附件 `externalId` 在所属消息内稳定；业务身份由账号、消息、附件共同限定。单消息 `groupId=null` 且 `groupComplete=true`。

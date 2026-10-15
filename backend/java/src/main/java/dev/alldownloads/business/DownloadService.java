@@ -17,6 +17,8 @@ public final class DownloadService {
     private DownloadManagement management;
     private StorageSettings storageSettings;
     public void management(DownloadManagement value,StorageSettings settings) {management=value;storageSettings=settings;}
+    private dev.alldownloads.feedback2.QuarkCatalog quark;
+    public void useQuark(dev.alldownloads.feedback2.QuarkCatalog value) {quark=value;}
     public DownloadService(BusinessStore store,CatalogService catalog,OperationQueue queue) {this.store=store;this.catalog=catalog;this.queue=queue;paths=new PathPlanner(store);}
     public void configureDefault(String path) throws SQLException {
         ObjectNode old=store.optional("target","default");
@@ -48,6 +50,7 @@ public final class DownloadService {
         if(!text(target,"status").equals("VALID"))throw new Failure(422,"INVALID_STORAGE_ROOT","下载目录尚未通过执行程序验证");return target;
     }
     public ObjectNode preview(JsonNode request) throws SQLException {
+        if(required(request,"platform").equals("QUARK"))return quarkPreview(request);
         if(!required(request,"platform").equals("BILIBILI"))throw Failure.bad("INVALID_INPUT","当前提供方仅支持 Bilibili 预览");
         ObjectNode target=selectedTarget(request);JsonNode selection=request.path("selection");String resource=required(selection,"resource"),mode=required(selection,"mode");
         if(!Set.of("BILIBILI_CONTENTS","BILIBILI_PARTS").contains(resource))throw Failure.bad("INVALID_INPUT","Unsupported selection resource");
@@ -136,7 +139,9 @@ public final class DownloadService {
         String[] prior=store.row("SELECT body FROM objects WHERE kind='order' AND json_extract(body,'$.previewId')=?",previewId);if(prior!=null) {JsonNode order=parse(prior[0]);return object("orderId",order.path("id"),"projectIds",order.path("projectIds"),"taskIds",order.path("taskIds"),"reused",true);}
         if(!text(preview,"status").equals("READY"))throw Failure.conflict("PREVIEW_EXPIRED");JsonNode target=preview.path("target");ObjectNode current=store.get("target",text(target,"id"));
         if(!current.equals(target)||text(target,"id").equals("default")&&!text(preview,"storageRevision").equals(text(store.get("target","default"),"revision")))throw Failure.conflict("STORAGE_CHANGED");
-        List<JsonNode> items=list(preview.path("items"));for(JsonNode item:items)if(!text(store.get("content",text(item,"contentId")),"revision").equals(text(item,"version")))throw Failure.conflict("VERSION_CHANGED");
+        List<JsonNode> items=list(preview.path("items"));
+        if(text(preview,"platform").equals("QUARK"))quark.validateFrozen(store.get("previewNodes",previewId).path("nodes"));
+        else for(JsonNode item:items)if(!text(store.get("content",text(item,"contentId")),"revision").equals(text(item,"version")))throw Failure.conflict("VERSION_CHANGED");
         if(items.stream().allMatch(i->text(i,"decision").equals("BLOCKED")))throw new Failure(422,"EMPTY_SELECTION","所有选项都暂不可下载");
         Map<String,JsonNode> plans=new HashMap<>();for(JsonNode plan:store.get("previewPlans",previewId).path("plans"))plans.put(text(plan,"itemId"),plan);
         Set<String> tasks=new LinkedHashSet<>();
@@ -153,12 +158,14 @@ public final class DownloadService {
                 missing.add(output);
             }
             if(missing.isEmpty())continue;
-            Set<String> neededTracks=new HashSet<>();missing.forEach(o->neededTracks.addAll(strings(o.path("trackIds"))));List<JsonNode> units=new ArrayList<>();for(JsonNode u:payload.path("units")) {ObjectNode unit=(ObjectNode)u.deepCopy();unit.set("tracks",array(list(u.path("tracks")).stream().filter(t->neededTracks.contains(text(t,"id"))).toList()));if(!unit.path("tracks").isEmpty())units.add(unit);}
-            payload.set("outputs",array(missing));payload.set("units",array(units));
-            String task=queue.enqueue("DOWNLOAD_MEDIA","BILIBILI",text(plan,"key"),plan.path("destination"),text(preview,"storageRevision"),payload);store.put("taskTarget",task,target);tasks.add(task);
+            if(text(preview,"platform").equals("BILIBILI")) {
+                Set<String> neededTracks=new HashSet<>();missing.forEach(o->neededTracks.addAll(strings(o.path("trackIds"))));List<JsonNode> units=new ArrayList<>();for(JsonNode u:payload.path("units")) {ObjectNode unit=(ObjectNode)u.deepCopy();unit.set("tracks",array(list(u.path("tracks")).stream().filter(t->neededTracks.contains(text(t,"id"))).toList()));if(!unit.path("tracks").isEmpty())units.add(unit);}payload.set("units",array(units));
+            } else {Set<String> ids=new HashSet<>();missing.forEach(o->ids.add(text(o,"nodeId")));payload.set("nodes",array(list(payload.path("nodes")).stream().filter(n->ids.contains(text(n,"id"))).toList()));}
+            payload.set("outputs",array(missing));
+            String task=queue.enqueue("DOWNLOAD_MEDIA",text(preview,"platform"),text(plan,"key"),plan.path("destination"),text(preview,"storageRevision"),payload);if(plan.hasNonNull("accountRef"))queue.account(task,text(plan,"accountRef"));store.put("taskTarget",task,target);tasks.add(task);
             for(JsonNode output:missing)store.update("INSERT INTO output_claims VALUES(?,?,?) ON CONFLICT(root_id,output_id) DO UPDATE SET task_id=excluded.task_id",text(target,"rootId"),text(output,"id"),task);
         }
-        String orderId=id();ObjectNode order=object("id",orderId,"previewId",previewId,"status",tasks.isEmpty()?"SUCCEEDED":"QUEUED","target",target,"archivePolicy",preview.path("archivePolicy"),"items",items,"taskIds",tasks,"createdAt",store.now());store.put("order",orderId,order);List<String> projects=management.registerOrder(order);return object("orderId",orderId,"projectIds",projects,"taskIds",tasks,"reused",tasks.isEmpty());
+        String orderId=id();ObjectNode order=object("id",orderId,"previewId",previewId,"platform",preview.path("platform"),"status",tasks.isEmpty()?"SUCCEEDED":"QUEUED","target",target,"archivePolicy",preview.path("archivePolicy"),"items",items,"taskIds",tasks,"createdAt",store.now());store.put("order",orderId,order);List<String> projects=management.registerOrder(order);return object("orderId",orderId,"projectIds",projects,"taskIds",tasks,"reused",tasks.isEmpty());
     }
     public void downloadResult(JsonNode operation,JsonNode result) throws SQLException {
         recordDownloadFiles(operation,result,true);
@@ -175,13 +182,36 @@ public final class DownloadService {
             ObjectNode record=object("id",outputId,"contentId",payload.path("contentId"),"contentRevision",payload.path("contentRevision"),"trackIds",output.path("trackIds"),"target",target,"output",output,"evidence",file,"localState","VERIFIED","archiveState","NOT_REQUESTED","archivePolicy",payload.path("archivePolicy"),"operationId",operation.path("operationId"));files.add(record);
         }
         for(JsonNode file:files)store.put("file",text(operation.path("destination"),"rootId")+":"+text(file,"id"),file);
-        updateContentSummary(text(payload,"contentId"));
+        if(text(operation,"platform").equals("BILIBILI"))updateContentSummary(text(payload,"contentId"));
+        else if(text(operation,"platform").equals("QUARK")&&complete)quark.downloadVerified(payload.path("nodes"));
         for(JsonNode warning:result.path("warnings"))if(warning.isTextual())queue.issue(text(operation,"taskId"),text(payload,"contentId"),"SUPPLEMENT_WARNING","WARNING");
     }
     private void updateContentSummary(String contentId) throws SQLException {
         ObjectNode content=store.get("content",contentId);Set<String> expected=new HashSet<>(),actual=new HashSet<>();for(JsonNode unit:content.path("mediaUnits"))for(JsonNode track:unit.path("tracks"))if(track.path("available").asBoolean())expected.add(text(track,"id"));
         for(JsonNode file:store.all("file"))if(text(file,"contentId").equals(contentId)&&text(file,"contentRevision").equals(text(content,"revision"))&&text(file,"localState").equals("VERIFIED"))actual.addAll(strings(file.path("trackIds")));
         content.set("downloadSummary",object("state",!expected.isEmpty()&&actual.containsAll(expected)?"VERIFIED":actual.isEmpty()?"NOT_REQUESTED":"PARTIAL","completedTracks",actual.size(),"totalTracks",expected.size()));store.put("content",contentId,content);
+    }
+    public ObjectNode defaultTarget() throws SQLException {return selectedTarget(object());}
+    public String savedDownload(String key,String account,ObjectNode payload) throws SQLException {
+        ObjectNode target=defaultTarget();String relative=required(payload.path("outputs").get(0),"relativePath");relative=relative.substring(0,relative.lastIndexOf('/'));
+        String task=queue.enqueue("DOWNLOAD_MEDIA","TELEGRAM",key,object("rootId",target.path("rootId"),"rootPath",target.path("path"),"relativePath",relative),text(target,"revision"),payload);queue.account(task,account);store.put("taskTarget",task,target);
+        for(var o:payload.path("outputs"))store.update("INSERT INTO output_claims VALUES(?,?,?) ON CONFLICT(root_id,output_id) DO UPDATE SET task_id=excluded.task_id",text(target,"rootId"),text(o,"id"),task);return task;
+    }
+    private ObjectNode quarkPreview(JsonNode request) throws SQLException {
+        JsonNode selection=request.path("selection");if(!required(selection,"resource").equals("QUARK_NODES")||selection.has("mediaSelections"))throw Failure.bad("INVALID_INPUT","夸克清单只接受网盘节点选择");
+        String mode=required(selection,"mode"),share=null;Set<String> ids=null,exclude=selection.has("excludeIds")?new HashSet<>(strings(selection.path("excludeIds"))):Set.of();
+        if(mode.equals("EXPLICIT"))ids=new LinkedHashSet<>(strings(selection.path("ids")));else if(mode.equals("QUERY")){share=required(selection.path("filters"),"shareId");if(selection.path("filters").size()!=1)throw Failure.bad("INVALID_INPUT","Unsupported Quark filter");}else throw Failure.bad("INVALID_INPUT","Unsupported selection mode");
+        ObjectNode target=selectedTarget(request);var nodes=quark.expand(ids,share,exclude);List<JsonNode> items=new ArrayList<>(),plans=new ArrayList<>();
+        for(var raw:nodes) {
+            ObjectNode node=((ObjectNode)raw).deepCopy();String planned=quark.localPath(node);node.remove("plannedRelativePath");String shareId=required(node,"shareId");ObjectNode owner=quark.share(shareId);
+            String identity=PathPlanner.digest("quark:"+shareId+":"+text(node,"id")+":"+text(node,"version"));String path=paths.output(identity,planned);
+            ObjectNode output=object("id",identity,"nodeId",node.path("id"),"relativePath",path,"trackIds",List.of(),"kind","FILE","sizeBytes",node.path("sizeBytes"));
+            ObjectNode item=object("id",identity,"contentId",null,"shareId",shareId,"projectTitle",owner.path("title"),"partId",null,"nodeId",node.path("id"),"title",node.path("name"),"version",node.path("version"),"relativePath",path,"sizeBytes",node.path("sizeBytes"),"decision","DOWNLOAD","reasonCode","PENDING_DOWNLOAD","reason","尚未下载所选文件","actionLabel","下载所选文件","selectedTrackIds",List.of(),"mergePolicy","SEPARATE","outputs",List.of(output),"downloadState","NOT_REQUESTED","archiveState","NOT_REQUESTED");classify(item,node,node,target);items.add(item);
+            ObjectNode payload=object("schemaVersion",1,"shareId",shareId,"nodes",List.of(node),"outputs",List.of(output),"archivePolicy",target.path("archivePolicy"));
+            plans.add(object("itemId",identity,"key",planKey(item,target),"accountRef",owner.path("accountId"),"destination",object("rootId",target.path("rootId"),"rootPath",target.path("path"),"relativePath","Quark/"+text(owner,"shareFolderKey")),"payload",payload));
+        }
+        String id=id();ObjectNode preview=object("id",id,"status","READY","platform","QUARK","expiresAt",store.clock.instant().plusSeconds(600).toString(),"storageRevision",store.get("target","default").path("revision"),"target",target,"archivePolicy",target.path("archivePolicy"),"items",items,"summary",object("download",count(items,"DOWNLOAD"),"reuse",count(items,"REUSE"),"blocked",count(items,"BLOCKED"),"total",items.size()),"warnings",List.of());
+        store.put("preview",id,preview);store.put("previewPlans",id,object("plans",plans));store.put("previewNodes",id,object("nodes",nodes));return object("previewId",id,"taskId",null);
     }
     public ObjectNode order(String id) throws SQLException {ObjectNode order=store.get("order",id);List<String> states=new ArrayList<>();for(String task:strings(order.path("taskIds")))states.add(text(store.get("task",task),"status"));boolean blocked=list(order.path("items")).stream().anyMatch(i->text(i,"decision").equals("BLOCKED"));String state=states.isEmpty()||states.stream().allMatch("SUCCEEDED"::equals)?blocked?"PARTIAL":"SUCCEEDED":states.stream().anyMatch(s->Set.of("FAILED","NEEDS_ACTION").contains(s))?"NEEDS_ACTION":states.stream().anyMatch("RUNNING"::equals)?"RUNNING":states.getFirst();order.put("status",state);return management.enrichOrder(order);}
 }

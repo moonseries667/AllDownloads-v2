@@ -5,6 +5,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -44,7 +45,7 @@ class TaskStoreProcessTest {
             assertTrue(child.isAlive());
             child.destroyForcibly();
             assertTrue(child.waitFor(5, TimeUnit.SECONDS));
-            try (TaskStore reopened = reopenAfterExit(database)) {
+            try (TaskStore reopened = reopenAfterTermination(database)) {
                 Task restored = reopened.get(id);
                 assertEquals(Status.QUEUED, restored.status());
                 assertEquals("process-storage-revision", restored.request().storageRevision());
@@ -55,14 +56,15 @@ class TaskStoreProcessTest {
         }
     }
 
-    private static TaskStore reopenAfterExit(Path database) throws Exception {
+    private static TaskStore reopenAfterTermination(Path database) throws Exception {
+        // Windows may signal the terminated process before releasing its file locks.
+        // Verify eventual release within a fixed deadline; every other I/O failure remains fatal.
         long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(5);
         while(true) {
             try {return new TaskStore(database,Clock.fixed(Instant.parse("2026-10-15T00:00:00Z"),ZoneOffset.UTC));}
-            catch(java.io.IOException failure) {
-                // Process termination and the release of its Windows file handles need not be observed together.
-                if(!"Control directory is already in use".equals(failure.getMessage())||System.nanoTime()>=deadline)throw failure;
-                Thread.sleep(50);
+            catch(IOException e) {
+                if(!"Control directory is already in use".equals(e.getMessage())||System.nanoTime()>=deadline)throw e;
+                Thread.sleep(25);
             }
         }
     }

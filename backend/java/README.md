@@ -7,6 +7,13 @@
 `ManagementFlowTest` 覆盖精确 contentId/分页、共享消费者取消、运行停止确认、部分发布、完成竞争、失联对账、重启、显式新批次补齐与上传冻结；`StorageSettingsTest` 覆盖原生取消/不可用/迟到结果、设置冲突、Drive 重名/分页/权限变化；`ManagementHttpTest` 使用真实回环 HTTP 并生成 schema 校验样本。它们使用合成执行事实，不能替代实际 Go 文件执行或原生弹框。
 
 第三部分 schema 复现：在项目隔离 Python 环境安装 `tests/integration/requirements.txt`，仓库根目录运行 `python tests/integration/validate_contracts.py backend/java/target/contract-captures.json backend/java/target/runner-capture.json backend/java/target/management-captures.json`。先执行下述 Maven verify 生成样本。原生 Windows 对话框、真实 Drive、Y7000P 部署与长期运行不在本轮已验收范围。
+## 第二部分领域模块（接入前）
+
+契约基线 `6233234`，完整组与目标边界补充 `9e7886f`。`dev.alldownloads.feedback2` 使用调用方的 SQLite Connection 和事务，不新建业务数据库、HTTP 服务或平台调度器。`TelegramLibrary` 保存原始扫描事实、完整组资格与待处理单元，最终扫描页通过 Enqueue 接入公共操作队列；`IssueRepository` 提供稳定持久问题；`QuarkCatalog` 核验节点父链、冻结转存目标和展开文件版本。普通构造和查询不扫描平台。
+
+开工核验 B10/B11/B12 均只有契约，未有 Java 实现；现已新增上述领域能力和 `DomainBehaviorTest` 的 12 项 SQLite 用例。Maven verify 共 22 项通过，包括原核心恢复测试。公共 HTTP、订单快照和 Runner 接入等待第一部分已完成提交；此处不把领域测试称作集成通过。Carbon 上只用合成数据，真实 Telegram、夸克、Y7000P 与持续运行均未验证。
+
+本机验证使用既有项目 Maven 3.9.16 缓存，临时 settings 仅选择已缓存的 aliyun-public 仓库；Java 21。沙盒访问旧缓存 JAR 的 toRealPath 被拒绝，因此该次离线 verify 经准确范围审批执行。未修改系统 Java、Maven 或代理。
 
 Java 21 独占产品 SQLite、公共 HTTP、媒体选择和路径计划；Go 独占平台访问、目录探测与文件执行。第一部分契约提交为 `d508c7a`，见 [增量语义](../../contracts/FEEDBACK-PART1.md)、[OpenAPI](../../contracts/openapi.yaml) 和 [Runner schema](../../contracts/runner.schema.json)。旧 M1 `TaskStore` 与 fixture 测试保留，产品入口使用 `BusinessStore`/`OperationQueue`，不启动第二套队列。
 
