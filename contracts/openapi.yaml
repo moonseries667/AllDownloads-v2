@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "AllDownloads feedback part 1",
-    "version": "1.2.0"
+    "version": "1.3.0"
   },
   "servers": [
     {
@@ -998,6 +998,63 @@
             }
           }
         }
+      },
+      "patch": {
+        "operationId": "saveSettings",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Persisted state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "validationId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "validationId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
       }
     },
     "/download-previews": {
@@ -1417,7 +1474,39 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "platform",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "contentId",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ]
       }
     },
     "/download-orders/{id}": {
@@ -2189,6 +2278,838 @@
                     "data",
                     "requestId"
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/download-projects": {
+      "get": {
+        "operationId": "downloadProjects",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "platform",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "contentId",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Persisted state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/DownloadProject"
+                          }
+                        },
+                        "nextCursor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "total": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "nextCursor",
+                        "total"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/download-projects/{id}": {
+      "get": {
+        "operationId": "downloadProject",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Persisted state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DownloadProject"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/download-projects/{id}/actions": {
+      "post": {
+        "operationId": "cancelDownloadProject",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Persisted state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DownloadProject"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "const": "CANCEL"
+                  }
+                },
+                "required": [
+                  "action"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/download-projects/{id}/items/{itemId}/actions": {
+      "post": {
+        "operationId": "cancelDownloadChild",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "itemId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Persisted state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DownloadChild"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "const": "CANCEL"
+                  }
+                },
+                "required": [
+                  "action"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/archives": {
+      "get": {
+        "operationId": "archives",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "platform",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "contentId",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Persisted state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ArchiveUpload"
+                          }
+                        },
+                        "nextCursor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "total": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "nextCursor",
+                        "total"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/directory-selections": {
+      "post": {
+        "operationId": "selectNativeDirectory",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Persisted state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "selectionId": {
+                          "type": "string"
+                        },
+                        "taskId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "selectionId",
+                        "taskId"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/directory-selections/{id}": {
+      "get": {
+        "operationId": "directorySelection",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Persisted state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DirectorySelection"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/directory-selections/{id}/cancel": {
+      "post": {
+        "operationId": "cancelDirectorySelection",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Persisted state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DirectorySelection"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/settings/validate": {
+      "post": {
+        "operationId": "validateSettings",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Persisted state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "validationId": {
+                          "type": "string"
+                        },
+                        "taskId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "validationId",
+                        "taskId"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "downloadTarget": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "revision": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "revision"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "archiveDestination": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "accountId": {
+                            "type": "string"
+                          },
+                          "folderId": {
+                            "type": "string"
+                          },
+                          "revision": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "accountId",
+                          "folderId",
+                          "revision"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "downloadTarget",
+                  "archiveDestination"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/settings/validations/{id}": {
+      "get": {
+        "operationId": "settingsValidation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Persisted state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/SettingsValidation"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/drive/folders": {
+      "get": {
+        "operationId": "driveFolders",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "accountId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "parentId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Persisted state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/DriveFolder"
+                          }
+                        },
+                        "nextCursor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "total": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "parent": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/components/schemas/DriveFolder"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "breadcrumbs": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/DriveFolder"
+                          }
+                        },
+                        "status": {
+                          "enum": [
+                            "LOADING",
+                            "READY",
+                            "NEEDS_ACTION"
+                          ]
+                        },
+                        "taskId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "error": {
+                          "type": [
+                            "object",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "nextCursor",
+                        "total",
+                        "parent",
+                        "breadcrumbs",
+                        "status",
+                        "taskId",
+                        "error"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -3050,6 +3971,18 @@
           },
           "createdAt": {
             "type": "string"
+          },
+          "projectIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DownloadProject"
+            }
           }
         },
         "required": [
@@ -3583,6 +4516,563 @@
           "authorTags",
           "channel"
         ]
+      },
+      "DriveTarget": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "folderId": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "folderId",
+          "revision",
+          "name",
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "DriveFolder": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "accountId": {
+            "type": "string"
+          },
+          "parentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "const": "FOLDER"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "selectable": {
+            "type": "boolean"
+          },
+          "availability": {
+            "type": "string"
+          },
+          "availabilityReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "parentId",
+          "name",
+          "kind",
+          "revision",
+          "selectable",
+          "availability",
+          "availabilityReason",
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "ArtifactFile": {
+        "type": "object",
+        "properties": {
+          "outputId": {
+            "type": "string"
+          },
+          "relativePath": {
+            "type": "string"
+          },
+          "sizeBytes": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "mediaKinds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "verified": {
+            "const": true
+          }
+        },
+        "required": [
+          "outputId",
+          "relativePath",
+          "sizeBytes",
+          "sha256",
+          "verified"
+        ],
+        "additionalProperties": false
+      },
+      "Summary": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "completed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "running": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "failed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cancelled": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pending": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "total",
+          "completed",
+          "running",
+          "failed",
+          "cancelled",
+          "pending"
+        ],
+        "additionalProperties": false
+      },
+      "DownloadChild": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "contentId": {
+            "type": "string"
+          },
+          "partId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "attachmentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "nodeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "QUEUED",
+              "RUNNING",
+              "PAUSING",
+              "PAUSED",
+              "WAITING_RETRY",
+              "NEEDS_ACTION",
+              "SUCCEEDED",
+              "FAILED",
+              "CANCELLED",
+              "PARTIAL"
+            ]
+          },
+          "desiredAction": {
+            "enum": [
+              "CONTINUE",
+              "PAUSE",
+              "CANCEL"
+            ]
+          },
+          "allowedActions": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "PAUSE",
+                "RESUME",
+                "CANCEL",
+                "RETRY",
+                "RECONCILE"
+              ]
+            }
+          },
+          "actionReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "taskIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "contentId",
+          "partId",
+          "attachmentId",
+          "nodeId",
+          "title",
+          "revision",
+          "status",
+          "desiredAction",
+          "allowedActions",
+          "actionReason",
+          "taskIds",
+          "outputs",
+          "files"
+        ],
+        "additionalProperties": false
+      },
+      "DownloadProject": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "batchId": {
+            "type": "string"
+          },
+          "platform": {
+            "enum": [
+              "BILIBILI",
+              "TELEGRAM",
+              "QUARK"
+            ]
+          },
+          "contentId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "QUEUED",
+              "RUNNING",
+              "PAUSING",
+              "PAUSED",
+              "WAITING_RETRY",
+              "NEEDS_ACTION",
+              "SUCCEEDED",
+              "FAILED",
+              "CANCELLED",
+              "PARTIAL"
+            ]
+          },
+          "desiredAction": {
+            "enum": [
+              "CONTINUE",
+              "PAUSE",
+              "CANCEL"
+            ]
+          },
+          "allowedActions": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "PAUSE",
+                "RESUME",
+                "CANCEL",
+                "RETRY",
+                "RECONCILE"
+              ]
+            }
+          },
+          "actionReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "target": {
+            "type": "object"
+          },
+          "archivePolicy": {
+            "enum": [
+              "AUTO",
+              "NONE"
+            ]
+          },
+          "archiveTarget": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DriveTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summary": {
+            "$ref": "#/components/schemas/Summary"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DownloadChild"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "batchId",
+          "platform",
+          "contentId",
+          "title",
+          "revision",
+          "status",
+          "desiredAction",
+          "allowedActions",
+          "actionReason",
+          "createdAt",
+          "target",
+          "archivePolicy",
+          "archiveTarget",
+          "summary",
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "ArchiveUpload": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "batchId": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "QUEUED",
+              "RUNNING",
+              "PAUSING",
+              "PAUSED",
+              "WAITING_RETRY",
+              "NEEDS_ACTION",
+              "SUCCEEDED",
+              "FAILED",
+              "CANCELLED",
+              "PARTIAL"
+            ]
+          },
+          "revision": {
+            "type": "string"
+          },
+          "desiredAction": {
+            "type": "string"
+          },
+          "allowedActions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "progress": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "target": {
+            "$ref": "#/components/schemas/DriveTarget"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "batchId",
+          "platform",
+          "title",
+          "status",
+          "revision",
+          "desiredAction",
+          "allowedActions",
+          "progress",
+          "target",
+          "files",
+          "taskId",
+          "createdAt",
+          "error"
+        ],
+        "additionalProperties": false
+      },
+      "DirectorySelection": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "PENDING",
+              "SELECTED",
+              "CANCELLED",
+              "UNAVAILABLE"
+            ]
+          },
+          "targetId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "targetId",
+          "error"
+        ],
+        "additionalProperties": false
+      },
+      "SettingsValidation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "VALIDATING",
+              "VALID",
+              "INVALID"
+            ]
+          },
+          "downloadTarget": {
+            "type": "object"
+          },
+          "archiveDestination": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DriveTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "status",
+          "downloadTarget",
+          "archiveDestination",
+          "error"
+        ],
+        "additionalProperties": false
       }
     }
   }
