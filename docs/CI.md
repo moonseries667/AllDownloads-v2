@@ -9,6 +9,7 @@
 | 检查 | 行为 |
 | --- | --- |
 | Repository checks | 执行校验脚本的回归测试，检查 Git 跟踪文本的 UTF-8、Markdown 相对链接和围栏，发现模块并校验必要构建入口 |
+| Shared contract validation | 归入 Repository checks：Python 3.12 隔离环境验证三部分 schema、生命周期、fixture 输入及共享样例；不访问平台账号 |
 | Frontend build and test | Node 24；`npm ci`、`npm test`、`npm run build` |
 | Java build and test | Temurin Java 21；`./mvnw.cmd --batch-mode --no-transfer-progress -DfailIfNoTests=true verify` |
 | Go build and test | 按 `backend/go/go.mod` 设置 Go；Windows cgo 工具链预检；`go test -race -count=1 ./...`、`go vet ./...`、`go build ./...` |

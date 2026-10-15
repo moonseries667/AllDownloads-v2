@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alldownloads.invalid/contracts/fixture.schema.json",
+  "title": "Isolated core test-host creation input; never a product HTTP endpoint",
+  "type": "object",
+  "required": ["idempotencyKey", "request"],
+  "properties": {
+    "idempotencyKey": {"type":"string","minLength":1},
+    "request": {
+      "type":"object",
+      "required":["resourceKey","relativePath","content","storageRevision"],
+      "properties": {
+        "resourceKey":{"type":"string","minLength":1},
+        "relativePath":{"type":"string","minLength":1},
+        "content":{"type":"string"},
+        "storageRevision":{"type":"string","minLength":1}
+      },
+      "additionalProperties":false
+    }
+  },
+  "additionalProperties":false,
+  "description":"Maps to TaskStore.create(idempotencyKey, Model.Request). The request and fixed relative target are immutable; same key/same request returns the original task, changed input conflicts. WRITE_FIXTURE and VERIFY_FIXTURE remain module-private stages, absent from the production platform/operation enums."
+}

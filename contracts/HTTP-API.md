@@ -1,5 +1,11 @@
 # 前端与 Java 接口契约
 
+正式平台装配与夸克追更/核对增量见 [平台客户端契约](PLATFORM-CLIENTS.md)；第三部分模型保持兼容。
+
+第三部分下载项目、取消、归档队列与目录设置见 [第三部分冻结契约](FEEDBACK-PART3.md)。批次与下载项目使用不同稳定 ID。
+
+第一部分反馈的增量结构、批次目标和媒体选择以 [第一部分冻结契约](FEEDBACK-PART1.md) 与 [OpenAPI](openapi.yaml) 为准。
+
 ## 1 契约范围
 
 语义版本 `v1`，公共前缀 `/api/v1`，JSON UTF-8。浏览器只调用 Java。此文件冻结资源语义、关键字段和动作；Java 对话在首个开发阶段生成 `contracts/openapi.yaml`，覆盖本文的路由、模型、状态码及示例。前端可据本文先制作页面和 mock，生成式客户端及联调以审阅后的 OpenAPI 为准。不得在两端分别猜测字段。
@@ -63,12 +69,12 @@ Task.kind 为 INFO_SYNC/PREVIEW/TRANSFER_SYNC/DOWNLOAD/UPLOAD/VERIFY/AUTH。Task
 | POST `/telegram/saved-sync` | `{accountId}` | 202，原有“下载收藏增量”：扫描后下载目标 pending 媒体 |
 | GET `/telegram/watcher` | accountId | enabled、intervalSeconds、lastCheckedAt、nextCheckAt，以及 scanState: SavedScanState |
 | PATCH `/telegram/watcher` | `{accountId,enabled}` | 默认周期 60 秒；未完成首次扫描时启用返回 INITIAL_SCAN_REQUIRED |
-| POST `/telegram/link-downloads` | `{accountId,links:[string]}` | 202，用户提交后解析并下载目标单帖/媒体组，返回 taskId；最多二百条 |
+| POST `/telegram/link-downloads` | 旧入口 | 410 FEATURE_REMOVED；收藏夹是唯一产品下载入口 |
 | GET `/telegram/resources`、GET `/telegram/resources/{id}` | q、state、cursor | 分别返回分页 TelegramResource 和单个 TelegramResource；附件状态独立 |
 | GET `/telegram/resources/{id}/metadata` | 无 | `{schemaVersion,resource,messages,files}`；resource 为 TelegramResource，messages 为 Message 数组，files 含附件标识、文件相对位置和对应侧车对象 |
 | POST `/telegram/retry-incomplete` | `{accountId,resourceIds?:[string]}` | 202，补齐所选或全部未完成的目标附件 |
 
-首次 saved-sync 的确认界面说明扫描全部可访问历史并下载目标媒体。普通 GET 和启动后查询 watcher 不访问 Telegram 发起扫描；监控开关与任务暂停分别管理。消息链接提交为原有显式下载入口，区别于 B 站信息加入和夸克转存入口。
+首次 saved-sync 扫描全部可访问历史并下载符合音视频资格的完整单元。普通 GET 和启动后查询 watcher 不访问 Telegram 发起扫描；监控开关与任务暂停分别管理。消息链接提交返回 FEATURE_REMOVED。
 
 Message.attachments 和 TelegramResource.attachments 均使用 Attachment。每个附件的 metadataRelativePath 是其完整文件名后追加 `.metadata.json` 的同级文件；Artifact 清单同时登记媒体与侧车，资源导出只汇总，不替代这些逐附件侧车。未知 channel、authorTags 等允许 null 或空数组，不能猜来源。scannedThroughAt 表示游标对应消息时间；扫描进度由活动 Task.progress 提供。
 
