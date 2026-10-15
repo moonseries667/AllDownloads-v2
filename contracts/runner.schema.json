@@ -1153,7 +1153,10 @@
             "VERIFY_ARCHIVE",
             "SCAN_TEL_SAVED",
             "LIST_QUARK_TREE",
-            "TRANSFER_QUARK_ITEMS"
+            "TRANSFER_QUARK_ITEMS",
+            "SELECT_LOCAL_DIRECTORY",
+            "LIST_DRIVE_FOLDERS",
+            "VALIDATE_DRIVE_TARGET"
           ]
         },
         "platform": {
