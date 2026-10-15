@@ -2,7 +2,8 @@ import { validateTelegramLinks } from "./telegram-links";
 export { validateTelegramLinks } from "./telegram-links";
 import { createSeed, type DemoState } from "./fixtures";
 import type { RecordData, Selection, Transport } from "./types";
-const key = "alldownloads.demo.v1";
+import { defaultDemoTarget, demoBilibiliPreview, demoContent, demoSource, filterDemoContents, sortedContentPage } from "./demo-bilibili";
+const key = "alldownloads.demo.feedback1.v2";
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const fail = (code: string, message: string): never => {
   throw Object.assign(new Error(message), { code });
@@ -16,7 +17,7 @@ export function createDemoTransport(
   if (persist) {
     try {
       const saved = JSON.parse(localStorage.getItem(key) || "null");
-      if (saved?.version === 1) state = saved;
+      if (saved?.version === 2) state = saved;
     } catch {
       /* A corrupt demo cache is replaced with isolated fixtures. */
     }
@@ -74,7 +75,7 @@ export function createDemoTransport(
     items.find((x) => x.id === id) ??
     fail("NOT_FOUND", "记录不存在，请刷新列表");
   const checkRevision = (item: RecordData, headers: Record<string, string>) => {
-    if (headers["If-Match"] && headers["If-Match"] !== item.revision)
+    if (headers["If-Match"] && headers["If-Match"].replace(/^"|"$/g, "") !== item.revision)
       fail("VERSION_CHANGED", "记录已更新，请刷新后重试");
   };
   const writable = () => {
@@ -86,16 +87,7 @@ export function createDemoTransport(
       fail("AUTH_REQUIRED", "账号需要重新登录，已保留选择");
   };
   function filteredContents(filters: RecordData) {
-    return state.contents.filter(
-      (c) =>
-        (!filters.sourceId || c.sourceIds.includes(filters.sourceId)) &&
-        (!filters.q ||
-          c.title.toLowerCase().includes(filters.q.toLowerCase())) &&
-        (!filters.type || c.type === filters.type) &&
-        (!filters.state || c.downloadSummary.state === filters.state) &&
-        (!filters.from || c.publishedAt >= filters.from) &&
-        (!filters.to || c.publishedAt.slice(0, 10) <= filters.to),
-    );
+    return filterDemoContents(state.contents, filters);
   }
   function preview(body: RecordData) {
     const selection = body.selection as Selection;
@@ -107,50 +99,11 @@ export function createDemoTransport(
         .filter((c) => !selection.excludeIds?.includes(c.id))
         .map((c) => c.id);
     if (!ids.length) fail("EMPTY_SELECTION", "请选择至少一项");
+    const target = body.target ? state.targets[body.target.id] : defaultDemoTarget(state.settings);
+    if (!target || target.status !== "VALID") fail("INVALID_STORAGE_ROOT", "目标目录尚未通过校验");
+    if (body.target && body.target.revision !== target.revision) fail("VERSION_CHANGED", "目标目录已变化，请重新校验");
     if (body.platform === "BILIBILI") {
-      const parts =
-        selection.resource === "BILIBILI_PARTS"
-          ? state.parts.filter((p) => ids.includes(p.id))
-          : state.parts.filter((p) => ids.includes(p.contentId));
-      entries = parts.map((p) => {
-        const c = find(state.contents, p.contentId);
-        return {
-          contentId: c.id,
-          partId: p.id,
-          version: "v1",
-          title: c.title + " / " + p.title,
-          relativePath:
-            "Bilibili/" +
-            (c.type === "SERIES"
-              ? "番剧/" + c.title + "/第一季"
-              : (state.sources.find((s) => s.id === c.sourceIds[0])?.title ??
-                  "用户添加") +
-                "（收藏夹）/" +
-                c.title +
-                "〔" +
-                c.externalId +
-                "〕") +
-            "/" +
-            p.title +
-            ".mp4",
-          sizeBytes: null,
-          decision:
-            c.availability !== "AVAILABLE"
-              ? "BLOCKED"
-              : c.downloadSummary.state === "VERIFIED" ||
-                  c.downloadSummary.state === "DOWNLOADING"
-                ? "REUSE"
-                : "DOWNLOAD",
-          reason:
-            c.availability !== "AVAILABLE"
-              ? c.availabilityReason
-              : c.downloadSummary.state === "DOWNLOADING"
-                ? "相同版本正在执行"
-                : c.downloadSummary.state === "VERIFIED"
-                  ? "已有相同质量成果"
-                  : null,
-        };
-      });
+      entries = demoBilibiliPreview(state.contents, state.parts, selection, ids, target);
     } else if (body.platform === "QUARK") {
       const selected = new Set(ids);
       let grew = true;
@@ -190,6 +143,8 @@ export function createDemoTransport(
       platform: body.platform,
       expiresAt: new Date(Date.now() + 600000).toISOString(),
       storageRevision: state.settings.storageRevision,
+      target: clone(target),
+      archivePolicy: target.archivePolicy,
       items: entries,
       summary: {
         download: entries.filter((x) => x.decision === "DOWNLOAD").length,
@@ -198,7 +153,7 @@ export function createDemoTransport(
         total: entries.length,
       },
       warnings: [
-        "质量策略：当前账号可获取的最高音视频质量。演示清单不代表真实平台结果。",
+        "演示清单不代表真实平台结果，也未校验实际磁盘。",
       ],
     };
     state.previews[p.id] = p;
@@ -250,8 +205,19 @@ export function createDemoTransport(
         });
         return state.settings;
       }
-      return state.settings;
+      return { ...state.settings, defaultTarget: defaultDemoTarget(state.settings) };
     }
+    if (path === "/download-targets/validate" && method === "POST") {
+      const targetId = id("target");
+      const valid = typeof body.path === "string" && /^[A-Za-z]:[\\/]/.test(body.path) &&
+        !body.path.startsWith("\\\\") && !body.path.split(/[\\/]/).includes("..");
+      state.targets[targetId] = { id: targetId, revision: "1", status: valid ? "VALID" : "INVALID",
+        path: body.path, label: body.path, rootId: valid ? "demo-root-" + targetId : null,
+        archivePolicy: "NONE", error: valid ? null : { code: "INVALID_STORAGE_ROOT", message: "请输入本机磁盘绝对目录，不能使用网络目录或上级跳转" } };
+      return { targetId, taskId: "demo-validation-" + targetId };
+    }
+    if (path.startsWith("/download-targets/") && method === "GET")
+      return state.targets[path.split("/")[2]] ?? fail("NOT_FOUND", "目录校验记录不存在");
     if (path === "/settings/validate") {
       const issues = [];
       if (
@@ -297,14 +263,22 @@ export function createDemoTransport(
       if (method === "DELETE") a.state = "CANCELLED";
       return a;
     }
-    if (path === "/health")
-      return {
-        java: state.scenario === "offline" ? "UNAVAILABLE" : "DEMO",
-        go: state.scenario === "runner" ? "UNAVAILABLE" : "DEMO",
-        storage: state.scenario === "disk" ? "INSUFFICIENT_SPACE" : "DEMO",
-      };
+    const runtime = {
+      state: "UNKNOWN", observedAt: now(),
+      services: [
+        { id: "java", required: true, state: "UNKNOWN", reasonCode: "DEMO_ONLY", lastSeenAt: null },
+        { id: "go", required: true, state: state.scenario === "runner" ? "LOST" : "UNKNOWN", reasonCode: "DEMO_ONLY", lastSeenAt: null },
+      ],
+      mount: { state: "UNKNOWN", reasonCode: "DEMO_ONLY", observedAt: now() },
+    };
+    const bilibili = { accountState: state.scenario === "login" ? "AUTH_REQUIRED" : "UNKNOWN",
+      refreshState: state.tasks.some((t) => t.platform === "BILIBILI" && t.kind === "INFO_SYNC" && ["RUNNING", "QUEUED"].includes(t.status)) ? "RUNNING" : "IDLE",
+      downloadCount: state.contents.filter((c) => c.downloadSummary.state === "VERIFIED").length,
+      archiveCount: state.contents.filter((c) => c.archiveSummary.state === "VERIFIED").length };
+    if (path === "/health") return { runtime, bilibili };
     if (path === "/overview")
       return {
+        runtime, bilibili,
         contentCount:
           state.contents.length +
           state.resources.length +
@@ -345,7 +319,7 @@ export function createDemoTransport(
       );
     }
     if (path === "/bilibili/sources") {
-      if (method === "GET") return list(state.sources, p);
+      if (method === "GET") return list(state.sources.map(demoSource), p);
       return {
         batchId: id("batch"),
         items: body.links.map((link: string) => {
@@ -401,8 +375,9 @@ export function createDemoTransport(
           taskId: task(s.title, "BILIBILI", "INFO_SYNC", "刷新来源信息").id,
         };
       if (method === "PATCH") {
+        if (state.scenario === "pin-failure") fail("VERSION_CHANGED", "来源设置已变化，请刷新后重试");
         Object.assign(s, body, { revision: String(Number(s.revision) + 1) });
-        return s;
+        return demoSource(s);
       }
       if (method === "DELETE") {
         state.sources = state.sources.filter((x) => x.id !== s.id);
@@ -411,26 +386,17 @@ export function createDemoTransport(
         );
         return { removed: true };
       }
-      return s;
+      return demoSource(s);
     }
     if (path === "/bilibili/contents") {
-      let data = filteredContents(Object.fromEntries(p));
-      if (p.get("sort") === "published")
-        data = [...data].sort(
-          (a, b) =>
-            b.publishedAt.localeCompare(a.publishedAt) ||
-            a.id.localeCompare(b.id),
-        );
-      return list(data, p);
+      const revision = JSON.stringify([state.contents.map((c) => [c.id, c.revision]), state.sources.map((s) => [s.id, s.revision])]);
+      const page = sortedContentPage(state.contents, p, revision);
+      return { ...page, items: page.items.map((c) => demoContent(c, state.sources, state.parts)) };
     }
     if (path.match(/^\/bilibili\/contents\/[^/]+/)) {
       const c = find(state.contents, path.split("/")[3]);
-      return path.endsWith("/parts")
-        ? list(
-            state.parts.filter((x) => x.contentId === c.id),
-            p,
-          )
-        : c;
+      const content = demoContent(c, state.sources, state.parts);
+      return path.endsWith("/parts") ? list(content.mediaUnits, p) : content;
     }
     if (path === "/telegram/messages" || path === "/telegram/resources") {
       const items = path.endsWith("messages")
@@ -672,12 +638,15 @@ export function createDemoTransport(
       if (pv.status !== "READY" || Date.parse(pv.expiresAt) < Date.now())
         fail("VERSION_CHANGED", "预览已过期，请重新预览");
       if (pv.storageRevision !== state.settings.storageRevision)
-        fail("STORAGE_CHANGED", "下载根版本已变化，请重新预览");
+        if (pv.archivePolicy !== "NONE") fail("STORAGE_CHANGED", "下载根版本已变化，请重新预览");
+      if (pv.archivePolicy === "NONE" && (!state.targets[pv.target.id] || state.targets[pv.target.id].revision !== pv.target.revision || state.targets[pv.target.id].status !== "VALID"))
+        fail("VERSION_CHANGED", "本批目录校验状态已变化，请重新校验并刷新");
       if (
         state.scenario === "version" ||
         pv.items.some(
           (i: RecordData) =>
-            i.nodeId && find(state.nodes, i.nodeId).version !== i.version,
+            (i.nodeId && find(state.nodes, i.nodeId).version !== i.version) ||
+            (i.contentId && find(state.contents, i.contentId).revision !== i.version),
         )
       )
         fail("VERSION_CHANGED", "所选文件版本已变化，请重新预览后确认");
@@ -691,6 +660,10 @@ export function createDemoTransport(
       );
       const o = {
         id: id("order"),
+        previewId: pv.id,
+        target: clone(pv.target),
+        archivePolicy: pv.archivePolicy,
+        status: "QUEUED",
         title: pv.items[0].title,
         platform: pv.platform,
         sourceId: pv.items[0].contentId
