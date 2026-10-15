@@ -20,6 +20,8 @@ import {
 } from "lucide-vue-next";
 import { api, dataRevision, notifyError, notifySuccess } from "../api/client";
 import DownloadPreview from "../components/DownloadPreview.vue";
+import QuarkFolderPicker from "../components/QuarkFolderPicker.vue";
+import type { QuarkTarget } from "../api/quark-folders";
 import StatusBadge from "../components/StatusBadge.vue";
 import { formatBytes, formatDate } from "../format";
 
@@ -52,13 +54,6 @@ type CloudNode = {
   availability?: string | null;
   downloadSummary?: { state?: string | null; [key: string]: unknown } | null;
 };
-type QuarkFolder = {
-  id: string;
-  parentId?: string | null;
-  name: string;
-  path?: string | null;
-  relativePath?: string | null;
-};
 type FolderTreeNode = {
   id: string;
   label: string;
@@ -77,7 +72,6 @@ type ShareResult = {
 
 const ACCOUNT_ID = "q-main";
 const shares = ref<Share[]>([]);
-const folders = ref<QuarkFolder[]>([]);
 const settings = ref<Record<string, any> | null>(null);
 const nodesByShare = ref<Record<string, CloudNode[]>>({});
 const selectedShareId = ref<string | null>("q1");
@@ -98,8 +92,8 @@ const nodeSequence = ref(0);
 const addDialogVisible = ref(false);
 const shareLinksText = ref("");
 const useOneTargetFolder = ref(true);
-const bulkTargetFolderId = ref("");
-const rowTargetFolderIds = ref<Record<string, string>>({});
+const bulkTarget = ref<QuarkTarget | null>(null);
+const rowTargets = ref<Record<string, QuarkTarget | null>>({});
 const submittingShares = ref(false);
 const shareFormError = ref("");
 const shareCreateResult = ref<{
@@ -145,18 +139,6 @@ const downloadRoot = computed(() => {
   if (typeof value === "string") return value;
   return "";
 });
-const folderLabelMap = computed(
-  () =>
-    new Map<string, string>(
-      folders.value.map((folder) => [folder.id, folderLabel(folder)] as const),
-    ),
-);
-const folderOptions = computed(() =>
-  folders.value.map((folder) => ({
-    ...folder,
-    displayLabel: folderLabel(folder),
-  })),
-);
 const currentFolderMissing = computed(() =>
   Boolean(
     currentParentId.value && !activeNodeMap.value.has(currentParentId.value),
@@ -173,7 +155,6 @@ const activeShareTarget = computed(() => {
   if (!activeShare.value) return "尚未选择分享目录";
   return (
     activeShare.value.targetPath ||
-    folderLabelMap.value.get(activeShare.value.targetFolderId || "") ||
     "目标目录未知"
   );
 });
@@ -276,9 +257,6 @@ function isFolder(node: CloudNode) {
 }
 function rootTreeKey(shareId: string) {
   return "share-root:" + shareId;
-}
-function folderLabel(folder: QuarkFolder) {
-  return folder.path || folder.relativePath || folder.name || folder.id;
 }
 function matchesNode(node: CloudNode, query: string) {
   return (node.name + " " + (node.relativePath ?? ""))
@@ -403,16 +381,12 @@ async function load() {
   loadError.value = "";
   const results = await Promise.allSettled([
     api.get<{ items: Share[] }>("/quark/shares"),
-    api.get<{ items: QuarkFolder[] }>(
-      "/quark/folders?accountId=" + encodeURIComponent(ACCOUNT_ID),
-    ),
     api.get<Record<string, any>>("/settings"),
   ]);
   if (sequence !== loadSequence.value) return;
   const failures: unknown[] = [];
   const shareResult = results[0];
-  const folderResult = results[1];
-  const settingsResult = results[2];
+  const settingsResult = results[1];
   if (shareResult.status === "fulfilled") {
     shares.value = shareResult.value.items ?? [];
     if (!shares.value.some((share) => share.id === selectedShareId.value)) {
@@ -422,9 +396,6 @@ async function load() {
     if (!selectedShareId.value && shares.value[0])
       selectedShareId.value = shares.value[0].id;
   } else failures.push(shareResult.reason);
-  if (folderResult.status === "fulfilled")
-    folders.value = folderResult.value.items ?? [];
-  else failures.push(folderResult.reason);
   if (settingsResult.status === "fulfilled")
     settings.value = settingsResult.value;
   else failures.push(settingsResult.reason);
@@ -495,8 +466,8 @@ async function runShareAction(
 }
 function openAddDialog() {
   shareLinksText.value = "";
-  bulkTargetFolderId.value = "";
-  rowTargetFolderIds.value = {};
+  bulkTarget.value = null;
+  rowTargets.value = {};
   useOneTargetFolder.value = true;
   shareFormError.value = "";
   shareCreateResult.value = null;
@@ -504,9 +475,22 @@ function openAddDialog() {
 }
 function targetFolderFor(entry: DraftEntry) {
   return useOneTargetFolder.value
-    ? bulkTargetFolderId.value
-    : rowTargetFolderIds.value[entry.key] || "";
+    ? bulkTarget.value
+    : rowTargets.value[entry.key] ?? null;
 }
+const targetsReady = computed(() => targetRows.value.length > 0 && targetRows.value.every((entry) => targetFolderFor(entry)));
+watch(useOneTargetFolder, (shared) => {
+  shareCreateResult.value = null;
+  shareFormError.value = "";
+  if (!shared) {
+    // Make the active mapping explicit; never resurrect hidden per-row targets.
+    rowTargets.value = Object.fromEntries(targetRows.value.map((entry) => [entry.key, bulkTarget.value]));
+  } else {
+    const first = rowTargets.value[targetRows.value[0]?.key ?? ""] ?? null;
+    bulkTarget.value = first && targetRows.value.every((entry) => rowTargets.value[entry.key]?.id === first.id && rowTargets.value[entry.key]?.revision === first.revision) ? first : null;
+  }
+});
+watch([bulkTarget, rowTargets], () => { shareCreateResult.value = null; shareFormError.value = ""; }, { deep: true });
 async function submitShares() {
   shareFormError.value = "";
   shareCreateResult.value = null;
@@ -528,7 +512,8 @@ async function submitShares() {
         accountId: ACCOUNT_ID,
         entries: targetRows.value.map((entry) => ({
           url: entry.url,
-          targetFolderId: targetFolderFor(entry),
+          targetFolderId: targetFolderFor(entry)!.id,
+          targetFolderRevision: targetFolderFor(entry)!.revision,
         })),
       },
     );
@@ -718,12 +703,10 @@ watch(
                     class="share-target"
                     :title="
                       share.targetPath ||
-                      folderLabelMap.get(share.targetFolderId || '') ||
                       ''
                     "
                     >{{
                       share.targetPath ||
-                      folderLabelMap.get(share.targetFolderId || "") ||
                       "目标目录未知"
                     }}</span
                   >
@@ -1086,67 +1069,20 @@ watch(
           </div>
         </el-form-item>
         <div class="folder-mode-row">
-          <div>
-            <strong>目标夸克目录</strong
-            ><span>决定转存副本在夸克网盘中的位置</span>
-          </div>
-          <el-radio-group
-            v-model="useOneTargetFolder"
-            aria-label="目标目录指定方式"
-          >
-            <el-radio-button :value="true">整批使用同一目录</el-radio-button>
-            <el-radio-button :value="false">逐条指定</el-radio-button>
-          </el-radio-group>
+          <label for="quark-one-target">是否整批使用同一目录</label>
+          <el-switch id="quark-one-target" v-model="useOneTargetFolder" aria-label="是否整批使用同一目录" :disabled="submittingShares" />
+          <span>{{ useOneTargetFolder ? "整批共用" : "逐条选择" }}</span>
         </div>
-        <el-form-item v-if="useOneTargetFolder" label="本批目标目录" required>
-          <el-select
-            v-model="bulkTargetFolderId"
-            filterable
-            clearable
-            placeholder="选择账号中的夸克文件夹"
-            class="folder-select"
-            aria-label="本批转存目标夸克文件夹"
-          >
-            <el-option
-              v-for="folder in folderOptions"
-              :key="folder.id"
-              :label="folder.displayLabel"
-              :value="folder.id"
-            />
-          </el-select>
-          <div v-if="!folders.length" class="field-hint">
-            当前没有可选目录，或目录列表暂时不可用。
-          </div>
+        <p class="field-hint">目标是夸克云盘文件夹，用于分享转存；本机下载目录在下载清单中单独确认。</p>
+        <el-form-item v-if="useOneTargetFolder" label="本批目标夸克文件夹" required>
+          <QuarkFolderPicker v-model="bulkTarget" :account-id="ACCOUNT_ID" label="本批转存目标夸克文件夹" :disabled="submittingShares" />
         </el-form-item>
         <div v-else class="entry-target-list">
-          <div
-            v-for="(entry, index) in targetRows"
-            :key="entry.key"
-            class="entry-target-row"
-          >
-            <div class="entry-target-link">
-              <span class="entry-index">{{ index + 1 }}</span
-              ><span :title="entry.url">{{ entry.url }}</span>
-            </div>
-            <el-select
-              v-model="rowTargetFolderIds[entry.key]"
-              filterable
-              clearable
-              placeholder="选择目标夸克文件夹"
-              class="folder-select"
-              :aria-label="'第 ' + (index + 1) + ' 条分享的目标文件夹'"
-            >
-              <el-option
-                v-for="folder in folderOptions"
-                :key="folder.id"
-                :label="folder.displayLabel"
-                :value="folder.id"
-              />
-            </el-select>
+          <div v-for="(entry, index) in targetRows" :key="entry.key" class="entry-target-row">
+            <div class="entry-target-link"><span class="entry-index">{{ index + 1 }}</span><span :title="entry.url">{{ entry.url }}</span></div>
+            <QuarkFolderPicker :model-value="rowTargets[entry.key] ?? null" @update:model-value="rowTargets[entry.key] = $event" :account-id="ACCOUNT_ID" :label="'第 ' + (index + 1) + ' 条分享的目标文件夹'" :disabled="submittingShares" />
           </div>
-          <div v-if="!targetRows.length" class="entry-target-empty">
-            粘贴分享链接后，可为每条链接选择目录。
-          </div>
+          <div v-if="!targetRows.length" class="entry-target-empty">粘贴分享链接后，可为每条链接选择目录。</div>
         </div>
 
         <div v-if="shareFormError" class="form-error" role="alert">
@@ -1179,14 +1115,16 @@ watch(
         </div>
       </el-form>
       <template #footer>
+        <div class="share-footer-actions">
         <el-button @click="addDialogVisible = false">关闭</el-button>
         <el-button
           type="primary"
           :loading="submittingShares"
-          :disabled="Boolean(shareCreateResult)"
+          :disabled="Boolean(shareCreateResult) || !targetsReady"
           @click="submitShares"
           ><Cloud :size="16" />转存并维护更新</el-button
         >
+        </div>
       </template>
     </el-dialog>
 
@@ -1978,43 +1916,11 @@ watch(
   font-size: 12px;
   line-height: 1.5;
 }
-.folder-mode-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 1px 0 13px;
-}
-.folder-mode-row > div {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.folder-mode-row strong {
-  color: #3c4944;
-  font-size: 13px;
-}
-.folder-mode-row span {
-  color: #78837e;
-  font-size: 12px;
-}
-.folder-mode-row :deep(.el-radio-button__inner) {
-  min-height: 34px;
-  padding: 9px 11px;
-  color: #58655f;
-  font-size: 12px;
-  box-shadow: none;
-}
-.folder-mode-row
-  :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
-  color: var(--quark-primary);
-  background: #eff7f3;
-  border-color: #a9c8bc;
-  box-shadow: -1px 0 0 0 #a9c8bc;
-}
-.folder-select {
-  width: 100%;
-}
+.folder-mode-row { display: flex; align-items: center; gap: 12px; margin: 1px 0 8px; }
+.folder-mode-row label { color: #3c4944; font-size: 14px; font-weight: 600; }
+.folder-mode-row span { color: #687571; font-size: 14px; }
+.share-footer-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 12px; }
+.share-footer-actions :deep(.el-button + .el-button) { margin-left: 0; }
 .entry-target-list {
   display: flex;
   max-height: 280px;
@@ -2234,21 +2140,6 @@ watch(
   }
   .entry-target-row {
     grid-template-columns: 1fr;
-  }
-  .folder-mode-row {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-  .folder-mode-row :deep(.el-radio-group) {
-    display: flex;
-    width: 100%;
-  }
-  .folder-mode-row :deep(.el-radio-button) {
-    flex: 1;
-  }
-  .folder-mode-row :deep(.el-radio-button__inner) {
-    width: 100%;
-    padding: 9px 6px;
   }
   .table-footnote {
     align-items: flex-start;
