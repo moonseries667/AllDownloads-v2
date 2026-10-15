@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 
 	p "github.com/moonseries667/AllDownloads-v2/backend/go/internal/platforms"
@@ -204,6 +205,23 @@ func TestPublisherCannotClaimEvidenceForOtherFile(t *testing.T) {
 		out.RelativePath = path
 		if err := p.ValidateOutputs([]p.Output{out}); err == nil {
 			t.Fatal(path)
+		}
+	}
+}
+
+func TestFilesystemFailuresAreNotReportedAsNetworkErrors(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		code string
+	}{
+		{&os.PathError{Op: "write", Path: "private/path", Err: syscall.Errno(112)}, "INSUFFICIENT_SPACE"},
+		{os.ErrPermission, "PERMISSION_DENIED"},
+		{os.ErrNotExist, "LOCAL_FILE_NOT_FOUND"},
+		{&os.PathError{Op: "write", Path: "private/path", Err: errors.New("local failure")}, "LOCAL_IO_ERROR"},
+	} {
+		f := p.SafeFault(tc.err, "DOWNLOAD")
+		if f.Code != tc.code || f.Status != "NEEDS_ACTION" || strings.Contains(f.Message, "private/path") {
+			t.Fatalf("%+v", f)
 		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -42,10 +43,15 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 }
 
 func (t *Tools) run(ctx context.Context, executable string, args ...string) ([]byte, error) {
+	return RunControlled(ctx, executable, t.Timeout, args...)
+}
+
+// RunControlled runs a trusted project tool without a shell. Each invocation
+// owns its Windows Job Object; cancelling it cannot stop a sibling invocation.
+func RunControlled(ctx context.Context, executable string, timeout time.Duration, args ...string) (output []byte, resultErr error) {
 	if !filepath.IsAbs(executable) {
 		return nil, Fail("TOOL_NOT_CONFIGURED", "TOOL", false)
 	}
-	timeout := t.Timeout
 	if timeout <= 0 {
 		timeout = 10 * time.Minute
 	}
@@ -67,7 +73,7 @@ func (t *Tools) run(ctx context.Context, executable string, args ...string) ([]b
 		_ = cmd.Wait()
 		return nil, Fail("TOOL_PROCESS_CONTROL_FAILED", "TOOL", false)
 	}
-	defer closer.Close()
+	defer func() { resultErr = errors.Join(resultErr, closer.Close()) }()
 	if err := resumeProcess(cmd.Process); err != nil {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
@@ -101,6 +107,16 @@ func (t *Tools) Check(ctx context.Context) error {
 	return nil
 }
 func (t *Tools) Inspect(ctx context.Context, path string, expected []string) (Probe, error) {
+	return t.inspect(ctx, path, expected, true)
+}
+
+// InspectContaining validates an unchanged platform attachment. Unlike selected
+// Bilibili outputs it may legitimately contain additional audio/subtitle streams.
+func (t *Tools) InspectContaining(ctx context.Context, path string, expected []string) (Probe, error) {
+	return t.inspect(ctx, path, expected, false)
+}
+
+func (t *Tools) inspect(ctx context.Context, path string, expected []string, exact bool) (Probe, error) {
 	if err := t.Check(ctx); err != nil {
 		return Probe{}, err
 	}
@@ -135,7 +151,7 @@ func (t *Tools) Inspect(ctx context.Context, path string, expected []string) (Pr
 			return Probe{}, Fail("MEDIA_STREAM_MISSING", "VERIFY", false)
 		}
 	}
-	if len(probe.Streams) != len(expected) {
+	if exact && len(probe.Streams) != len(expected) {
 		return Probe{}, Fail("UNEXPECTED_MEDIA_STREAM", "VERIFY", false)
 	}
 	return probe, nil

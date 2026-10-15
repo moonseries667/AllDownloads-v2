@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -15,7 +16,38 @@ var jobDLL = syscall.NewLazyDLL("kernel32.dll")
 
 type jobHandle syscall.Handle
 
-func (h jobHandle) Close() error { return syscall.CloseHandle(syscall.Handle(h)) }
+var ErrProcessStopUnconfirmed = errors.New("controlled process tree stop was not confirmed")
+
+func (h jobHandle) Close() error {
+	// Closing a kill-on-close Job requests termination but is not itself a
+	// stopped fact. Observe zero active processes before publishing cancellation.
+	ok, _, _ := jobDLL.NewProc("TerminateJobObject").Call(uintptr(h), 1)
+	if ok == 0 {
+		_ = syscall.CloseHandle(syscall.Handle(h))
+		return ErrProcessStopUnconfirmed
+	}
+	type accounting struct {
+		User, Kernel, PeriodUser, PeriodKernel int64
+		Faults, Total, Active, Terminated      uint32
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		var info accounting
+		ok, _, _ := jobDLL.NewProc("QueryInformationJobObject").Call(uintptr(h), 1, uintptr(unsafe.Pointer(&info)), unsafe.Sizeof(info), 0)
+		if ok == 0 {
+			_ = syscall.CloseHandle(syscall.Handle(h))
+			return ErrProcessStopUnconfirmed
+		}
+		if info.Active == 0 {
+			return syscall.CloseHandle(syscall.Handle(h))
+		}
+		if time.Now().After(deadline) {
+			_ = syscall.CloseHandle(syscall.Handle(h))
+			return ErrProcessStopUnconfirmed
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
 
 type basicLimits struct {
 	PerProcess, PerJob     int64

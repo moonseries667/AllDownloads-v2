@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
+	"syscall"
 	"time"
 )
 
@@ -26,6 +28,15 @@ func Classify(err error, stage string) *Failure {
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return &Failure{"NETWORK_TIMEOUT", stage, true}
+	}
+	if errors.Is(err, os.ErrPermission) {
+		return &Failure{"PERMISSION_DENIED", stage, false}
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return &Failure{"LOCAL_FILE_NOT_FOUND", stage, false}
+	}
+	if errors.Is(err, syscall.Errno(112)) || errors.Is(err, syscall.Errno(39)) {
+		return &Failure{"DISK_FULL", stage, false}
 	}
 	return &Failure{"IO_ERROR", stage, false}
 }

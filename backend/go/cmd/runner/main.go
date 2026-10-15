@@ -13,7 +13,9 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/drive"
 	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/executor"
+	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/folder"
 	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/media"
 	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/runner"
 )
@@ -28,12 +30,21 @@ type config struct {
 	FFmpeg         string            `json:"ffmpeg"`
 	FFprobe        string            `json:"ffprobe"`
 	FixtureCatalog string            `json:"fixtureCatalog"`
+	DriveAccounts  map[string]struct {
+		TokenEnv string `json:"tokenEnv"`
+		RootID   string `json:"rootId"`
+	} `json:"driveAccounts"`
 }
 
 func main() {
+	nativeDialog := flag.Bool("native-folder-dialog", false, "internal bounded native folder dialog helper")
 	path := flag.String("config", "", "runner configuration JSON path")
 	once := flag.Bool("once", false, "register, reconcile pending results and acquire at most one operation")
 	flag.Parse()
+	if *nativeDialog {
+		_ = json.NewEncoder(os.Stdout).Encode(folder.ShowNative())
+		return
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 	if err := run(ctx, *path, *once); err != nil && !errors.Is(err, context.Canceled) {
@@ -104,6 +115,14 @@ func run(ctx context.Context, path string, once bool) error {
 		versions["ffprobe"] = media.FFmpegVersion
 	}
 	handler := &runner.Handler{State: state, StateDir: cfg.StateDir, AllowedRoots: cfg.AllowedRoots, Roots: cfg.Roots, Provider: provider, Tools: mediaTools, Downloads: media.Downloader{Client: &http.Client{Timeout: 30 * time.Minute}}}
-	service := runner.Runner{ID: cfg.RunnerID, Client: client, State: state, Worker: handler, ToolVersions: versions, Log: func(s string) { fmt.Fprintln(os.Stderr, s) }}
+	drives := map[string]*drive.Client{}
+	for account, settings := range cfg.DriveAccounts {
+		if account == "" || settings.TokenEnv == "" {
+			return errors.New("drive account and tokenEnv are required")
+		}
+		drives[account] = &drive.Client{AccountID: account, RootID: settings.RootID, Token: func() string { return os.Getenv(settings.TokenEnv) }}
+	}
+	storage := &runner.StorageWorker{Next: handler, Roots: handler, State: state, HostID: cfg.RunnerID, Picker: &folder.Picker{}, PickerReady: folder.InteractiveDesktop, Drives: drives}
+	service := runner.Runner{ID: cfg.RunnerID, Client: client, State: state, Worker: storage, ToolVersions: versions, Log: func(s string) { fmt.Fprintln(os.Stderr, s) }}
 	return service.Run(ctx, once)
 }
