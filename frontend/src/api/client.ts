@@ -9,6 +9,9 @@ export class ApiError extends Error {
     public code: string,
     message: string,
     public details: unknown = null,
+    public retryable = false,
+    public action: string | null = null,
+    public requestId: string | null = null,
   ) {
     super(message);
   }
@@ -26,13 +29,21 @@ export function createHttpTransport(base = "/api/v1"): Transport {
         headers: { "Content-Type": "application/json", ...headers },
         body: body === undefined ? undefined : JSON.stringify(body),
       });
-      const result = await response.json();
+      if (response.status === 204 && response.ok) return undefined as T;
+      let result;
+      try { result = await response.json(); }
+      catch { throw new ApiError("INVALID_RESPONSE", "服务返回了无法读取的响应，请稍后刷新"); }
+      if (!result || typeof result !== "object") throw new ApiError("INVALID_RESPONSE", "服务返回了无法读取的响应，请稍后刷新");
       if (!response.ok || result.error)
         throw new ApiError(
           result.error?.code ?? "HTTP_ERROR",
           result.error?.message ?? "请求失败 (" + response.status + ")",
           result.error?.details,
+          result.error?.retryable ?? false,
+          result.error?.action ?? null,
+          result.requestId ?? null,
         );
+      if (!("data" in result)) throw new ApiError("INVALID_RESPONSE", "服务响应缺少数据，请稍后刷新");
       return result.data as T;
     },
   };
@@ -40,6 +51,7 @@ export function createHttpTransport(base = "/api/v1"): Transport {
 const transport: Transport = isDemo
   ? createDemoTransport()
   : createHttpTransport(import.meta.env.VITE_API_BASE || "/api/v1");
+export function createApi(transport: Transport, onMutation = () => { dataRevision.value++; }) {
 const mutation = async <T = any>(
   method: string,
   path: string,
@@ -48,12 +60,12 @@ const mutation = async <T = any>(
 ) => {
   const headers: Record<string, string> = {};
   if (method === "POST") headers["Idempotency-Key"] = crypto.randomUUID();
-  if (revision) headers["If-Match"] = revision;
+  if (revision) headers["If-Match"] = revision.startsWith('"') ? revision : '"' + revision + '"';
   const result = await transport.request<T>(method, path, body, headers);
-  dataRevision.value++;
+  onMutation();
   return result;
 };
-export const api = {
+return {
   get: <T = any>(path: string) => transport.request<T>("GET", path),
   post: <T = any>(path: string, body?: unknown, revision?: string) =>
     mutation<T>("POST", path, body, revision),
@@ -62,6 +74,8 @@ export const api = {
   delete: <T = any>(path: string, revision?: string) =>
     mutation<T>("DELETE", path, undefined, revision),
 };
+}
+export const api = createApi(transport);
 const recentErrors = new Map<string, number>();
 export function notifyError(error: unknown) {
   const message = error instanceof Error ? error.message : "请求失败，请重试";

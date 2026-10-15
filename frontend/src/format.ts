@@ -5,7 +5,7 @@ export const platformName: Record<string, string> = {
   GOOGLE_DRIVE: "Google Drive",
 };
 export function formatDate(value: string | null | undefined) {
-  if (!value) return "暂无记录";
+  if (!value || !Number.isFinite(new Date(value).getTime())) return "暂无记录";
   const p = new Intl.DateTimeFormat("zh-CN", {
     timeZone: "Asia/Shanghai",
     year: "numeric",
@@ -32,16 +32,28 @@ export function formatDate(value: string | null | undefined) {
   );
 }
 export function formatBytes(value: string | number | null | undefined) {
-  if (value == null) return "大小未知";
+  if (value == null || value === "") return "大小未知";
   const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return "大小未知";
   if (n === 0) return "0 B";
-  const i = Math.min(Math.floor(Math.log(n) / Math.log(1024)), 4);
+  const i = Math.max(0, Math.min(Math.floor(Math.log(n) / Math.log(1024)), 4));
   return (
     (n / 1024 ** i).toFixed(i > 0 ? 1 : 0) +
     " " +
     ["B", "KB", "MB", "GB", "TB"][i]
   );
 }
-export function duration(value: number) {
-  return Math.floor(value / 60) + ":" + String(value % 60).padStart(2, "0");
+export function duration(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value) || value < 0) return "时长未知";
+  const seconds = Math.floor(value);
+  const minutes = Math.floor(seconds / 60);
+  return (minutes >= 60 ? Math.floor(minutes / 60) + ":" + String(minutes % 60).padStart(2, "0") : String(minutes)) +
+    ":" + String(seconds % 60).padStart(2, "0");
+}
+
+export function calendarDate(value: string | null | undefined) {
+  if (!value || !Number.isFinite(new Date(value).getTime())) return "日期未知";
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai", year: "numeric", month: "long", day: "numeric",
+  }).format(new Date(value));
 }
