@@ -40,7 +40,7 @@ go vet ./...
 go build ./...
 ```
 
-完整临时媒体用例需要将 `ALLDOWNLOADS_TEST_FFMPEG_DIR` 设为已安装的 FFmpeg 9.0.2 的 bin 目录。未设置时 `TestRealPhotoAudioAndMetadataUseSharedPublication` 与第一部分真实 FFmpeg 用例跳过，其余测试仍运行。此变量只对当前测试进程有效。
+完整临时媒体用例需要将 `ALLDOWNLOADS_TEST_FFMPEG_DIR` 设为已安装的 FFmpeg 9.0.2 的 bin 目录。未设置时 `TestRealPhotoAudioAndMetadataUseSharedPublication`、`TestTelegramKeepsAdditionalStreamsInOriginalAttachment` 与第一部分真实 FFmpeg 用例跳过，其余测试仍运行。此变量只对当前测试进程有效。Carbon 本轮设置了该变量，上述用例实际执行并通过。
 
 `internal/platforms/*_test.go` 覆盖全部消息类型、可靠媒体属性、跨页/跨增量边界完整组、重复身份、结束页未完整组、超出 JavaScript 安全整数的消息 ID、取消、混合附件部分失败与补齐、逐附件侧车、冻结范围、批次本机目标、夸克根/父子/重名/空目录、目录移动/权限/版本失效及分页期间变化。
 
