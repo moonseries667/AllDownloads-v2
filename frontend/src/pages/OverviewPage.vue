@@ -1,0 +1,196 @@
+<script setup lang="ts">
+import { ref, onMounted, watch } from "vue";
+import { useRouter } from "vue-router";
+import {
+  MonitorPlay,
+  Send,
+  CloudDownload as FolderCloud,
+  ArrowUpRight,
+  ArrowRight,
+  HardDrive,
+  CheckCheck,
+  Activity,
+  Library,
+  AlertCircle,
+  CloudUpload,
+} from "lucide-vue-next";
+import { api, dataRevision, notifyError } from "../api/client";
+import { formatDate, platformName } from "../format";
+import StatusBadge from "../components/StatusBadge.vue";
+const router = useRouter(),
+  stats = ref<any>({}),
+  tasks = ref<any[]>([]),
+  issues = ref<any[]>([]),
+  settings = ref<any>({});
+async function load() {
+  try {
+    [stats.value, tasks.value, issues.value, settings.value] =
+      await Promise.all([
+        api.get("/overview"),
+        api.get("/tasks").then((x) => x.items),
+        api.get("/issues").then((x) => x.items),
+        api.get("/settings"),
+      ]);
+  } catch (e) {
+    notifyError(e);
+  }
+}
+onMounted(load);
+watch(dataRevision, load);
+const platforms = [
+  {
+    name: "Bilibili",
+    eyebrow: "视频与系列",
+    description: "收藏夹、合集与番剧，按需保存。",
+    icon: MonitorPlay,
+    path: "/bilibili",
+    color: "pink",
+    action: "浏览内容",
+  },
+  {
+    name: "Telegram",
+    eyebrow: "消息与附件",
+    description: "收藏增量、消息链接与媒体组。",
+    icon: Send,
+    path: "/telegram",
+    color: "blue",
+    action: "打开收藏",
+  },
+  {
+    name: "夸克网盘",
+    eyebrow: "分享与文件",
+    description: "持续转存更新，再选择文件下载。",
+    icon: FolderCloud,
+    path: "/quark/cloud",
+    color: "purple",
+    action: "进入云盘",
+  },
+];
+</script>
+<template>
+  <div>
+    <div class="page-header overview-heading">
+      <div>
+        <div class="page-eyebrow">你的内容工作空间</div>
+        <h1 class="page-title">让好内容，有处可寻。</h1>
+        <p class="page-subtitle">从发现、保存到归档，在这里照看你的内容。</p>
+      </div>
+      <div class="date-note">本机前端预览<span>独立浏览 · 统一管理</span></div>
+    </div>
+    <div class="overview-stats">
+      <div
+        v-for="item in [
+          { icon: Library, value: stats.contentCount, label: '已收录内容' },
+          { icon: Activity, value: stats.activeTasks, label: '活动任务' },
+          { icon: CheckCheck, value: stats.archives, label: '云端已验证' },
+          { icon: AlertCircle, value: stats.issues, label: '需要处理' },
+        ]"
+        :key="item.label"
+      >
+        <span class="stat-icon"><component :is="item.icon" :size="20" /></span>
+        <div>
+          <span>{{ item.label }}</span
+          ><strong>{{ item.value ?? "—" }}</strong>
+        </div>
+      </div>
+    </div>
+    <div class="section-heading">
+      <h2>内容来源</h2>
+      <span class="muted">三个入口，一处管理</span>
+    </div>
+    <div class="platform-grid">
+      <router-link
+        v-for="p in platforms"
+        :key="p.name"
+        :to="p.path"
+        class="platform-card"
+        :class="p.color"
+        ><div class="platform-card-top">
+          <span class="platform-icon"
+            ><component :is="p.icon" :size="28" /></span
+          ><ArrowUpRight :size="20" />
+        </div>
+        <span class="platform-eyebrow">{{ p.eyebrow }}</span>
+        <h2>{{ p.name }}</h2>
+        <p>{{ p.description }}</p>
+        <div class="platform-card-bottom">
+          {{ p.action }}<ArrowRight :size="17" /></div
+      ></router-link>
+    </div>
+    <div class="overview-columns">
+      <section class="panel">
+        <div class="panel-heading">
+          <h2>正在进行</h2>
+          <router-link to="/tasks"
+            >全部任务 <ArrowUpRight :size="14"
+          /></router-link>
+        </div>
+        <div v-if="!tasks.length" class="empty-state">
+          暂无任务，选择内容后即可开始。
+        </div>
+        <button
+          v-for="task in tasks.slice(0, 4)"
+          :key="task.id"
+          class="activity-row"
+          @click="router.push('/tasks')"
+        >
+          <span class="activity-icon"
+            ><component
+              :is="
+                task.kind === 'UPLOAD'
+                  ? CloudUpload
+                  : task.kind === 'VERIFY'
+                    ? CheckCheck
+                    : Activity
+              "
+              :size="19"
+          /></span>
+          <div class="activity-info">
+            <strong>{{ task.title }}</strong
+            ><span>{{ platformName[task.platform] }} · {{ task.phase }}</span>
+          </div>
+          <StatusBadge :state="task.status" />
+        </button>
+      </section>
+      <section class="panel attention-panel">
+        <div class="panel-heading">
+          <h2>
+            需要关注 <span class="count-badge">{{ issues.length }}</span>
+          </h2>
+        </div>
+        <div v-if="!issues.length" class="empty-state">当前没有待处理问题</div>
+        <div
+          v-for="issue in issues.slice(0, 2)"
+          :key="issue.id"
+          class="attention-item"
+        >
+          <div>
+            <AlertCircle :size="17" /><strong>{{ issue.phase }}需要处理</strong>
+          </div>
+          <p>{{ issue.error.message }}</p>
+          <router-link to="/tasks"
+            >查看处理方式 <ArrowRight :size="14"
+          /></router-link>
+        </div>
+      </section>
+    </div>
+    <section class="storage-strip">
+      <span class="storage-icon"><HardDrive :size="24" /></span>
+      <div>
+        <strong>统一下载目录</strong>
+        <p>{{ settings.downloadRoot }}</p>
+      </div>
+      <div class="storage-cloud">
+        <span>云端归档目标</span
+        ><strong>{{ settings.archiveDestinationLabel }}</strong>
+      </div>
+      <router-link to="/settings"
+        >管理存储 <ArrowUpRight :size="15"
+      /></router-link>
+    </section>
+    <p class="muted overview-footnote">
+      演示数据包含未下载、部分完成和上传待处理情况。所有真实文件结果将在后续接入
+      Java 后核实。
+    </p>
+  </div>
+</template>
