@@ -97,7 +97,22 @@ button {
   flex-direction: column;
   padding: 26px 14px 16px;
   z-index: 30;
+  height: 100dvh;
+  overflow: hidden;
 }
+.sidebar > .brand { flex-shrink: 0; }
+.sidebar-scroll {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+  padding: 3px;
+}
+.sidebar-scroll > * { flex-shrink: 0; }
 .brand {
   display: flex;
   align-items: center;
@@ -386,6 +401,25 @@ button {
   margin: 0;
   line-height: 1.75;
 }
+.runtime-summary { display: flex; flex-wrap: wrap; gap: 22px 40px; align-items: start; margin-bottom: 28px; padding: 22px 24px; background: #fff; border: 1px solid var(--line); border-radius: 10px; }
+.runtime-item { display: flex; align-items: start; gap: 13px; flex: 1 1 280px; }
+.runtime-item > svg { margin-top: 5px; color: var(--primary); }
+.runtime-item .page-title { font-size: 22px; margin-bottom: 7px; }
+.runtime-item strong { display: block; font-size: 18px; }
+.runtime-item p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+.runtime-item .text-danger { color: var(--el-color-danger); }
+.service-list { display: flex; gap: 12px; flex-wrap: wrap; }
+.runtime-observed { display: flex; flex-wrap: wrap; gap: 14px; flex-basis: 100%; color: var(--muted); font-size: 12px; }
+.text-good { color: var(--primary); }
+.text-bad { color: var(--el-color-danger); }
+.text-warn { color: var(--el-color-warning); }
+.platform-summary { display: flex; gap: 8px 22px; flex-wrap: wrap; color: var(--muted); font-size: 13px; }
+.platform-summary strong { color: #42594c; font-weight: 600; margin-left: 5px; }
+.bilibili-heading { display: flex; align-items: center; gap: 12px; font-size: 22px; }
+.cover-placeholder { display: grid; place-items: center; height: 100%; color: var(--muted); }
+.video-published { margin: 3px 0; font-size: 11px; color: var(--muted); }
+.settings-side .el-checkbox { min-height: 32px; height: auto; }
+.settings-side .el-checkbox__inner { width: 14px; height: 14px; }
 .toolbar {
   display: flex;
   align-items: center;
@@ -588,9 +622,12 @@ button {
   margin-top: 3px;
 }
 .filter-label {
-  font-size: 12px;
-  color: #849087;
+  font-size: 13px;
+  font-weight: 600;
+  color: #53665b;
   white-space: nowrap;
+  user-select: none;
+  cursor: default;
 }
 .filter-options {
   display: flex;
@@ -982,7 +1019,12 @@ button {
   font-size: 11px;
   color: #a1ad9d;
   padding: 23px 10px 6px;
+  margin: 0;
+  font-weight: 600;
 }
+.source-subgroup { margin: 8px 10px 3px; font-size: 12px; color: #67776c; font-weight: 500; }
+.source-dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 12px; }
+.source-dialog-actions > .el-button:first-child { margin-right: auto; }
 .source-row {
   display: flex;
   position: relative;
@@ -1073,24 +1115,20 @@ button {
   justify-content: space-between;
   gap: 12px;
   margin: 13px 0;
+  flex-wrap: wrap;
 }
-.filter-secondary label {
+.published-date-filter {
   display: flex;
   align-items: center;
   gap: 8px;
   color: #89977f;
   font-size: 12px;
+  flex-wrap: wrap;
 }
-.filter-secondary input {
-  border: 1px solid #e0e6dc;
-  border-radius: 5px;
-  background: #fff;
-  color: #7a8970;
-  max-width: 135px;
-  font-size: 11px;
-  padding: 4px;
-  min-width: 0;
-}
+.published-date-filter .el-date-editor { width: 142px; }
+.date-zone { font-size: 11px; color: var(--muted); }
+.sort-select { width: 135px; margin-left: auto; }
+.published-calendar { --el-datepicker-active-color: var(--primary); }
 .filter-secondary .toolbar {
   gap: 7px;
 }
@@ -1115,7 +1153,9 @@ button {
   border-radius: 9px;
   overflow: hidden;
   transition: border-color 0.15s;
+  cursor: pointer;
 }
+.video-card:hover { border-color: #9cb7a6; }
 .video-card.chosen {
   border-color: #538761;
   box-shadow: 0 0 0 1px #538761;
@@ -1152,8 +1192,8 @@ button {
   position: absolute;
   top: 10px;
   left: 10px;
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   display: grid;
   place-items: center;

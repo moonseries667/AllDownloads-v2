@@ -116,38 +116,40 @@ onBeforeUnmount(() => {
           >AllDownloads<span>内容，由你掌握</span></span
         ></router-link
       >
-      <span class="nav-caption" v-if="!collapsed">工作空间</span>
-      <nav aria-label="主导航">
-        <template v-for="(item, index) in nav" :key="item.path"
-          ><div v-if="index === 4" class="nav-divider"></div>
-          <router-link
-            :to="item.path"
-            :title="item.label"
-            :class="{ active: route.path === item.path }"
-            ><component :is="item.icon" :size="19" /><span>{{
-              item.label
-            }}</span
-            ><b v-if="item.path === '/tasks' && overview.issues">{{
-              overview.issues
-            }}</b></router-link
-          ></template
-        >
-      </nav>
-      <div class="sidebar-bottom">
-        <div class="workspace-label" v-if="!collapsed">
-          <span class="workspace-avatar">A</span>
-          <div>
-            个人内容空间<small>{{
-              isDemo ? "隔离演示数据" : "业务工作台"
-            }}</small>
+      <div class="sidebar-scroll">
+        <span class="nav-caption" v-if="!collapsed">工作空间</span>
+        <nav aria-label="主导航">
+          <template v-for="(item, index) in nav" :key="item.path"
+            ><div v-if="index === 4" class="nav-divider"></div>
+            <router-link
+              :to="item.path"
+              :title="item.label"
+              :class="{ active: route.path === item.path }"
+              ><component :is="item.icon" :size="19" /><span>{{
+                item.label
+              }}</span
+              ><b v-if="item.path === '/tasks' && overview.issues">{{
+                overview.issues
+              }}</b></router-link
+            ></template
+          >
+        </nav>
+        <div class="sidebar-bottom">
+          <div class="workspace-label" v-if="!collapsed">
+            <span class="workspace-avatar">A</span>
+            <div>
+              个人内容空间<small>{{
+                isDemo ? "隔离演示数据" : "业务工作台"
+              }}</small>
+            </div>
           </div>
+          <router-link
+            to="/settings"
+            :class="{ active: route.path === '/settings' }"
+            title="设置"
+            ><Settings :size="19" /><span>设置与账号</span></router-link
+          >
         </div>
-        <router-link
-          to="/settings"
-          :class="{ active: route.path === '/settings' }"
-          title="设置"
-          ><Settings :size="19" /><span>设置与账号</span></router-link
-        >
       </div>
     </aside>
     <div class="main-column">

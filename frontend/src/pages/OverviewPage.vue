@@ -14,26 +14,29 @@ import {
   AlertCircle,
   CloudUpload,
 } from "lucide-vue-next";
-import { api, dataRevision, notifyError } from "../api/client";
+import { api, dataRevision, isDemo } from "../api/client";
 import { formatDate, platformName } from "../format";
 import StatusBadge from "../components/StatusBadge.vue";
+import RuntimeSummary from "../components/RuntimeSummary.vue";
 const router = useRouter(),
   stats = ref<any>({}),
   tasks = ref<any[]>([]),
   issues = ref<any[]>([]),
   settings = ref<any>({});
+const loading = ref(true), error = ref("");
 async function load() {
-  try {
-    [stats.value, tasks.value, issues.value, settings.value] =
-      await Promise.all([
+    const results = await Promise.allSettled([
         api.get("/overview"),
         api.get("/tasks").then((x) => x.items),
         api.get("/issues").then((x) => x.items),
         api.get("/settings"),
       ]);
-  } catch (e) {
-    notifyError(e);
-  }
+    if (results[0].status === "fulfilled") { stats.value = results[0].value; error.value = ""; }
+    else error.value = results[0].reason.message;
+    if (results[1].status === "fulfilled") tasks.value = results[1].value;
+    if (results[2].status === "fulfilled") issues.value = results[2].value;
+    if (results[3].status === "fulfilled") settings.value = results[3].value;
+    loading.value = false;
 }
 onMounted(load);
 watch(dataRevision, load);
@@ -69,14 +72,7 @@ const platforms = [
 </script>
 <template>
   <div>
-    <div class="page-header overview-heading">
-      <div>
-        <div class="page-eyebrow">你的内容工作空间</div>
-        <h1 class="page-title">让好内容，有处可寻。</h1>
-        <p class="page-subtitle">从发现、保存到归档，在这里照看你的内容。</p>
-      </div>
-      <div class="date-note">本机前端预览<span>独立浏览 · 统一管理</span></div>
-    </div>
+    <RuntimeSummary :runtime="stats.runtime" :loading="loading" :error="error" :demo="isDemo" />
     <div class="overview-stats">
       <div
         v-for="item in [
@@ -188,7 +184,7 @@ const platforms = [
         >管理存储 <ArrowUpRight :size="15"
       /></router-link>
     </section>
-    <p class="muted overview-footnote">
+    <p v-if="isDemo" class="muted overview-footnote">
       演示数据包含未下载、部分完成和上传待处理情况。所有真实文件结果将在后续接入
       Java 后核实。
     </p>
