@@ -142,6 +142,7 @@ public final class OperationQueue {
                     String[] claim=store.row("SELECT task_id FROM output_claims WHERE root_id=? AND output_id=?",text(plan.path("destination"),"rootId"),text(output,"id"));
                     if(claim!=null&&!claim[0].equals(id))throw Failure.conflict("OUTPUT_OWNED_BY_ANOTHER_TASK");
                 }
+                store.update("DELETE FROM objects WHERE kind='knownDownloadFailure' AND id=?",id);
                 task.put("desiredAction","CONTINUE");store.update("UPDATE operations SET status='QUEUED',retry_at=NULL WHERE id=?",op[0]);state(task,"QUEUED",null,null);
             }
             case "RECONCILE" -> { /* Keep retained proof: the runner must reconcile its durable receipt. */ }
@@ -166,7 +167,7 @@ public final class OperationQueue {
         ObjectNode task=store.get("task",taskId);String status=text(task,"status");
         if(status.equals("FAILED"))return control(taskId,text(task,"revision"),"RETRY");
         if(status.equals("PAUSED"))return control(taskId,text(task,"revision"),"RESUME");
-        if(!status.equals("NEEDS_ACTION")||store.optional("knownDownloadFailure",taskId)==null)throw Failure.conflict("RECONCILE_REQUIRED");
+        if(!status.equals("CANCELLED")&&(!status.equals("NEEDS_ACTION")||text(task.path("error"),"code").equals("RESULT_UNKNOWN")||store.optional("knownDownloadFailure",taskId)==null))throw Failure.conflict("RECONCILE_REQUIRED");
         task.set("allowedActions",MAPPER.valueToTree(List.of("RETRY")));store.put("task",taskId,task);return control(taskId,text(task,"revision"),"RETRY");
     }
     public static String message(String code) { return switch(code) {case "RESOURCE_DELETED"->"原资源已确认删除";case "PERMISSION_DENIED","ACCOUNT_PERMISSION_DENIED"->"没有访问权限";case "REGION_RESTRICTED"->"当前地区不可访问";case "PAYMENT_REQUIRED"->"内容需要相应付费权限";case "NETWORK_TEMPORARY"->"网络暂时失败，可稍后重试";case "RESULT_UNKNOWN"->"执行结果待核对";case "INVALID_STORAGE_ROOT"->"下载目录无效或不可写";case "ACCOUNT_NOT_CONFIGURED","AUTH_REQUIRED"->"尚未配置可用账号";case "PROVIDER_CHANGED"->"平台接口或内容已改变，需要重新获取资料";default->"处理未完成（"+code.replaceAll("[^A-Z0-9_]","")+"）";}; }
