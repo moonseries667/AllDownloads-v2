@@ -103,6 +103,10 @@ public final class StorageSettings {
     }
     public ObjectNode folders(Map<String,String> query) throws SQLException {
         String account=query.get("accountId");if(account==null||account.isBlank())throw Failure.bad("INVALID_INPUT","accountId is required");
+        JsonNode runner=store.all("runner").stream().max(Comparator.comparing(r->text(r,"lastSeenAt"))).orElse(null);
+        String unavailable=runner==null||!Instant.parse(text(runner,"lastSeenAt")).isAfter(store.clock.instant().minusSeconds(90))?"RUNNER_UNAVAILABLE":
+            strings(runner.path("capabilities")).contains("LIST_DRIVE_FOLDERS")?null:"AUTH_REQUIRED";
+        if(unavailable!=null)return object("items",List.of(),"nextCursor",null,"total",null,"parent",null,"breadcrumbs",List.of(),"status","NEEDS_ACTION","taskId",null,"error",error(unavailable));
         String parent=query.get("parentId"),cursor=null;int size;
         try {size=Integer.parseInt(query.getOrDefault("pageSize","50"));}catch(Exception e){throw Failure.bad("INVALID_INPUT","Invalid pageSize");}
         if(size<1||size>200)throw Failure.bad("INVALID_INPUT","Invalid pageSize");

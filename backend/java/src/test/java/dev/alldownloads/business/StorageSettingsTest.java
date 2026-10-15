@@ -23,6 +23,8 @@ class StorageSettingsTest {
         ObjectNode before=settings(),selection=f.store.tx(f.app.storageSettings::selectDirectory);JsonNode op=f.acquire("SELECT_LOCAL_DIRECTORY");
         f.complete(op,object("selectionId",selection.path("selectionId"),"cancelled",true,"target",null));assertEquals("CANCELLED",text(f.store.tx(()->f.store.get("directorySelection",text(selection,"selectionId"))),"status"));assertEquals(before,settings());
         register(false);ObjectNode unavailable=f.store.tx(f.app.storageSettings::selectDirectory);assertTrue(unavailable.path("taskId").isNull());assertEquals("UNAVAILABLE",text(f.store.tx(()->f.store.get("directorySelection",text(unavailable,"selectionId"))),"status"));assertEquals(before.path("defaultTarget"),settings().path("defaultTarget"));
+        f.store.tx(()->f.app.queue.register(object("runnerId","runner","protocolVersion",1,"capabilities",List.of("VALIDATE_TARGET"),"tools",object())));
+        ObjectNode noDrive=browse();assertEquals("NEEDS_ACTION",text(noDrive,"status"));assertEquals("AUTH_REQUIRED",text(noDrive.path("error"),"code"));assertTrue(noDrive.path("taskId").isNull());
     }
     @Test void lateNativeSelectionAfterUserCancelCannotChangeOrCreateTarget() {
         ObjectNode request=f.store.tx(f.app.storageSettings::selectDirectory);JsonNode op=f.acquire("SELECT_LOCAL_DIRECTORY");f.store.tx(()->f.app.storageSettings.cancelSelection(text(request,"selectionId")));

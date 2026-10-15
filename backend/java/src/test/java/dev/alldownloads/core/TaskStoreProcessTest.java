@@ -58,12 +58,20 @@ class TaskStoreProcessTest {
 
     private static TaskStore reopenAfterTermination(Path database) throws Exception {
         // Windows may signal the terminated process before releasing its file locks.
-        // Verify eventual release within a fixed deadline; every other I/O failure remains fatal.
+        // WAL recovery can also observe SQLITE_IOERR_TRUNCATE while the killed process's
+        // Windows handles are being released. Retry only that exact recovery condition;
+        // persistent or unrelated storage failures still fail the test and preserve its data.
         long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(5);
         while(true) {
             try {return new TaskStore(database,Clock.fixed(Instant.parse("2026-10-15T00:00:00Z"),ZoneOffset.UTC));}
             catch(IOException e) {
                 if(!"Control directory is already in use".equals(e.getMessage())||System.nanoTime()>=deadline)throw e;
+                Thread.sleep(25);
+            }
+            catch(org.sqlite.SQLiteException e) {
+                if(!System.getProperty("os.name").toLowerCase().contains("win")
+                    ||e.getResultCode()!=org.sqlite.SQLiteErrorCode.SQLITE_IOERR_TRUNCATE
+                    ||System.nanoTime()>=deadline)throw e;
                 Thread.sleep(25);
             }
         }
