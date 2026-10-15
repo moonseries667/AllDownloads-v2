@@ -62,9 +62,16 @@ func Download(ctx context.Context, c DownloadClient, publisher p.Publisher, req 
 		return empty, p.NewFault("PROVIDER_UNAVAILABLE", "DOWNLOAD")
 	}
 	recorder := &recordingPublisher{delegate: publisher, verified: map[string]p.FileEvidence{}}
+	messageIDs := map[string]bool{}
+	for _, id := range req.MessageIDs {
+		if n, err := messageNumber(id); err != nil || n == 0 || messageIDs[id] {
+			return empty, p.NewFault("INVALID_INPUT", "PLAN")
+		}
+		messageIDs[id] = true
+	}
 	attachments := map[string]DownloadAttachment{}
 	for _, a := range req.Attachments {
-		if a.ID == "" || a.ExternalID == "" || a.Name == "" {
+		if a.ID == "" || a.ExternalID == "" || a.Name == "" || !messageIDs[a.MessageID] {
 			return empty, p.NewFault("INVALID_INPUT", "PLAN")
 		}
 		if _, exists := attachments[a.ID]; exists {
@@ -141,6 +148,24 @@ func Download(ctx context.Context, c DownloadClient, publisher p.Publisher, req 
 			body := map[string]any{}
 			if err := json.Unmarshal(metaBytes, &body); err != nil {
 				return nil, p.NewFault("INVALID_INPUT", "METADATA")
+			}
+			// Java freezes the original group messages. Derive this attachment's
+			// historical sidecar fields from its own member, retaining full text.
+			for _, key := range []string{"channel", "author_tags", "source_links", "message_url", "message_preview"} {
+				if _, ok := body[key]; !ok {
+					body[key] = nil
+				}
+			}
+			if messages, ok := body["messages"].([]any); ok {
+				for _, raw := range messages {
+					msg, ok := raw.(map[string]any)
+					if !ok || msg["externalId"] != a.MessageID {
+						continue
+					}
+					body["channel"], body["author_tags"], body["source_links"] = msg["channel"], msg["authorTags"], msg["sourceLinks"]
+					body["message_preview"] = map[string]any{"text": msg["text"], "sentAt": msg["sentAt"], "sender": msg["sender"], "source": msg["channel"]}
+					break
+				}
 			}
 			body["schemaVersion"] = 1
 			body["message_id"] = a.MessageID

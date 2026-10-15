@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"syscall"
 )
 
 // Fault has safe, fixed messages. Provider errors must be translated at the
@@ -49,6 +51,14 @@ func NewFault(code, stage string) *Fault {
 		f.Message = "文件事实与冻结清单不一致"
 	case "INVALID_INPUT":
 		f.Message = "执行计划或平台对象字段无效"
+	case "INSUFFICIENT_SPACE":
+		f.Message = "本机目标目录空间不足，已完成文件保留"
+	case "LOCAL_IO_ERROR":
+		f.Message = "本机文件读写失败，需要检查存储状态"
+	case "LOCAL_FILE_NOT_FOUND":
+		f.Message = "本机已记录的文件不存在，需要核对"
+	case "INVALID_STORAGE_ROOT":
+		f.Message = "本批本机目录不可用或不在允许范围内"
 	default:
 		f.Code, f.Message = "PROVIDER_CHANGED", "平台返回的数据不完整或不符合已确认结构"
 	}
@@ -61,6 +71,19 @@ func SafeFault(err error, stage string) *Fault {
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return NewFault("NETWORK_TEMPORARY", stage)
+	}
+	if errors.Is(err, os.ErrPermission) {
+		return NewFault("PERMISSION_DENIED", stage)
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return NewFault("LOCAL_FILE_NOT_FOUND", stage)
+	}
+	if errors.Is(err, syscall.Errno(112)) || errors.Is(err, syscall.Errno(39)) {
+		return NewFault("INSUFFICIENT_SPACE", stage)
+	}
+	var pathError *os.PathError
+	if errors.As(err, &pathError) {
+		return NewFault("LOCAL_IO_ERROR", stage)
 	}
 	var f *Fault
 	if errors.As(err, &f) {
