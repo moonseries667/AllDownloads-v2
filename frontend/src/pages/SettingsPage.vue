@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from "vue";
+import { computed, ref, onMounted, watch } from "vue";
 import {
   FolderOpen,
   Cloud,
@@ -21,17 +21,46 @@ import {
 } from "../api/client";
 import { platformName, formatDate } from "../format";
 import StatusBadge from "../components/StatusBadge.vue";
+import NativeDirectoryField from "../components/NativeDirectoryField.vue";
+import DriveFolderPicker from "../components/DriveFolderPicker.vue";
+import { archiveSettingsApi, errorMessage, type StorageSettings, type SettingsValidation } from "../api/archive-settings";
 import { serviceLabels, mountLabels } from "../components/runtimePresentation";
 const settings = ref<any>({}),
   form = ref<any>({}),
   accounts = ref<any[]>([]),
   health = ref<any>({}),
-  validation = ref<any>(null),
+  validation = ref<SettingsValidation | null>(null),
   saving = ref(false),
   scenario = ref("normal"),
   switching = ref(false),
   auth = ref<any>(null),
   authOpen = ref(false);
+const validating = ref(false), nativeSelecting = ref(false), draftRevision = ref(""), driveAccountId = ref("");
+const storageError = ref(""), versionConflict = ref(false);
+const driveAccounts = computed(() => accounts.value.filter(account => account.platform === "GOOGLE_DRIVE"));
+const pickerUnavailable = computed(() => isDemo ? "演示模式不打开系统窗口。" : "运行主机尚未提供可用的原生目录选择能力，请确认使用同机浏览器与可交互桌面。");
+function setDraft(value: StorageSettings) {
+  form.value = JSON.parse(JSON.stringify(value)); draftRevision.value = value.revision;
+  driveAccountId.value = value.archiveDestination?.accountId || driveAccounts.value[0]?.id || "";
+  validation.value = null;
+  storageError.value = ""; versionConflict.value = false;
+}
+function storageFailure(cause: unknown) {
+  storageError.value = cause instanceof Error ? cause.message : "存储设置未能保存，请重试。";
+  versionConflict.value = (cause as { code?: string })?.code === "VERSION_CHANGED";
+  notifyError(cause);
+}
+async function reloadSettings() {
+  try { settings.value = await api.get("/settings"); setDraft(settings.value); }
+  catch (cause) { storageFailure(cause); }
+}
+async function selectDirectory(signal: AbortSignal) {
+  const result = await archiveSettingsApi.selectDirectory(signal);
+  if (result.status === "SELECTED" && result.target) {
+    form.value.defaultTarget = result.target; form.value.downloadRoot = result.path;
+  }
+  return result;
+}
 function serviceState(id: string) {
   return serviceLabels[health.value.runtime?.services?.find((service: { id: string }) => service.id.toLowerCase() === id)?.state] || "未知";
 }
@@ -87,9 +116,12 @@ async function load() {
     ]);
     if (s.status === "fulfilled") {
       settings.value = s.value;
-      if (!Object.keys(form.value).length) form.value = { ...s.value };
+      if (!Object.keys(form.value).length) setDraft(s.value);
     } else notifyError(s.reason);
-    if (a.status === "fulfilled") accounts.value = a.value.items;
+    if (a.status === "fulfilled") {
+      accounts.value = a.value.items;
+      if (!driveAccountId.value && driveAccounts.value.length === 1) driveAccountId.value = driveAccounts.value[0].id;
+    }
     else notifyError(a.reason);
     if (h.status === "fulfilled") health.value = h.value;
     else { health.value = {}; notifyError(h.reason); }
@@ -99,27 +131,27 @@ async function load() {
   }
 }
 async function validate() {
+  storageError.value = ""; versionConflict.value = false;
+  validating.value = true;
   try {
-    validation.value = await api.post("/settings/validate", form.value);
+    if (!form.value.defaultTarget) throw Error("请先读取已验证的本机下载目录。");
+    validation.value = await archiveSettingsApi.validate(form.value.defaultTarget, form.value.archiveDestination ?? null);
+    return validation.value;
   } catch (e) {
-    notifyError(e);
-  }
+    storageFailure(e);
+    return null;
+  } finally { validating.value = false; }
 }
 async function save() {
   saving.value = true;
   try {
-    const result = await api.post("/settings/validate", form.value);
-    validation.value = result;
-    if (!result.valid) return;
-    settings.value = await api.patch(
-      "/settings",
-      form.value,
-      settings.value.revision,
-    );
-    form.value = { ...settings.value };
-    notifySuccess("统一设置已保存。已有文件不会自动搬迁。");
+    const result = await validate();
+    if (!result || result.status !== "VALID") return;
+    settings.value = await archiveSettingsApi.save(result.id, draftRevision.value);
+    setDraft(settings.value);
+    notifySuccess("存储设置已保存。已有订单继续使用原目标，文件保留原位。");
   } catch (e) {
-    notifyError(e);
+    storageFailure(e);
   } finally {
     saving.value = false;
   }
@@ -193,74 +225,36 @@ watch(form, () => (validation.value = null), { deep: true });
             <h2><FolderOpen :size="21" />存储位置</h2>
             <span class="muted">目录版本 {{ settings.storageRevision }}</span>
           </div>
-          <el-form label-position="top"
-            ><el-form-item label="统一本机下载根目录"
-              ><el-input
-                v-model="form.downloadRoot"
-                aria-label="统一本机下载根目录"
-                placeholder="D:\AllDownloadsData"
-              />
-              <p class="field-help">
-                正式运行时位于 Y7000P
-                的本机磁盘；本轮只保存演示配置，不创建目录。
-              </p></el-form-item
-            ><el-form-item label="Google Drive 归档目标"
-              ><el-input
-                v-model="form.archiveDestinationLabel"
-                aria-label="Google Drive 归档目标"
-              />
-              <p class="field-help">
-                云端目标与本机下载根独立配置。
-              </p></el-form-item
-            >
+          <el-form label-position="top">
+            <el-form-item label="统一本机下载根目录">
+              <NativeDirectoryField :model-value="form.downloadRoot || ''" :select-directory="selectDirectory" :disabled="saving || validating || !form.defaultTarget" @busy="nativeSelecting = $event" />
+              <p v-if="settings.directoryPicker && !settings.directoryPicker.available" class="field-help">{{ pickerUnavailable }}</p>
+            </el-form-item>
+            <el-form-item label="Goole Drive上传目录">
+              <el-select v-if="driveAccounts.length > 1" v-model="driveAccountId" aria-label="Google Drive账号" :disabled="saving || validating" @change="form.archiveDestination = null"><el-option v-for="account in driveAccounts" :key="account.id" :value="account.id" :label="account.label" /></el-select>
+              <DriveFolderPicker :model-value="form.archiveDestination ?? null" :account-id="driveAccountId" :disabled="saving || validating || nativeSelecting" @update:model-value="form.archiveDestination = $event" />
+              <p class="field-help">选择目录后还需校验并保存；已排队上传继续使用原来的 Google Drive 目标。</p>
+              <p v-if="!driveAccounts.length" role="status">尚无 Google Drive 账号，请先完成账号配置。</p>
+            </el-form-item>
             <div class="form-two">
-              <el-form-item label="同时下载数量"
-                ><el-input-number
-                  v-model="form.downloadConcurrency"
-                  :min="1"
-                  :max="10"
-                  aria-label="同时下载数量" /></el-form-item
-              ><el-form-item label="同时上传数量"
-                ><el-input-number
-                  v-model="form.uploadConcurrency"
-                  :min="1"
-                  :max="10"
-                  aria-label="同时上传数量"
-              /></el-form-item>
+              <el-form-item label="同时下载数量"><span>{{ settings.downloadConcurrency ?? '由运行配置管理' }}</span></el-form-item>
+              <el-form-item label="同时上传数量"><span>{{ settings.uploadConcurrency ?? '由运行配置管理' }}</span></el-form-item>
             </div>
-            <p class="muted">
-              显示时区：Asia/Shanghai。修改下载根前需处理在途任务；旧根文件保留原位。
-            </p>
+            <p class="muted">显示时区：Asia/Shanghai。全局默认目录与下载清单中的本批目录分别保存。</p>
+            <p v-if="validating" role="status">正在校验本机目录与 Google Drive 目标…</p>
+            <div v-if="storageError" role="alert" class="mb16"><p class="text-danger">{{ storageError }}</p><el-button v-if="versionConflict" @click="reloadSettings">载入最新设置并重选目录</el-button></div>
             <div v-if="validation" class="mb16">
-              <el-alert
-                :title="
-                  validation.valid
-                    ? '格式与模拟任务校验通过'
-                    : '设置暂时无法应用'
-                "
-                :type="validation.valid ? 'success' : 'error'"
-                :closable="false"
-                show-icon
-              />
-              <p
-                v-for="issue in validation.issues"
-                :key="issue"
-                class="text-danger"
-              >
-                {{ issue }}
-              </p>
-              <p class="muted">
-                {{ validation.note }} · 受影响任务
-                {{ validation.affectedTasks }}
-              </p>
+              <el-alert :title="validation.status === 'VALID' ? (isDemo ? '隔离演示校验通过' : '目录校验通过') : '设置暂时无法应用'" :type="validation.status === 'VALID' ? 'success' : 'error'" :closable="false" show-icon />
+              <p v-if="validation.error" class="text-danger">{{ errorMessage(validation.error, '目录已失效或权限发生变化，请重新选择。') }}</p>
             </div>
             <div class="toolbar">
-              <el-button :icon="ShieldCheck" @click="validate"
+              <el-button :icon="ShieldCheck" :loading="validating" :disabled="saving || nativeSelecting || !form.defaultTarget" @click="validate"
                 >校验设置</el-button
               ><el-button
                 type="primary"
                 :icon="Save"
                 :loading="saving"
+                :disabled="validating || nativeSelecting || !form.defaultTarget"
                 @click="save"
                 >保存设置</el-button
               >

@@ -55,8 +55,8 @@ test("Bilibili cross-page selection stays fixed until preview and explicit order
   await page.getByRole("button", { name: "提交下载", exact: true }).click();
   await expect(page.getByRole("dialog")).toBeHidden();
   await page.goto("/downloads");
-  await expect(page.locator(".el-table__body tbody tr")).toHaveCount(2);
-  await expect(page.locator(".el-table__body")).toContainText("等待中");
+  await expect(page.locator(".download-table tbody tr[data-project-id]")).toHaveCount(state.management.projects.length + 2);
+  await expect(page.locator(".download-table tbody")).toContainText("等待中");
 });
 test("Bilibili filtered all-selection supports exclusions and retains scope after filters change", async ({ page }) => {
   await page.goto("/bilibili");
@@ -161,24 +161,17 @@ test("Telegram legacy tabs return to saved media with attachment search", async 
   await page.getByRole("button", { name: "展开消息正文和附件", exact: true }).click();
   await expect(page.locator(".attachment-row")).toHaveCount(4);
 });
-test("cleanup previews only eligible copies, and submission cannot precede confirmation", async ({
-  page,
-}) => {
+test("archive management contains uploads only and retry keeps source downloads unchanged", async ({ page }) => {
   await page.goto("/archives");
-  await page.getByRole("button", { name: "清理本机副本", exact: true }).click();
-  await expect(page.getByRole("dialog")).toContainText("手冲咖啡的日常");
-  await expect(page.getByRole("dialog")).not.toContainText("设计参考手册");
-  await expect(
-    page.getByRole("button", { name: "确认清理", exact: true }),
-  ).toBeDisabled();
-  await page
-    .getByText("我已核对清单，确认清理这些本机副本", { exact: true })
-    .click();
-  await expect(
-    page.getByRole("checkbox", { name: "我已核对清单，确认清理这些本机副本" }),
-  ).toBeChecked();
-  await page.getByRole("button", { name: "确认清理", exact: true }).click();
-  await expect(page.locator(".el-table__body")).toContainText("本机已清理");
+  await expect(page.getByRole("heading", { name: "归档管理", exact: true })).toBeVisible();
+  await expect(page.getByRole("list", { name: "上传队列" })).toContainText("设计的秩序");
+  await expect(page.getByRole("list", { name: "上传队列" })).not.toContainText("周末山间录音与拍摄笔记");
+  await expect(page.getByRole("button", { name: /清理|成果详情|打开本机/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "重试上传", exact: true }).click();
+  await expect(page.locator('[data-upload-id="archive-failed"]')).toContainText("待上传");
+  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("alldownloads.demo.feedback2.v3")!));
+  expect(state.orders).toHaveLength(1);
+  expect(state.artifacts.find((item: any) => item.id === "a1").localState).toBe("VERIFIED");
 });
 test("disk failure preserves preview selection and does not create a completed order", async ({
   page,

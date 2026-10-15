@@ -33,3 +33,13 @@ node node_modules/@playwright/test/cli.js test --config tests/media.playwright.c
 `telegram.ts` 只接受后端标记 eligible=true 的完整收藏单元。共享 mock 提供合格混合组的全部附件，以及被排除的纯文本/纯照片/纯普通文件测试事实；客户端不自行分类或拼接相邻消息。旧链接下载和 Telegram 手动清单入口返回 FEATURE_REMOVED。
 
 `client.ts` 的默认 api 对全部请求失败调用统一通知入口；各页面继续从 client 导入 notifyError/notifySuccess。失败保持原异常供页面内联处理，通知模块按稳定键去重。GET /issues mock 返回稳定 issue id、读/解决状态和时间；acknowledge 或 retry 不解决问题。此 mock 仅验证契约和 UI，不执行后台扫描、下载或恢复。
+
+## 第三部分接入
+
+冻结契约 `baa03f5`（`contracts/FEEDBACK-PART3.md` 与 management.schema.json）。生成管理类型：在仓库根运行 `node frontend/src/api/generate-management-contract.mjs baa03f5`。`archive-settings.ts` 只通过公共客户端访问 Java：`/archives`、`/drive/folders`、`/directory-selections`、`/settings/validate` 和 `/settings/validations/{id}`；保存仅提交 validationId 与最初草稿 revision。
+
+ArchiveUpload.status=SUCCEEDED 按冻结契约代表远端清单已核验，映射成“上传完成”；RUNNING 显示“上传中/核验中”，不从进度推导终态。上传重试使用其 taskId 和 revision，不调用平台下载接口。前端不靠过滤 artifacts 决定后台资格。
+
+本机选择用运行主机返回的 targetId 读取 Target.path，取消与超时不覆盖草稿。Drive 目标显示名称/路径，提交 accountId/folderId/revision。纯演示原生选择始终 UNAVAILABLE；成功/取消用例在独立组件或 transport 替身测试中注入，未冒充真实系统窗口。
+
+`demo-download-projects.ts` 为新下载页面提供项目/子项模型，并把预览订单按实际 contentId/shareId 拆成稳定实例；`demo-archive-settings.ts` 提供已入队上传、Drive 目录及异步设置的隔离事实。保留第二部分演示键，为缺失的新 fixture 补充默认模型，不读取或迁移业务数据。无定时器自动完成下载/上传，运行取消保持待确认。

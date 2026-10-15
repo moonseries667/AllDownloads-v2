@@ -37,7 +37,7 @@ const router = createRouter({
     {
       path: "/archives",
       component: () => import("./pages/ArchivesPage.vue"),
-      meta: { title: "文件与归档" },
+      meta: { title: "归档管理" },
     },
     {
       path: "/tasks",

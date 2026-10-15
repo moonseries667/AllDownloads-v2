@@ -1,4 +1,5 @@
 import type { RecordData } from "./types";
+import { createManagementSeed } from "./demo-archive-settings";
 import { seedMedia } from "./demo-bilibili";
 const date = "2026-10-15T08:30:00Z";
 const ds = (state = "NOT_REQUESTED", done = 0, total = 1) => ({
@@ -486,6 +487,7 @@ export function createSeed() {
   seedMedia(contents, parts);
   return {
     version: 3,
+    management: createManagementSeed(),
     scenario: "normal",
     contents,
     parts,

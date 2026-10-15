@@ -68,7 +68,7 @@ test("both Bilibili detail entry points link the stable content ID", async ({ pa
   await page.getByRole("textbox", { name: "搜索视频标题", exact: true }).fill("把镜头交给山野");
   const card = page.locator(".video-card").filter({ hasText: "把镜头交给山野" });
   await card.getByRole("button", { name: "详情", exact: true }).click();
-  await page.getByRole("button", { name: "查看下载记录", exact: true }).click();
+  await page.getByRole("link", { name: "查看下载记录", exact: true }).click();
   await expect(page).toHaveURL(/platform=BILIBILI&contentId=b1/);
   await expect(page.getByText("当前内容的全部下载记录")).toBeVisible();
 });

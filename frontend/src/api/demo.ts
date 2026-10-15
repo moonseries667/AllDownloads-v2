@@ -1,3 +1,5 @@
+import { createManagementSeed, handleManagementDemo } from "./demo-archive-settings";
+import { ensureDemoProjects, addDemoProjects, handleDownloadProjectsDemo } from "./demo-download-projects";
 import { validateTelegramLinks } from "./telegram-links";
 export { validateTelegramLinks } from "./telegram-links";
 import { createSeed, type DemoState } from "./fixtures";
@@ -19,12 +21,14 @@ export function createDemoTransport(
   if (persist) {
     try {
       const saved = JSON.parse(localStorage.getItem(key) || "null");
-      if (saved?.version === 3) state = saved;
+      if (saved?.version === 3) state = { ...saved, management: saved.management ?? createManagementSeed() };
     } catch {
       /* A corrupt demo cache is replaced with isolated fixtures. */
     }
   }
   const receipts = new Map<string, { body: string; result: unknown }>();
+  state.management.projects ??= [];
+  ensureDemoProjects(state);
   const save = () => {
     if (persist) localStorage.setItem(key, JSON.stringify(state));
   };
@@ -166,21 +170,10 @@ export function createDemoTransport(
     }
     if (path === "/__demo/status") return { scenario: state.scenario };
     if (method !== "GET" && !path.startsWith("/auth-sessions")) writable();
-    if (path === "/settings") {
-      if (method === "PATCH") {
-        checkRevision(state.settings, headers);
-        if (
-          state.orders.some((o) => ["RUNNING", "QUEUED"].includes(o.state)) &&
-          body.downloadRoot !== state.settings.downloadRoot
-        )
-          fail("STORAGE_CHANGED", "存在在途订单，需先处理这些订单后切换下载根");
-        Object.assign(state.settings, body, {
-          revision: String(Number(state.settings.revision) + 1),
-        });
-        return state.settings;
-      }
-      return { ...state.settings, defaultTarget: defaultDemoTarget(state.settings) };
-    }
+    const management = handleManagementDemo(state, method, path, body, headers, p);
+    if (management) return management.data;
+    const downloads = handleDownloadProjectsDemo(state, method, path, body, headers, p);
+    if (downloads) return downloads.data;
     if (path === "/download-targets/validate" && method === "POST") {
       const targetId = id("target");
       const valid = typeof body.path === "string" && /^[A-Za-z]:[\\/]/.test(body.path) &&
@@ -192,30 +185,6 @@ export function createDemoTransport(
     }
     if (path.startsWith("/download-targets/") && method === "GET")
       return state.targets[path.split("/")[2]] ?? fail("NOT_FOUND", "目录校验记录不存在");
-    if (path === "/settings/validate") {
-      const issues = [];
-      if (
-        !/^[A-Za-z]:\\/.test(body.downloadRoot) ||
-        body.downloadRoot.startsWith("\\\\")
-      )
-        issues.push("下载根必须是本机磁盘绝对路径，不能使用 UNC 网络目录");
-      if (!body.archiveDestinationLabel?.trim())
-        issues.push("请填写 Google Drive 目标位置");
-      if (
-        body.downloadRoot !== state.settings.downloadRoot &&
-        state.orders.some((o) => ["RUNNING", "QUEUED"].includes(o.state))
-      )
-        issues.push("仍有在途订单，下载根切换被阻止");
-      return {
-        valid: issues.length === 0,
-        issues,
-        affectedTasks: state.tasks.filter((t) =>
-          ["RUNNING", "QUEUED"].includes(t.status),
-        ).length,
-        storageRevision: state.settings.storageRevision,
-        note: "演示校验仅检查格式与模拟任务；真实可写性须由 Java 验证",
-      };
-    }
     if (path === "/accounts") return list(state.accounts, p);
     if (path.match(/^\/accounts\/[^/]+\/check$/))
       return find(state.accounts, path.split("/")[2]);
@@ -621,7 +590,8 @@ export function createDemoTransport(
       };
       state.orders.unshift(o);
       pv.orderId = o.id;
-      return { orderId: o.id, taskIds: [t.id], reused: false };
+      const projectIds = addDemoProjects(state, o, pv);
+      return { orderId: o.id, taskIds: [t.id], projectIds, reused: false };
     }
     if (path.startsWith("/download-orders/"))
       return find(state.orders, path.split("/")[2]);

@@ -41,7 +41,7 @@ const nav = [
   { label: "Telegram", path: "/telegram", icon: Send },
   { label: "夸克网盘", path: "/quark/cloud", icon: FolderCloud },
   { label: "下载管理", path: "/downloads", icon: Download },
-  { label: "文件与归档", path: "/archives", icon: Archive },
+  { label: "归档管理", path: "/archives", icon: Archive },
   { label: "任务与问题", path: "/tasks", icon: Activity },
 ];
 let loadRun = 0,
