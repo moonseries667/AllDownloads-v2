@@ -31,6 +31,9 @@ type Request struct {
 	ResourceKey  string
 	RelativePath string
 	Content      string
+	// File inputs carry verified identity instead of embedding media in the journal.
+	FileSHA256 string `json:",omitempty"`
+	FileSize   string `json:",omitempty"`
 }
 
 type Receipt struct {
@@ -163,10 +166,13 @@ func (e *Engine) Execute(ctx context.Context, request Request) (Receipt, error) 
 	if err := ctx.Err(); err != nil {
 		return Receipt{}, err
 	}
-	return e.executeLocked(ctx, request, digest, size)
+	if request.FileSHA256 != "" {
+		return Receipt{}, errors.New("file input requires ExecuteFile")
+	}
+	return e.executeLocked(ctx, request, digest, size, func(path string) error { return writeStage(path, []byte(request.Content)) })
 }
 
-func (e *Engine) executeLocked(ctx context.Context, request Request, digest string, size int64) (Receipt, error) {
+func (e *Engine) executeLocked(ctx context.Context, request Request, digest string, size int64, write func(string) error) (Receipt, error) {
 	intent, found, err := e.loadIntent(request.OperationID)
 	if err != nil {
 		return Receipt{}, err
@@ -242,8 +248,13 @@ func (e *Engine) executeLocked(ctx context.Context, request Request, digest stri
 	if err := ctx.Err(); err != nil {
 		return Receipt{}, errors.Join(err, removeIfExists(stagePath))
 	}
-	if err := writeStage(stagePath, []byte(request.Content)); err != nil {
+	if err := write(stagePath); err != nil {
 		return Receipt{}, err
+	}
+	if ok, err := matchesFile(stagePath, digest, size); err != nil {
+		return Receipt{}, err
+	} else if !ok {
+		return Receipt{}, fmt.Errorf("%w: staged file changed before publication", ErrConflict)
 	}
 	if err := ctx.Err(); err != nil {
 		return Receipt{}, errors.Join(err, removeIfExists(stagePath))
@@ -501,6 +512,14 @@ func validateRequest(request Request) (Request, string, int64, error) {
 		return Request{}, "", 0, err
 	}
 	request.RelativePath = relative
+	if request.FileSHA256 != "" || request.FileSize != "" {
+		size, sizeErr := strconv.ParseInt(request.FileSize, 10, 64)
+		_, hashErr := hex.DecodeString(request.FileSHA256)
+		if request.Content != "" || len(request.FileSHA256) != 64 || hashErr != nil || sizeErr != nil || size < 0 {
+			return Request{}, "", 0, errors.New("invalid file input identity")
+		}
+		return request, request.FileSHA256, size, nil
+	}
 	sum := sha256.Sum256(content)
 	return request, hex.EncodeToString(sum[:]), int64(len(content)), nil
 }
