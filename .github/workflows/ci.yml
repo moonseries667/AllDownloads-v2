@@ -1,0 +1,134 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  repository:
+    name: Repository checks
+    runs-on: windows-latest
+    timeout-minutes: 10
+    outputs:
+      frontend: ${{ steps.discover.outputs.frontend }}
+      java: ${{ steps.discover.outputs.java }}
+      go: ${{ steps.discover.outputs.go }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Test CI validation and gate failure cases
+        run: node --test scripts/ci/repository.test.mjs scripts/ci/gate.test.mjs
+      - name: Check tracked files and discover modules
+        id: discover
+        run: node scripts/ci/repository.mjs
+
+  frontend:
+    name: Frontend build and test
+    needs: repository
+    if: needs.repository.outputs.frontend == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+  java:
+    name: Java build and test
+    needs: repository
+    if: needs.repository.outputs.java == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend/java
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/java/pom.xml
+      - run: .\mvnw.cmd --batch-mode --no-transfer-progress -DfailIfNoTests=true verify
+
+  go:
+    name: Go build and test
+    needs: repository
+    if: needs.repository.outputs.go == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend/go
+    env:
+      CGO_ENABLED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: backend/go/go.mod
+          cache: false
+      - name: Check Windows race toolchain
+        run: |
+          Get-Command gcc -ErrorAction Stop | Out-Null
+          $library = gcc --print-file-name libsynchronization.a
+          if ($LASTEXITCODE -ne 0 -or $library -eq 'libsynchronization.a') {
+            throw 'Go race requires MinGW-w64 runtime 8 or newer.'
+          }
+      - run: go test -race -count=1 ./...
+      - run: go vet ./...
+      - run: go build ./...
+
+  gate:
+    name: CI Gate
+    needs: [repository, frontend, java, go]
+    if: always()
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Require complete results for all discovered modules
+        env:
+          CI_NEEDS_JSON: ${{ toJSON(needs) }}
+        run: node scripts/ci/gate.mjs
