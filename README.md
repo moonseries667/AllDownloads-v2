@@ -28,6 +28,8 @@
 | [执行协议](contracts/RUNNER.md) | Java 与 Go 的操作协议、结果确认与任务恢复 |
 | [验收标准](docs/ACCEPTANCE.md) | 真实业务流程及故障注入验收 |
 | [Git 与项目协作指南](docs/GIT-PROJECT-GUIDE.md) | 分支与工作树、任务管理、契约变更、PR、检查及发布交接 |
+| [CI 与合并门槛](docs/CI.md) | 实际检查、模块接入要求与本地复现 |
+| [前后端协作交接](docs/DEVELOPMENT-HANDOFF.md) | 可直接转发的任务、工作树、提交与推送说明 |
 | [并行开发安排](docs/PARALLEL.md) | 各对话的文件归属、开工提示及集成顺序 |
 | [项目工作约定](AGENTS.md) | 防止多个对话改动冲突和需求漂移 |
 
@@ -51,6 +53,6 @@ flowchart LR
 
 ## 建设与验收状态
 
-需求及协议是建设基线，不表示功能已实现。具体实现、检查、联调与远程验收状态以对应任务和 PR 为准；各模块建立后在自己的 README 提供构建和测试命令。当前治理基线提供协作指南和 Issue/PR 模板，尚未配置自动 CI、GitHub 看板或分支保护规则。
+需求及协议是建设基线，不表示功能已实现。具体实现、检查、联调与远程验收状态以对应任务和 PR 为准；各模块建立后在自己的 README 提供构建和测试命令。协作基础设施已配置：[CI](https://github.com/moonseries667/AllDownloads-v2/actions/workflows/ci.yml)、[任务看板](https://github.com/users/moonseries667/projects/1) 和 main 分支保护。main 要求 PR、CI Gate 通过、同步最新主线及解决评审讨论，规则同样适用于管理员。模块源码入库后自动启用对应构建和测试；未实现模块的 skipped 不代表模块验收通过。
 
 文档中的自动转存、下载、上传描述新产品功能，不能作为当前开发对话操作真实账号或部署的授权。推送源码不代表已经在 Y7000P 上运行。

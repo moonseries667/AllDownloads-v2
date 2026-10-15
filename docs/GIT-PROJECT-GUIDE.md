@@ -30,7 +30,7 @@
 | 业务是否达到要求 | [ACCEPTANCE.md](ACCEPTANCE.md) 的编号和对应验证证据 | 协调对话组织，各模块提供证据 |
 | 发布与真实部署状态 | 对应发布 Issue / Release 说明 | 协调对话 |
 
-GitHub Project 看板如启用，只展示同一批 Issue，不另抄一份任务清单。聊天负责讨论，影响其他端的决定要落到契约或 Issue。文档负责长期规则，不逐日重复记录任务状态。
+[GitHub Project 看板](https://github.com/users/moonseries667/projects/1) 已启用，只展示同一批 Issue，不另抄一份任务清单。聊天负责讨论，影响其他端的决定要落到契约或 Issue。文档负责长期规则，不逐日重复记录任务状态。
 
 还没有 Issue 编号的轻量文档修正可以直接开 PR；跨端功能、故障修复、真实验收必须有可追踪任务。没有远程 Issue 写入授权的对话先给出可提交的任务正文，由已获授权的协调对话发布；不得伪造 Issue 链接。
 
@@ -79,7 +79,7 @@ git worktree add --no-track -b feat/frontend/12-bil-selection 'D:\Code\Other\All
 
 `--no-track` 避免新功能分支误把 `origin/main` 当自己的推送目标。工作树的创建、归档、共享远端配置由协调者串行操作；开发者只操作自己工作树的暂存区和任务分支。不要让两个对话检出同一分支，不强行绕过 Git 的占用检查。App 管理的工作树通过 App 的归档机制收尾；普通工作树由协调者核对已提交、已推送及忽略文件后按准确授权处理。
 
-**2026-10-15 的衔接约定：** 前端已经在主目录开始构建，首次治理提交只纳入需求和协作文件，不夹带未交接的 `frontend/**`。这一轮可按现有“共享目录、文件单写、协调者统一 Git”方式完成；前端负责人交接准确文件清单与验证后再由协调者提交。期间其他对话不要在主目录切分支或 pull。下一项独立任务转到工作树。不要移动、清空或自动 stash 正在进行的前端内容。
+**2026-10-15 的衔接约定：** 前端已在主目录开始构建，治理提交不包含未交接的 `frontend/**`。现在按 [前后端协作交接](DEVELOPMENT-HANDOFF.md) 转入独立工作树：前端负责人先停止旧目录写入，核对自己负责的源码、锁文件和测试后复制到分配目录，保留原件，并从新目录继续。协调者不搬移正在编辑的文件；期间不切换主目录分支、不 pull、不清空或自动 stash。
 
 ## 5 一次任务从开工到推送
 
@@ -146,7 +146,7 @@ PR 默认采用 **Squash and merge**，把一个完整任务作为主线一个�
 
 ## 8 任务与看板
 
-先用 GitHub Issues 和 PR 即可；任务量增加再增加一个仓库看板，名称建议 `AllDownloads-v2`。不要求额外项目管理平台，也不为单人多对话建立复杂 Scrum 仪式。
+已建立 [AllDownloads-v2 看板](https://github.com/users/moonseries667/projects/1)，提供状态看板与“任务清单”表格视图；自动纳入本仓库新建的 open Issue。首轮任务为 [#1–#10](https://github.com/moonseries667/AllDownloads-v2/issues)，当前前端承接 #3、后端承接 #4、公共契约由协调者承接 #2。
 
 每个任务至少填写：用户可观察结果、归属角色/对话、准确文件范围、契约基线、前置 Issue、验收编号、验证环境。一个任务只指定一个实际负责对话；同一 GitHub 账号下在正文区分角色，GitHub Assignee 仍是实际账号。
 
@@ -161,13 +161,13 @@ PR 默认采用 **Squash and merge**，把一个完整任务作为主线一个�
 
 阻塞作为附加标记，并写明“被哪个任务阻塞、缺什么、由谁解开”；不丢掉原状态。每个实现对话通常只推进一个主要任务，协调者优先处理契约和集成阻塞。不要用“完成 80%”代替可验收结果。
 
-若使用 Project，字段只保留 Status、Area（frontend/java/go/contracts/integration）、Priority（P0/P1/P2）、Milestone；Blocked 和依赖可用标签或原生关系表达，避免同时维护重复字段。P0 为数据正确性、无法构建或阻断协作的问题；P1 为当前里程碑必要功能；P2 为不阻断目标的改进。看板尚未创建时在 Issue 正文写相同信息即可。
+当前看板使用 Status 字段和上述六个状态；Area、Priority、阶段及依赖记录在 Issue 正文，不再重复建立同义字段。P0 为数据正确性、无法构建或阻断协作的问题；P1 为当前阶段必要功能；P2 为不阻断目标的改进。阶段 M0–M6 是任务正文分类，尚未创建单独的 GitHub Milestone 对象。
 
 模块任务可以在约定的模块验证完成后关闭；父级用户功能任务必须等跨端验收完成。需要等待 Y7000P 的任务保持 Verify；不要对这种任务使用会在合并时自动关闭的 `Closes #...`，改用 `Refs #...`。代码合并不是全部任务的统一完成条件。
 
 ## 9 首轮里程碑与依赖
 
-本表是工作划分，不是已完成进度或已创建的 GitHub Milestone。协调者按当前实际实现把工作录入 Issue，避免重复派发。
+本表是工作划分，不是完成进度或 GitHub Milestone 对象。已录入任务：M0 #1；M1 #2–#5；M2 #6；M3 #7；M4 #8；M5 #9；M6 #10。进度以 Issue 和看板为准，避免重复派发。
 
 | 阶段 | 交付结果 | 主责与依赖 |
 | --- | --- | --- |
@@ -195,26 +195,28 @@ M2、M3、M4 可以按实际人员与任务归属并行，统一任务链路和�
 | 跨端流程 | 一次代表性组合链路；不能把三端各自 mock 通过写成联调通过 |
 | 正式平台 / 发布 | Y7000P 上已授权真实 I/O、恢复和部署验证；持续运行单独记录 |
 
-各模块首个骨架 PR 必须提供自己的 README、锁定工具版本、标准构建/测试入口和最小有效测试。协调者随骨架就绪接入 GitHub Actions；不要注册不存在的必需检查、使用 `continue-on-error` 隐藏失败，或用 `echo success` 表示测试通过。
+各模块首个骨架 PR 必须提供自己的 README、锁定工具版本、标准构建/测试入口和最小有效测试。GitHub Actions 会在骨架入库时启用对应模块检查，具体入口见 [CI.md](CI.md)；不要注册不存在的必需检查、使用 `continue-on-error` 隐藏失败，或用 `echo success` 表示测试通过。
 
-当前治理基线**尚未配置自动 CI**。后续 CI 使用隔离数据，不访问正式账号，不携带 Y7000P 会话，不自动上传业务媒体或安装生产服务。Windows 路径行为必须有 Windows 验证；只通过 Linux CI 不足以证明部署适配。共同检查入口成熟后可增加一个始终运行的汇总检查，必需检查仅选真实存在且稳定产出结果的名称。
+自动 [CI](https://github.com/moonseries667/AllDownloads-v2/actions/workflows/ci.yml) 已启用。Windows runner 执行仓库校验及已入库模块的构建、测试，始终运行的 `CI Gate` 汇总失败、取消及非预期跳过，作为 main 必需检查。CI 使用隔离数据，不访问正式账号，不携带 Y7000P 会话，不上传业务媒体或安装生产服务。初次文档基线只验证仓库检查与 Gate；三端尚未入库时的 skipped 不算三端测试通过。
 
 PR 合并前，协调者确认范围归属、需求/契约一致、必要检查通过、未验证事项有明确承接任务。只审阅最终提交；评审后产生影响行为的新修改要重跑对应检查。功能任务 Done 的条件是其验收结果已出现，并留下可定位的版本与环境证据。
 
-## 11 GitHub 设置建议及现状边界
+## 11 已配置的 GitHub 合并规则
 
-以下是仓库维护者可配置的目标，**本指南和模板不会自动设置 GitHub 分支保护、看板、Issue 或 CI**。
+2026-10-15 已实际配置并读回 [main 分支保护](https://github.com/moonseries667/AllDownloads-v2/settings/branches)，规则匹配精确分支名 `main`。
 
-| 项目 | 建议 |
+| 项目 | 实际规则 |
 | --- | --- |
-| 默认分支 | `main` |
-| 日常合并 | PR，默认 Squash and merge，由协调对话完成集成 |
-| main 规则 | 要求 PR、解决评审讨论；禁止强推和删除；实际检查建立后再设为必需 |
-| 批准数量 | 当前同一个账号承载多对话，不要求另一 GitHub 账号批准；协调者记录实质审阅结论 |
-| CODEOWNERS | 当前指向仓库所有者；有真实协作者后再按实际账号细分 |
-| 自动部署 | 关闭；发布不自动操作 Y7000P |
+| 合并入口 | 必须通过 PR；协调者审阅后默认 Squash and merge |
+| 必需检查 | GitHub Actions 的 `CI Gate`，要求分支同步最新 main |
+| 讨论 | 所有评审讨论须解决 |
+| 管理员 | 同样遵守上述规则，不允许绕过 |
+| 强推与删除 | main 均不允许 |
+| 审核人数 | 不强制其他账号批准；协调者记录实质审阅结论 |
+| CODEOWNERS | 当前为仓库所有者；无强制 Code Owner 批准 |
+| 自动部署 | CI 没有部署、生产账号或 Y7000P 操作 |
 
-PR 作者不能批准自己的 PR，因此当前不设置“至少一位其他账号批准”或强制 Code Owner 批准，避免同一账号工作流被锁住。未来有第二位实际维护者时再调整。分支保护功能还取决于仓库可见性和 GitHub 套餐；不能用文档声明替代实际配置状态。[批准限制](https://docs.github.com/en/pull-requests/how-tos/review-pull-requests/approving-a-pull-request-with-required-reviews)、[分支保护](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
+PR 作者不能批准自己的 PR，当前同一个账号承载多个对话，因此不强制另一账号批准。未来有第二位实际维护者再调整。保护规则不能代替实质评审和目录归属；CI 配置、契约与根规则由协调者维护。[GitHub 批准限制](https://docs.github.com/en/pull-requests/how-tos/review-pull-requests/approving-a-pull-request-with-required-reviews)、[分支保护](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
 
 ## 12 发布与 Y7000P 交接
 
@@ -254,4 +256,4 @@ Carbon 本次已验证 GitHub 官方 443 SSH 可读取目标仓库。若本地�
 下一位接手者需要做什么：
 ```
 
-引用已有文档和 PR，不重复复制整份需求。后续开工提示见 [PARALLEL.md](PARALLEL.md)。
+引用已有文档和 PR，不重复复制整份需求。可直接转发的前后端说明见 [DEVELOPMENT-HANDOFF.md](DEVELOPMENT-HANDOFF.md)，角色边界见 [PARALLEL.md](PARALLEL.md)。
