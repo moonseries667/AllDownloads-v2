@@ -35,8 +35,8 @@ function select(item: Filter, option: Option) {
 </script>
 <template>
   <div class="select-filter">
-    <div v-for="item in data" :key="item.key" class="filter-line">
-      <span class="filter-label">{{ item.title }}</span>
+    <div v-for="item in data" :key="item.key" class="filter-line" role="group" :aria-label="item.title">
+      <span class="filter-label" aria-hidden="true">{{ item.title }}</span>
       <div class="filter-options">
         <button
           v-for="option in item.options"
