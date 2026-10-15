@@ -1,115 +1,42 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import {
-  Archive,
-  ArrowDownToLine,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  CircleAlert,
-  Clock3,
-  Download,
-  FileJson2,
-  FileText,
-  Link2,
-  ListFilter,
-  LoaderCircle,
-  MessageSquareText,
-  RefreshCw,
-  Search,
-  ShieldCheck,
-  Sparkles,
-  Video,
-} from "lucide-vue-next";
-import StatusBadge from "../components/StatusBadge.vue";
-import { api, dataRevision, notifyError, notifySuccess } from "../api/client";
-import { formatBytes, formatDate } from "../format";
-
+import { ArrowDownToLine, ChevronDown, ChevronRight, CircleAlert, Clock3, FileText, Link2, LoaderCircle, MessageSquareText, RefreshCw, Search, ShieldCheck, Video } from "lucide-vue-next";
 import { useRoute } from "vue-router";
-import {
-  canonicalizeTelegramLink as canonicalizeLink,
-  isTelegramMessageLink,
-} from "../api/telegram-links";
+import StatusBadge from "../components/StatusBadge.vue";
+import { api, dataRevision } from "../api/client";
+import { createSavedMessagesApi } from "../api/telegram";
+import { notifyError, notifySuccess } from "../notifications/notify";
+import { formatBytes, formatDate } from "../format";
 const route = useRoute();
 type RecordData = Record<string, any>;
 type TextSegment = { text: string; href?: string };
-
+const savedMessages = createSavedMessagesApi(api);
 const accountId = "tg-main";
-const activeTab = ref<"messages" | "links" | "resources">("messages");
 const messages = ref<RecordData[]>([]);
-const resources = ref<RecordData[]>([]);
 const watcher = ref<RecordData | null>(null);
 const activeTask = ref<RecordData | null>(null);
 const totalMessages = ref<number | null>(null);
-const totalResources = ref<number | null>(null);
-const nextResourceCursor = ref<string | null>(null);
+const nextCursor = ref<string | null>(null);
 const expandedMessages = ref(new Set<string>());
 const messageDetails = ref<Record<string, RecordData>>({});
+const detailLoading = ref(new Set<string>());
 const pageError = ref("");
 const loading = ref(false);
 const taskLoading = ref(false);
 const watcherSaving = ref(false);
 const syncSubmitting = ref(false);
 const retrySubmitting = ref(false);
-const retryingResourceIds = ref(new Set<string>());
+const cancelling = ref(false);
 const messageQuery = ref("");
-const resourceQuery = ref("");
-const resourceState = ref("");
-const linkInput = ref("");
 const showSavedSyncDialog = ref(false);
-const showLinkConfirmDialog = ref(false);
-const detailVisible = ref(false);
-const selectedResource = ref<RecordData | null>(null);
-const detailLoading = ref(false);
 let requestSequence = 0;
 let filterTimer: ReturnType<typeof setTimeout> | undefined;
-
 const scanState = computed<RecordData>(() => watcher.value?.scanState ?? {});
-const initialScanCompleted = computed(
-  () => scanState.value.initialScanCompleted === true,
-);
+const initialScanCompleted = computed(() => scanState.value.initialScanCompleted === true);
 const watcherEnabled = computed(() => watcher.value?.enabled === true);
 const syncTask = computed<RecordData | null>(() => activeTask.value);
-const linkTokens = computed(() =>
-  linkInput.value
-    .split(/\s+/)
-    .map((value) => value.trim())
-    .filter(Boolean),
-);
-const parsedLinks = computed(() => {
-  const unique: string[] = [];
-  const invalid: string[] = [];
-  const seen = new Set<string>();
-  for (const token of linkTokens.value) {
-    const canonical = canonicalizeLink(token);
-    if (!isTelegramMessageLink(token)) {
-      invalid.push(token);
-      continue;
-    }
-    if (!seen.has(canonical)) {
-      seen.add(canonical);
-      unique.push(token);
-    }
-  }
-  return {
-    unique,
-    invalid,
-    duplicateCount: linkTokens.value.length - unique.length - invalid.length,
-  };
-});
-const linksExceedLimit = computed(() => linkTokens.value.length > 200);
-const linkSubmissionReady = computed(
-  () =>
-    parsedLinks.value.unique.length > 0 &&
-    parsedLinks.value.invalid.length === 0 &&
-    !linksExceedLimit.value,
-);
-const resourceSummary = computed(() => {
-  if (totalResources.value == null)
-    return "已显示 " + resources.value.length + " 条";
-  return "共 " + totalResources.value + " 条";
-});
-
+function attachmentsOf(message: RecordData) { return messageDetails.value[idOf(message)]?.attachments ?? message.attachments ?? []; }
+function sourceLinksOf(message: RecordData) { return messageDetails.value[idOf(message)]?.sourceLinks ?? message.sourceLinks ?? []; }
 function idOf(value: RecordData) {
   return String(value.id ?? value.externalId ?? "");
 }
@@ -148,10 +75,10 @@ function displayDate(value: unknown) {
 
 function formatMediaType(value: unknown) {
   if (typeof value !== "string" || !value) return "类型未知";
-  if (value.startsWith("video/")) return "视频";
-  if (value.startsWith("audio/")) return "音频";
-  if (value.startsWith("image/")) return "图片";
-  return value;
+  if (value === "VIDEO" || value.startsWith("video/")) return "视频";
+  if (value === "AUDIO" || value.startsWith("audio/")) return "音频";
+  if (value === "PHOTO" || value.startsWith("image/")) return "图片";
+  return value === "DOCUMENT" ? "文件" : value === "UNKNOWN" ? "类型未知" : value;
 }
 
 function attachmentState(attachment: RecordData) {
@@ -201,91 +128,31 @@ function progressLabel(progress: RecordData | undefined) {
   return parts.length ? parts.join(" · ") : "正在处理，项目总量待确认";
 }
 
-function pagePayload(value: any) {
-  return value && Array.isArray(value.items)
-    ? {
-        items: value.items as RecordData[],
-        total: typeof value.total === "number" ? value.total : null,
-        nextCursor: value.nextCursor ?? null,
-      }
-    : {
-        items: [] as RecordData[],
-        total: null as number | null,
-        nextCursor: null as string | null,
-      };
-}
-
-function queryString(values: Record<string, string | undefined>) {
-  const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(values))
-    if (value) params.set(key, value);
-  const suffix = params.toString();
-  return suffix ? "?" + suffix : "";
-}
-
-async function loadData(appendResources = false) {
+async function loadData(append = false) {
   const sequence = ++requestSequence;
-  const currentTab = activeTab.value;
   loading.value = true;
   pageError.value = "";
   try {
-    const watcherRequest = api.get<RecordData>(
-      "/telegram/watcher?accountId=" + encodeURIComponent(accountId),
-    );
-    if (currentTab === "messages") {
-      const messagePath =
-        "/telegram/messages" +
-        queryString({ q: messageQuery.value.trim() || undefined });
-      const [watcherData, messageData] = await Promise.all([
-        watcherRequest,
-        api.get<RecordData>(messagePath),
-      ]);
-      if (sequence !== requestSequence) return;
-      watcher.value = watcherData;
-      const page = pagePayload(messageData);
-      messages.value = page.items;
-      totalMessages.value = page.total;
-      await loadCurrentTask(watcherData, sequence);
-    } else if (currentTab === "resources") {
-      const cursor = appendResources
-        ? (nextResourceCursor.value ?? undefined)
-        : undefined;
-      const resourcePath =
-        "/telegram/resources" +
-        queryString({
-          q: resourceQuery.value.trim() || undefined,
-          state: resourceState.value || undefined,
-          cursor,
-        });
-      const [watcherData, resourceData] = await Promise.all([
-        watcherRequest,
-        api.get<RecordData>(resourcePath),
-      ]);
-      if (sequence !== requestSequence) return;
-      watcher.value = watcherData;
-      const page = pagePayload(resourceData);
-      resources.value = appendResources
-        ? [...resources.value, ...page.items]
-        : page.items;
-      totalResources.value = page.total;
-      nextResourceCursor.value = page.nextCursor;
-      await loadCurrentTask(watcherData, sequence);
-    } else {
-      const watcherData = await watcherRequest;
-      if (sequence !== requestSequence) return;
-      watcher.value = watcherData;
-      await loadCurrentTask(watcherData, sequence);
-    }
+    const [watcherData, page] = await Promise.all([
+      api.get<RecordData>("/telegram/watcher?accountId=" + encodeURIComponent(accountId)),
+      savedMessages.list(messageQuery.value, append ? nextCursor.value : null),
+    ]);
+    if (sequence !== requestSequence) return;
+    watcher.value = watcherData;
+    messages.value = append ? [...new Map([...messages.value, ...page.items].map(m => [idOf(m), m])).values()] : page.items;
+    totalMessages.value = page.total;
+    nextCursor.value = page.nextCursor;
+    // List refreshes carry current attachment state; stale detail must not mask it.
+    messageDetails.value = {};
+    await loadCurrentTask(watcherData, sequence);
   } catch (error) {
     if (sequence !== requestSequence) return;
-    pageError.value =
-      error instanceof Error ? error.message : "页面信息读取失败，请重试。";
+    pageError.value = error instanceof Error ? error.message : "页面信息读取失败，请重试。";
     notifyError(error);
   } finally {
     if (sequence === requestSequence) loading.value = false;
   }
 }
-
 async function loadCurrentTask(watcherData: RecordData, sequence: number) {
   const taskId = watcherData?.scanState?.activeTaskId;
   if (!taskId) {
@@ -304,65 +171,32 @@ async function loadCurrentTask(watcherData: RecordData, sequence: number) {
 }
 
 function scheduleLoad() {
-  if (filterTimer) clearTimeout(filterTimer);
-  filterTimer = setTimeout(() => {
-    void loadData();
-  }, 280);
+  clearTimeout(filterTimer);
+  requestSequence++;
+  filterTimer = setTimeout(() => void loadData(), 280);
 }
-
-watch(dataRevision, () => {
-  void loadData();
-});
-watch(
-  () => route.query.q,
-  (value) => {
-    if (route.path === "/telegram" && value) {
-      activeTab.value = "resources";
-      resourceQuery.value = String(value);
-    }
-  },
-  { immediate: true },
-);
-watch([activeTab, messageQuery, resourceQuery, resourceState], () => {
-  nextResourceCursor.value = null;
-  scheduleLoad();
-});
-onMounted(() => {
-  void loadData();
-});
-onUnmounted(() => {
-  if (filterTimer) clearTimeout(filterTimer);
-});
-
-function isExpanded(message: RecordData) {
-  return expandedMessages.value.has(idOf(message));
-}
-
+watch(dataRevision, () => void loadData());
+watch(() => route.query.q, value => {
+  if (route.path === "/telegram") messageQuery.value = typeof value === "string" ? value : "";
+}, { immediate: true });
+watch(messageQuery, scheduleLoad);
+onMounted(() => void loadData());
+onUnmounted(() => { clearTimeout(filterTimer); requestSequence++; });
+function isExpanded(message: RecordData) { return expandedMessages.value.has(idOf(message)); }
 async function toggleMessage(message: RecordData) {
   const id = idOf(message);
   const next = new Set(expandedMessages.value);
-  if (next.has(id)) {
-    next.delete(id);
-    expandedMessages.value = next;
-    return;
-  }
+  if (next.has(id)) { next.delete(id); expandedMessages.value = next; return; }
   next.add(id);
   expandedMessages.value = next;
-  if (!messageDetails.value[id]) {
-    try {
-      const detail = await api.get<RecordData>(
-        "/telegram/messages/" + encodeURIComponent(id),
-      );
-      messageDetails.value = { ...messageDetails.value, [id]: detail };
-    } catch (error) {
-      notifyError(error);
-      const rollback = new Set(expandedMessages.value);
-      rollback.delete(id);
-      expandedMessages.value = rollback;
-    }
-  }
+  if (messageDetails.value[id] || detailLoading.value.has(id)) return;
+  detailLoading.value = new Set(detailLoading.value).add(id);
+  try {
+    const detail = await savedMessages.detail(id);
+    messageDetails.value = { ...messageDetails.value, [id]: detail };
+  } catch (error) { notifyError(error); }
+  finally { const pending = new Set(detailLoading.value); pending.delete(id); detailLoading.value = pending; }
 }
-
 async function submitSavedSync() {
   syncSubmitting.value = true;
   try {
@@ -393,7 +227,7 @@ async function toggleWatcher(enabled: boolean | string | number) {
   if (nextEnabled && !initialScanCompleted.value) return;
   watcherSaving.value = true;
   try {
-    await api.patch("/telegram/watcher", { accountId, enabled: nextEnabled });
+    await api.patch("/telegram/watcher", { accountId, enabled: nextEnabled }, watcher.value?.revision);
     notifySuccess(nextEnabled ? "收藏监控已启用。" : "收藏监控已暂停。");
   } catch (error) {
     notifyError(error);
@@ -402,122 +236,23 @@ async function toggleWatcher(enabled: boolean | string | number) {
   }
 }
 
-function openLinkConfirmation() {
-  if (linkSubmissionReady.value) showLinkConfirmDialog.value = true;
-}
-
-async function submitLinks() {
-  if (!linkSubmissionReady.value) return;
-  syncSubmitting.value = true;
+async function retryIncomplete() {
+  retrySubmitting.value = true;
   try {
-    const result = await api.post<RecordData>("/telegram/link-downloads", {
-      accountId,
-      links: parsedLinks.value.unique,
-    });
-    showLinkConfirmDialog.value = false;
-    const taskId = result.taskId;
-    notifySuccess(
-      taskId
-        ? "消息链接任务 " + taskId + " 已受理，已排队等待解析与下载。"
-        : "消息链接任务已受理，已排队等待解析与下载。",
-    );
-    linkInput.value = "";
-  } catch (error) {
-    notifyError(error);
-  } finally {
-    syncSubmitting.value = false;
-  }
+    await api.post("/telegram/retry-incomplete", { accountId });
+    notifySuccess("收藏夹未完成附件的补齐任务已受理，等待执行。");
+  } catch (error) { notifyError(error); }
+  finally { retrySubmitting.value = false; }
 }
-
-async function retryIncomplete(resourceId?: string) {
-  if (resourceId) {
-    const next = new Set(retryingResourceIds.value);
-    next.add(resourceId);
-    retryingResourceIds.value = next;
-  } else retrySubmitting.value = true;
+async function cancelSync() {
+  if (!syncTask.value?.allowedActions?.includes("CANCEL")) return;
+  cancelling.value = true;
   try {
-    const result = await api.post<RecordData>("/telegram/retry-incomplete", {
-      accountId,
-      ...(resourceId ? { resourceIds: [resourceId] } : {}),
-    });
-    const taskId = result.taskId;
-    notifySuccess(
-      taskId
-        ? "补齐任务 " + taskId + " 已受理，已排队，等待执行。"
-        : "补齐未完成文件的任务已受理。",
-    );
-  } catch (error) {
-    notifyError(error);
-  } finally {
-    if (resourceId) {
-      const next = new Set(retryingResourceIds.value);
-      next.delete(resourceId);
-      retryingResourceIds.value = next;
-    } else retrySubmitting.value = false;
-  }
+    await api.post("/tasks/" + encodeURIComponent(syncTask.value.id) + "/actions", { action: "CANCEL" }, syncTask.value.revision);
+    notifySuccess("已请求取消，等待执行程序确认。");
+  } catch (error) { notifyError(error); }
+  finally { cancelling.value = false; }
 }
-
-function canRetry(resource: RecordData) {
-  return (
-    Number(resource.failedCount ?? 0) > 0 ||
-    Number(resource.completedCount ?? 0) < Number(resource.mediaCount ?? 0) ||
-    ["PARTIAL", "NEEDS_ACTION", "FAILED"].includes(String(resource.state ?? ""))
-  );
-}
-
-async function openResource(resource: RecordData) {
-  selectedResource.value = resource;
-  detailVisible.value = true;
-  detailLoading.value = true;
-  try {
-    const detail = await api.get<RecordData>(
-      "/telegram/resources/" + encodeURIComponent(idOf(resource)),
-    );
-    selectedResource.value = detail;
-  } catch (error) {
-    notifyError(error);
-  } finally {
-    detailLoading.value = false;
-  }
-}
-
-async function exportMetadata(resource: RecordData) {
-  try {
-    const result = await api.get<RecordData>(
-      "/telegram/resources/" + encodeURIComponent(idOf(resource)) + "/metadata",
-    );
-    const content = JSON.stringify(result, null, 2);
-    const blob = new Blob([content], {
-      type: "application/json;charset=utf-8",
-    });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    const baseName = String(
-      resource.directoryLabel || "telegram-resource-" + idOf(resource),
-    )
-      .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
-      .slice(0, 100);
-    anchor.href = url;
-    anchor.download = (baseName || "telegram-resource") + ".metadata.json";
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
-    notifySuccess("整帖元数据 JSON 已在浏览器中导出。");
-  } catch (error) {
-    notifyError(error);
-  }
-}
-
-async function loadMoreResources() {
-  if (!nextResourceCursor.value || loading.value) return;
-  await loadData(true);
-}
-
-function resourceDate(resource: RecordData) {
-  return displayDate(resource.sentAt ?? resource.createdAt);
-}
-
 function scanFailure() {
   const failure = scanState.value.error ?? watcher.value?.error;
   if (!failure) return "";
@@ -534,9 +269,9 @@ function scanFailure() {
           <MessageSquareText :size="21" />
         </div>
         <div>
-          <h1 class="page-title">Telegram 收藏</h1>
+          <h1 class="page-title">收藏夹</h1>
           <p class="page-subtitle">
-            浏览已收录消息，按需补扫收藏或提交消息链接。
+            增量下载含音视频的收藏；同一消息或媒体组的照片与其他附件一并保存。
           </p>
         </div>
       </div>
@@ -564,36 +299,11 @@ function scanFailure() {
       <el-button link type="primary" @click="loadData()">重新读取</el-button>
     </el-alert>
 
-    <nav class="telegram-tabs" aria-label="Telegram 页面">
-      <button
-        class="telegram-tab"
-        :class="{ active: activeTab === 'messages' }"
-        @click="activeTab = 'messages'"
-      >
-        <MessageSquareText :size="16" />收藏消息
-      </button>
-      <button
-        class="telegram-tab"
-        :class="{ active: activeTab === 'links' }"
-        @click="activeTab = 'links'"
-      >
-        <Link2 :size="16" />消息链接下载
-      </button>
-      <button
-        class="telegram-tab"
-        :class="{ active: activeTab === 'resources' }"
-        @click="activeTab = 'resources'"
-      >
-        <Archive :size="16" />资源库
-      </button>
-    </nav>
-
     <div class="telegram-layout">
       <section class="telegram-main-panel">
-        <template v-if="activeTab === 'messages'">
           <div class="telegram-section-top">
             <div>
-              <h2 class="section-title">收藏消息流</h2>
+              <h2 class="section-title">收藏内容</h2>
               <p class="muted">
                 原文与附件分别保留状态；展开三角可查看完整正文。
               </p>
@@ -614,10 +324,10 @@ function scanFailure() {
           </div>
           <div v-else-if="!messages.length" class="empty-state telegram-empty">
             <MessageSquareText :size="24" />
-            <strong>还没有已收录的收藏消息</strong>
+            <strong>没有符合条件的收藏内容</strong>
             <span
               >打开页面不会访问
-              Telegram；点击“下载收藏增量”后才会开始同步。</span
+              Telegram；仅含文字、照片或普通文件的内容会被跳过。</span
             >
           </div>
           <div v-else class="message-stream">
@@ -650,17 +360,17 @@ function scanFailure() {
                     >媒体组</span
                   >
                   <span class="message-attachment-count"
-                    >{{ (message.attachments ?? []).length }} 个附件</span
+                    >{{ attachmentsOf(message).length }} 个附件</span
                   >
                   <StatusBadge
                     v-if="messageDownloadState(message)"
                     :state="messageDownloadState(message)"
                   />
                 </div>
-                <button class="message-preview" @click="toggleMessage(message)">
+                <button v-if="!isExpanded(message)" class="message-preview" :aria-expanded="false" @click="toggleMessage(message)">
                   {{ message.text || "此消息没有文字内容" }}
                 </button>
-                <div v-if="isExpanded(message)" class="message-expanded">
+                <div v-else class="message-expanded">
                   <div class="full-message-text" aria-label="完整消息正文">
                     <template
                       v-for="(segment, index) in textSegments(
@@ -681,9 +391,10 @@ function scanFailure() {
                       >此消息没有文字内容。</span
                     >
                   </div>
-                  <div v-if="message.sourceLinks?.length" class="source-links">
+                  <small v-if="detailLoading.has(idOf(message))" class="muted" role="status">正在读取最新详情…</small>
+                  <div v-if="sourceLinksOf(message).length" class="source-links">
                     <a
-                      v-for="(link, index) in message.sourceLinks"
+                      v-for="(link, index) in sourceLinksOf(message)"
                       :key="idOf(message) + '-link-' + index"
                       :href="link"
                       target="_blank"
@@ -693,18 +404,18 @@ function scanFailure() {
                     </a>
                   </div>
                   <div
-                    v-if="message.attachments?.length"
+                    v-if="attachmentsOf(message).length"
                     class="attachment-list"
                   >
                     <div
-                      v-for="attachment in message.attachments"
+                      v-for="attachment in attachmentsOf(message)"
                       :key="idOf(attachment)"
                       class="attachment-row"
                     >
                       <div class="attachment-icon" aria-hidden="true">
                         <Video
                           v-if="
-                            String(attachment.mediaType ?? '').startsWith(
+                            attachment.mediaType === 'VIDEO' || String(attachment.mediaType ?? '').startsWith(
                               'video/',
                             )
                           "
@@ -718,6 +429,7 @@ function scanFailure() {
                           >{{ formatMediaType(attachment.mediaType) }} ·
                           {{ formatBytes(attachment.sizeBytes) }}</span
                         >
+                        <small v-if="attachment.error?.message" class="attachment-error">{{ attachment.error.message }}</small>
                       </div>
                       <StatusBadge :state="attachmentState(attachment)" />
                     </div>
@@ -733,228 +445,12 @@ function scanFailure() {
                 ? "已显示 " + messages.length + " 条消息"
                 : "共 " + totalMessages + " 条消息"
             }}</span>
+            <el-button v-if="nextCursor" text type="primary" :loading="loading" @click="loadData(true)">加载更多</el-button>
             <span v-if="loading" class="muted"
               ><LoaderCircle class="spin" :size="15" />正在更新</span
             >
           </footer>
-        </template>
-
-        <template v-else-if="activeTab === 'links'">
-          <div class="telegram-section-top">
-            <div>
-              <h2 class="section-title">按消息链接下载</h2>
-              <p class="muted">
-                按单帖或完整媒体组处理，支持公开与私有链接、主题及评论串。
-              </p>
-            </div>
-            <span class="links-limit"
-              ><ShieldCheck :size="15" />每批最多 200 条</span
-            >
-          </div>
-          <div class="link-download-card">
-            <label class="input-label" for="telegram-links"
-              >粘贴 Telegram 消息链接</label
-            >
-            <el-input
-              id="telegram-links"
-              v-model="linkInput"
-              type="textarea"
-              :rows="8"
-              resize="vertical"
-              placeholder="每行一条，也可用空格或换行分隔&#10;https://t.me/example/123"
-              aria-label="Telegram 消息链接"
-            />
-            <div class="link-input-footer">
-              <span
-                >{{ parsedLinks.unique.length }} 条不同链接<span
-                  v-if="parsedLinks.duplicateCount"
-                >
-                  · 已去重 {{ parsedLinks.duplicateCount }} 条</span
-                ></span
-              >
-              <el-button
-                type="primary"
-                :disabled="!linkSubmissionReady"
-                @click="openLinkConfirmation"
-              >
-                <template #icon><Download :size="16" /></template>
-                确认链接并继续
-              </el-button>
-            </div>
-            <div
-              v-if="parsedLinks.invalid.length"
-              class="validation-note validation-error"
-            >
-              <CircleAlert :size="16" />
-              <div>
-                <strong>发现无法识别的链接，整批暂不提交</strong>
-                <ul>
-                  <li
-                    v-for="(item, index) in parsedLinks.invalid.slice(0, 5)"
-                    :key="item + '-' + index"
-                  >
-                    {{ item }}
-                  </li>
-                </ul>
-                <span v-if="parsedLinks.invalid.length > 5"
-                  >另有 {{ parsedLinks.invalid.length - 5 }} 条无效链接。</span
-                >
-              </div>
-            </div>
-            <div
-              v-if="linksExceedLimit"
-              class="validation-note validation-error"
-            >
-              <CircleAlert :size="16" />输入共
-              {{ linkTokens.length }} 条，超过本批上限 200 条。
-            </div>
-            <div
-              v-if="
-                linkInput &&
-                !parsedLinks.invalid.length &&
-                !linksExceedLimit &&
-                parsedLinks.unique.length
-              "
-              class="validation-note validation-ok"
-            >
-              <Check :size="16" />
-              <span
-                >链接语法检查通过；本次会解析并下载这些消息目标。目标媒体会按帖或媒体组归档。</span
-              >
-            </div>
-            <div class="link-scope-note">
-              <Sparkles :size="15" />
-              <span
-                >只处理本次明确提交的消息目标，不会抓取整个频道。单条链接访问失败不会阻断其他链接。</span
-              >
-            </div>
-          </div>
-        </template>
-
-        <template v-else>
-          <div class="telegram-section-top resource-heading">
-            <div>
-              <h2 class="section-title">Telegram 资源库</h2>
-              <p class="muted">
-                {{ resourceSummary }} · 每条记录对应一个帖子或媒体组。
-              </p>
-            </div>
-            <el-button :loading="retrySubmitting" @click="retryIncomplete()">
-              <template #icon><RefreshCw :size="15" /></template>
-              补齐全部未完成文件
-            </el-button>
-          </div>
-          <div class="resource-filters">
-            <el-input
-              v-model="resourceQuery"
-              class="telegram-search"
-              clearable
-              placeholder="搜索正文、频道或文件名"
-              aria-label="搜索资源"
-            >
-              <template #prefix><Search :size="15" /></template>
-            </el-input>
-            <el-select
-              v-model="resourceState"
-              clearable
-              placeholder="全部状态"
-              aria-label="按状态筛选"
-            >
-              <el-option label="全部状态" value="" />
-              <el-option label="部分完成" value="PARTIAL" />
-              <el-option label="需要处理" value="NEEDS_ACTION" />
-              <el-option label="失败" value="FAILED" />
-              <el-option label="排队中" value="QUEUED" />
-              <el-option label="进行中" value="RUNNING" />
-              <el-option label="已验证" value="VERIFIED" />
-            </el-select>
-            <span class="filter-caption"
-              ><ListFilter :size="14" />搜索与状态筛选</span
-            >
-          </div>
-
-          <div v-if="loading && !resources.length" class="telegram-loading">
-            <el-skeleton :rows="4" animated />
-          </div>
-          <div v-else-if="!resources.length" class="empty-state telegram-empty">
-            <Archive :size="24" />
-            <strong>没有匹配的 Telegram 资源</strong>
-            <span>调整搜索条件，或通过消息链接添加需要下载的帖子。</span>
-          </div>
-          <div v-else class="resource-list">
-            <article
-              v-for="resource in resources"
-              :key="idOf(resource)"
-              class="resource-card"
-            >
-              <button class="resource-main" @click="openResource(resource)">
-                <div class="resource-icon"><Archive :size="17" /></div>
-                <div class="resource-copy">
-                  <strong>{{
-                    resource.channel ||
-                    resource.directoryLabel ||
-                    "Telegram 资源 " + idOf(resource)
-                  }}</strong>
-                  <span class="resource-subtitle">{{
-                    resource.authorTags?.length
-                      ? resource.authorTags.join(" · ")
-                      : "来源信息未提供"
-                  }}</span>
-                  <span class="resource-date"
-                    >{{ resourceDate(resource) }} ·
-                    {{
-                      resource.mediaCount ?? resource.attachments?.length ?? 0
-                    }}
-                    个附件 · 完成 {{ resource.completedCount ?? 0 }}</span
-                  >
-                </div>
-                <div class="resource-status">
-                  <StatusBadge :state="resource.state ?? 'UNKNOWN'" />
-                  <span v-if="resource.failedCount"
-                    >失败 {{ resource.failedCount }}</span
-                  >
-                </div>
-                <ChevronRight :size="17" class="resource-chevron" />
-              </button>
-              <div class="resource-actions">
-                <el-button
-                  link
-                  type="primary"
-                  @click.stop="exportMetadata(resource)"
-                >
-                  <template #icon><FileJson2 :size="15" /></template>导出元数据
-                  JSON
-                </el-button>
-                <el-button
-                  v-if="canRetry(resource)"
-                  link
-                  type="primary"
-                  :loading="retryingResourceIds.has(idOf(resource))"
-                  @click.stop="retryIncomplete(idOf(resource))"
-                >
-                  <template #icon><RefreshCw :size="15" /></template>补齐本帖
-                </el-button>
-              </div>
-            </article>
-          </div>
-          <footer
-            v-if="resources.length || nextResourceCursor"
-            class="list-footer"
-          >
-            <span class="muted">{{ resourceSummary }}</span>
-            <el-button
-              v-if="nextResourceCursor"
-              text
-              type="primary"
-              :loading="loading"
-              @click="loadMoreResources"
-            >
-              加载更多<ChevronDown :size="15" />
-            </el-button>
-          </footer>
-        </template>
       </section>
-
       <aside class="watcher-panel">
         <div class="watcher-panel-top">
           <div class="watcher-icon"><RefreshCw :size="17" /></div>
@@ -1029,6 +525,8 @@ function scanFailure() {
           />
           <small>{{ progressLabel(syncTask.progress) }}</small>
         </div>
+        <el-button v-if="syncTask?.allowedActions?.includes('CANCEL')" :loading="cancelling" @click="cancelSync">取消同步任务</el-button>
+        <el-button :loading="retrySubmitting" @click="retryIncomplete()">补齐未完成附件</el-button>
         <div v-if="scanFailure()" class="watcher-error">
           <CircleAlert :size="15" /><span>{{ scanFailure() }}</span>
         </div>
@@ -1051,7 +549,7 @@ function scanFailure() {
           <strong>将扫描全部可访问的收藏历史</strong>
           <p>
             首次同步从消息 ID 1
-            开始，收录完整历史，并下载目标音频和视频附件。普通文件不因这次操作自动下载。
+            开始，仅下载包含音频或视频的消息或媒体组；符合条件的同组照片及其他实际附件也会一起保存。纯文字、照片或普通文件不会下载。
           </p>
           <p>
             同步会在后台运行；页面关闭后任务仍会继续。确认后将创建一个收藏同步任务。
@@ -1069,149 +567,6 @@ function scanFailure() {
       </template>
     </el-dialog>
 
-    <el-dialog
-      v-model="showLinkConfirmDialog"
-      title="确认消息链接下载"
-      width="540px"
-      class="telegram-dialog"
-    >
-      <div class="confirm-content">
-        <div class="confirm-icon"><Link2 :size="20" /></div>
-        <div>
-          <strong
-            >本次将解析并下载 {{ parsedLinks.unique.length }} 个消息目标</strong
-          >
-          <p>
-            每个目标按单帖或完整媒体组处理。若某条链接无法访问，其他有效目标仍会继续处理。
-          </p>
-          <p>本次提交只覆盖文本框中的消息链接，不会抓取整个频道。</p>
-        </div>
-      </div>
-      <template #footer>
-        <el-button @click="showLinkConfirmDialog = false">返回修改</el-button>
-        <el-button type="primary" :loading="syncSubmitting" @click="submitLinks"
-          >确认提交</el-button
-        >
-      </template>
-    </el-dialog>
-
-    <el-drawer
-      v-model="detailVisible"
-      title="资源详情"
-      size="520px"
-      class="telegram-drawer"
-    >
-      <div
-        v-if="detailLoading && !selectedResource?.attachments"
-        class="telegram-loading"
-      >
-        <el-skeleton :rows="6" animated />
-      </div>
-      <template v-else-if="selectedResource">
-        <div class="resource-detail-heading">
-          <span class="resource-detail-eyebrow">Telegram · 帖子或媒体组</span>
-          <h2>
-            {{
-              selectedResource.channel ||
-              selectedResource.directoryLabel ||
-              "资源 " + idOf(selectedResource)
-            }}
-          </h2>
-          <div class="detail-badges">
-            <StatusBadge :state="selectedResource.state ?? 'UNKNOWN'" />
-            <span>{{ resourceDate(selectedResource) }}</span>
-          </div>
-        </div>
-        <div class="detail-summary-grid">
-          <div>
-            <span>资源 ID</span><strong>{{ selectedResource.id }}</strong>
-          </div>
-          <div>
-            <span>关联消息</span
-            ><strong>{{ selectedResource.messageIds?.length ?? 0 }}</strong>
-          </div>
-          <div>
-            <span>附件总数</span
-            ><strong>{{
-              selectedResource.mediaCount ??
-              selectedResource.attachments?.length ??
-              0
-            }}</strong>
-          </div>
-          <div>
-            <span>已完成</span
-            ><strong>{{ selectedResource.completedCount ?? 0 }}</strong>
-          </div>
-          <div>
-            <span>失败</span
-            ><strong>{{ selectedResource.failedCount ?? 0 }}</strong>
-          </div>
-        </div>
-        <section class="detail-section">
-          <h3>消息正文</h3>
-          <p class="detail-message">
-            {{ selectedResource.text || "没有可展示的正文。" }}
-          </p>
-          <div v-if="selectedResource.sourceLinks?.length" class="source-links">
-            <a
-              v-for="(link, index) in selectedResource.sourceLinks"
-              :key="'detail-' + index"
-              :href="link"
-              target="_blank"
-              rel="noreferrer noopener"
-            >
-              <Link2 :size="13" />{{ link }}
-            </a>
-          </div>
-        </section>
-        <section class="detail-section">
-          <h3>
-            附件状态
-            <span>{{ selectedResource.attachments?.length ?? 0 }}</span>
-          </h3>
-          <div
-            v-if="selectedResource.attachments?.length"
-            class="attachment-list"
-          >
-            <div
-              v-for="attachment in selectedResource.attachments"
-              :key="idOf(attachment)"
-              class="attachment-row"
-            >
-              <div class="attachment-icon"><FileText :size="16" /></div>
-              <div class="attachment-copy">
-                <strong>{{ attachmentName(attachment) }}</strong>
-                <span
-                  >{{ formatMediaType(attachment.mediaType) }} ·
-                  {{ formatBytes(attachment.sizeBytes) }}</span
-                >
-                <small v-if="attachment.error" class="attachment-error">{{
-                  attachment.error.message ?? attachment.error
-                }}</small>
-                <small v-if="attachment.relativePath" class="attachment-path">{{
-                  attachment.relativePath
-                }}</small>
-              </div>
-              <StatusBadge :state="attachmentState(attachment)" />
-            </div>
-          </div>
-          <div v-else class="muted">没有附件信息。</div>
-        </section>
-        <div class="detail-actions">
-          <el-button @click="exportMetadata(selectedResource)">
-            <template #icon><FileJson2 :size="15" /></template>导出整帖元数据
-          </el-button>
-          <el-button
-            v-if="canRetry(selectedResource)"
-            type="primary"
-            :loading="retryingResourceIds.has(idOf(selectedResource))"
-            @click="retryIncomplete(idOf(selectedResource))"
-          >
-            <template #icon><RefreshCw :size="15" /></template>补齐未完成文件
-          </el-button>
-        </div>
-      </template>
-    </el-drawer>
   </main>
 </template>
 <style scoped>
@@ -1262,54 +617,6 @@ function scanFailure() {
 }
 .telegram-page-alert {
   margin: 0 0 18px;
-}
-.telegram-tabs {
-  display: flex;
-  gap: 4px;
-  width: max-content;
-  max-width: 100%;
-  margin: 0 0 18px;
-  padding: 4px;
-  border: 1px solid #e2e9e6;
-  border-radius: 12px;
-  background: #f5f8f7;
-}
-.telegram-tab {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 38px;
-  padding: 0 15px;
-  border: 0;
-  border-radius: 9px;
-  background: transparent;
-  color: #63736f;
-  font: inherit;
-  font-size: 14px;
-  cursor: pointer;
-  transition:
-    background 0.16s ease,
-    color 0.16s ease,
-    box-shadow 0.16s ease;
-}
-.telegram-tab:hover {
-  color: #166a59;
-}
-.telegram-tab.active {
-  background: #fff;
-  color: #166a59;
-  box-shadow:
-    0 1px 3px #18352d12,
-    0 0 0 1px #e2e9e6;
-  font-weight: 600;
-}
-.telegram-tab:focus-visible,
-.message-expand:focus-visible,
-.message-preview:focus-visible,
-.resource-main:focus-visible {
-  outline: 3px solid #8bc9b8;
-  outline-offset: 2px;
 }
 .telegram-layout {
   display: grid;
@@ -1442,9 +749,7 @@ function scanFailure() {
   cursor: pointer;
 }
 .message-expanded {
-  margin-top: 13px;
-  padding-top: 13px;
-  border-top: 1px solid #edf1ef;
+  margin-top: 9px;
 }
 .full-message-text {
   color: #334740;
@@ -1671,177 +976,6 @@ function scanFailure() {
   flex: 0 0 auto;
   color: #6e9b8c;
 }
-.links-limit {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: #688078;
-  font-size: 12px;
-  white-space: nowrap;
-}
-.link-download-card {
-  padding: 20px;
-  border: 1px solid #e7eeeb;
-  border-radius: 12px;
-  background: #fcfefd;
-}
-.input-label {
-  display: block;
-  margin-bottom: 9px;
-  color: #445852;
-  font-size: 13px;
-  font-weight: 600;
-}
-.link-input-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-top: 14px;
-  color: #7d8b86;
-  font-size: 12px;
-}
-.validation-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 13px;
-  padding: 10px 11px;
-  border-radius: 8px;
-  font-size: 12px;
-  line-height: 1.55;
-}
-.validation-note svg {
-  flex: 0 0 auto;
-  margin-top: 1px;
-}
-.validation-note ul {
-  margin: 6px 0 3px;
-  padding-left: 18px;
-  color: #965c54;
-  overflow-wrap: anywhere;
-}
-.validation-error {
-  border: 1px solid #f1d8d4;
-  background: #fff8f7;
-  color: #a14e45;
-}
-.validation-ok {
-  border: 1px solid #d9ebe3;
-  background: #f3faf6;
-  color: #4b7b69;
-}
-.link-scope-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-  margin-top: 16px;
-  color: #82918b;
-  font-size: 12px;
-  line-height: 1.6;
-}
-.link-scope-note svg {
-  flex: 0 0 auto;
-  margin-top: 1px;
-  color: #679787;
-}
-.resource-heading {
-  margin-bottom: 17px;
-}
-.resource-heading > .el-button {
-  flex: 0 0 auto;
-}
-.resource-filters {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  margin-bottom: 14px;
-}
-.resource-filters .telegram-search {
-  width: min(360px, 55%);
-}
-.resource-filters .el-select {
-  width: 155px;
-}
-.filter-caption {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-left: auto;
-  color: #929d99;
-  font-size: 11px;
-  white-space: nowrap;
-}
-.resource-list {
-  display: grid;
-  gap: 9px;
-}
-.resource-card {
-  padding: 0 13px 10px;
-  border: 1px solid #e8eeec;
-  border-radius: 11px;
-}
-.resource-main {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto 17px;
-  align-items: center;
-  gap: 11px;
-  width: 100%;
-  min-height: 82px;
-  padding: 10px 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.resource-icon {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border-radius: 9px;
-  background: #edf5f2;
-  color: #588373;
-}
-.resource-copy {
-  display: grid;
-  min-width: 0;
-  gap: 4px;
-}
-.resource-copy strong {
-  overflow: hidden;
-  color: #344941;
-  font-size: 13px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.resource-subtitle,
-.resource-date {
-  overflow: hidden;
-  color: #84918c;
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.resource-status {
-  display: grid;
-  justify-items: end;
-  gap: 4px;
-}
-.resource-status > span {
-  color: #ad5d54;
-  font-size: 11px;
-}
-.resource-chevron {
-  color: #9aa7a2;
-}
-.resource-actions {
-  display: flex;
-  gap: 5px;
-  padding-left: 45px;
-}
 .telegram-dialog .confirm-content {
   display: flex;
   align-items: flex-start;
@@ -1867,84 +1001,6 @@ function scanFailure() {
   color: #687872;
   font-size: 13px;
   line-height: 1.65;
-}
-.resource-detail-heading {
-  padding-bottom: 18px;
-  border-bottom: 1px solid #edf1ef;
-}
-.resource-detail-eyebrow {
-  color: #82918b;
-  font-size: 12px;
-}
-.resource-detail-heading h2 {
-  margin: 7px 0 9px;
-  color: #344a42;
-  font-size: 19px;
-  font-weight: 650;
-  overflow-wrap: anywhere;
-}
-.detail-badges {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  color: #81908a;
-  font-size: 12px;
-}
-.detail-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  padding: 17px 0;
-  border-bottom: 1px solid #edf1ef;
-}
-.detail-summary-grid > div {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-.detail-summary-grid span {
-  color: #899590;
-  font-size: 11px;
-}
-.detail-summary-grid strong {
-  color: #4b5e56;
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-.detail-section {
-  padding: 17px 0;
-  border-bottom: 1px solid #edf1ef;
-}
-.detail-section h3 {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: 0 0 10px;
-  color: #43574f;
-  font-size: 13px;
-  font-weight: 650;
-}
-.detail-section h3 span {
-  color: #899590;
-  font-size: 11px;
-  font-weight: 500;
-}
-.detail-message {
-  margin: 0;
-  color: #42554e;
-  font-size: 13px;
-  line-height: 1.75;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.detail-section .attachment-list {
-  margin-top: 0;
-}
-.detail-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding-top: 17px;
 }
 .spin {
   animation: telegram-spin 1.4s linear infinite;
@@ -1972,9 +1028,11 @@ function scanFailure() {
 }
 @media (max-width: 1023px) {
   .telegram-page {
-    min-width: 980px;
+    min-width: 0;
     padding-right: 18px;
     padding-left: 18px;
   }
 }
+.watcher-panel > .el-button { margin: 14px 8px 0 0; }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
 </style>
