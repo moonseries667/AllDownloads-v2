@@ -47,6 +47,11 @@ func (r *Runner) Run(ctx context.Context, once bool) error {
 		HeartbeatSeconds int `json:"heartbeatSeconds"`
 	}
 	facts := map[string]any{"mount": map[string]any{"state": "UNSUPPORTED", "reasonCode": "MOUNT_PROBE_UNSUPPORTED", "observedAt": time.Now().UTC()}, "accountState": "UNKNOWN"}
+	if provider, ok := r.Worker.(interface{ RegistrationFacts() map[string]any }); ok {
+		for name, value := range provider.RegistrationFacts() {
+			facts[name] = value
+		}
+	}
 	versions := r.ToolVersions
 	if versions == nil {
 		versions = map[string]string{}
@@ -120,7 +125,7 @@ func wait(ctx context.Context, delay time.Duration) error {
 	}
 }
 func (r *Runner) runOperation(ctx context.Context, op Operation) error {
-	if op.ProtocolVersion != 1 || op.RunnerID != r.ID || op.Attempt < 1 || op.OperationID == "" || op.LeaseID == "" || op.Platform != "BILIBILI" {
+	if op.ProtocolVersion != 1 || op.RunnerID != r.ID || op.Attempt < 1 || op.OperationID == "" || op.LeaseID == "" || !validPlatform(op.Platform) {
 		return errors.New("invalid acquired operation")
 	}
 	if token, err := strconv.ParseUint(op.FencingToken, 10, 64); err != nil || token == 0 {
@@ -141,8 +146,16 @@ func (r *Runner) runOperation(ctx context.Context, op Operation) error {
 		if previous.Result.Status == "SUCCEEDED" {
 			return errors.New("completed operation cannot be executed under a new lease without reconciliation")
 		}
+		if previous.Result.Status == "CANCELLED" {
+			return errors.New("cancelled operation cannot restart; explicit completion requires a new operation")
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
+	}
+	if action, err := r.controlIntent(op); err != nil {
+		return err
+	} else if action == "CANCEL" {
+		return errors.New("durable cancellation requires reconciliation before acquisition")
 	}
 	record := journal{Operation: op, Files: []File{}}
 	if err := r.State.Write(name, record); err != nil {
@@ -179,6 +192,14 @@ func (r *Runner) runOperation(ctx context.Context, op Operation) error {
 			result.Status = "PAUSED"
 		} else if desired == "LEASE_LOST" || ctx.Err() != nil {
 			result.Status = "RESULT_UNKNOWN"
+		}
+		if desired == "CONTROL_PERSIST_FAILED" {
+			result.Status = "RESULT_UNKNOWN"
+			failure = media.Classify(media.Fail("CONTROL_PERSIST_FAILED", "CONTROL", false), "CONTROL")
+		}
+		if errors.Is(execErr, media.ErrProcessStopUnconfirmed) {
+			result.Status = "RESULT_UNKNOWN"
+			failure = media.Classify(media.Fail("TOOL_STOP_UNCONFIRMED", "CONTROL", false), "CONTROL")
 		}
 		completed := []string{}
 		for _, file := range files {
@@ -242,6 +263,12 @@ func (r *Runner) heartbeat(ctx context.Context, op Operation, expiry time.Time, 
 			continue
 		}
 		if response.DesiredAction == "PAUSE" || response.DesiredAction == "CANCEL" {
+			// Persist before interrupting I/O. An interrupted runner must never
+			// silently resurrect a cancellation on a later lease.
+			if err := r.saveControl(op, response.DesiredAction); err != nil {
+				signal("CONTROL_PERSIST_FAILED")
+				return
+			}
 			signal(response.DesiredAction)
 			return
 		}
@@ -328,6 +355,14 @@ func (r *Runner) replay(ctx context.Context) error {
 					record.Result.Error = nil
 				}
 			}
+			action, err := r.controlIntent(op)
+			if err != nil {
+				return err
+			}
+			if record.Result.Status != "SUCCEEDED" && op.OperationType == "DOWNLOAD_MEDIA" && (action == "CANCEL" || action == "PAUSE") {
+				record.Result.Status = map[string]string{"CANCEL": "CANCELLED", "PAUSE": "PAUSED"}[action]
+				record.Result.Error.Code = "INTERRUPTED_AFTER_" + action
+			}
 			if err := r.State.Write(name, record); err != nil {
 				return err
 			}
@@ -337,4 +372,42 @@ func (r *Runner) replay(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+type controlRecord struct {
+	Operation Operation
+	Action    string
+}
+
+func (r *Runner) saveControl(op Operation, action string) error {
+	if old, err := r.controlIntent(op); err != nil {
+		return err
+	} else if old == "CANCEL" {
+		action = "CANCEL"
+	}
+	return r.State.Write("control-"+digest(op.OperationID), controlRecord{op, action})
+}
+func (r *Runner) controlIntent(op Operation) (string, error) {
+	var record controlRecord
+	err := r.State.Read("control-"+digest(op.OperationID), &record)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if !sameIntent(record.Operation, op) || (record.Action != "CANCEL" && record.Action != "PAUSE") {
+		return "", errors.New("invalid durable control intent")
+	}
+	if record.Action == "PAUSE" && (record.Operation.Attempt != op.Attempt || record.Operation.FencingToken != op.FencingToken) {
+		return "", nil
+	}
+	return record.Action, nil
+}
+func validPlatform(platform string) bool {
+	switch platform {
+	case "BILIBILI", "TELEGRAM", "QUARK":
+		return true
+	}
+	return false
 }
