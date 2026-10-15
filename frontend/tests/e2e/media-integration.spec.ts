@@ -31,7 +31,7 @@ test("list, cross-source detail saves and download preview share the same media 
   await expect(preview.getByRole("columnheader", { name: "大小", exact: true })).toBeVisible();
   await preview.getByRole("button", { name: "提交下载", exact: true }).click();
   await expect(preview).toBeHidden();
-  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("alldownloads.demo.feedback1.v2")!));
+  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("alldownloads.demo.feedback2.v3")!));
   expect(state.orders).toHaveLength(2);
   expect(state.orders[0].items[0].selectedTrackIds).toEqual(["b1-p1-sub-en"]);
   expect(state.orders[0].items[0].outputs.map((o: { kind: string }) => o.kind)).toEqual(["SUBTITLE"]);

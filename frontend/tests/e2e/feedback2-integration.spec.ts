@@ -9,7 +9,7 @@ async function seed(page: Page, state = createSeed()) {
 }
 async function previewFolder(page: Page) {
   await page.goto("/quark/cloud");
-  await page.locator(".quark-table .el-table__body tbody tr").filter({ hasText: "摄影课程" }).getByRole("checkbox").check();
+  await page.locator(".quark-table .el-table__body tbody tr").filter({ hasText: "摄影课程" }).locator(".el-checkbox").click();
   await page.getByRole("button", { name: "预览下载", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "确认下载清单" });
   await expect(dialog.getByRole("button", { name: "提交下载", exact: true })).toBeEnabled();

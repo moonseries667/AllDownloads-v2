@@ -83,7 +83,7 @@ test("all four sorts remain global across pages and date bounds use Shanghai pub
   await page.goto("/bilibili");
   await expect(page.locator(".video-card")).toHaveCount(6);
   const data = await page.evaluate(() => {
-    const key = "alldownloads.demo.feedback1.v2";
+    const key = "alldownloads.demo.feedback2.v3";
     const data = JSON.parse(localStorage.getItem(key)!);
     const times = ["2026-10-14T15:59:59Z", "2026-10-14T16:00:00Z", "2026-10-15T15:59:59Z", "2026-10-15T16:00:00Z", null];
     times.forEach((time, i) => { data.contents[i].publishedAt = time; data.contents[i].updatedAt = "2030-01-01T00:00:00Z"; });

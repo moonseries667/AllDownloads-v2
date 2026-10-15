@@ -4,7 +4,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto("/tests/hosts/media.html");
 });
 async function demoState(page: Page) {
-  return page.evaluate(() => JSON.parse(localStorage.getItem("alldownloads.demo.feedback1.v2") || "{}"));
+  return page.evaluate(() => JSON.parse(localStorage.getItem("alldownloads.demo.feedback2.v3") || "{}"));
 }
 test("saves custom media without downloading, then reuses it in the order", async ({ page }) => {
   await page.getByRole("button", { name: "单视频详情", exact: true }).click();

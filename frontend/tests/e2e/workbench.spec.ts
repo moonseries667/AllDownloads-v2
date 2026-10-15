@@ -48,7 +48,7 @@ test("Bilibili cross-page selection stays fixed until preview and explicit order
   await page.getByRole("button", { name: "预览下载清单", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText(firstTitle);
   await expect(page.getByRole("dialog")).toContainText(secondTitle);
-  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("alldownloads.demo.feedback1.v2")!));
+  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("alldownloads.demo.feedback2.v3")!));
   expect(state.orders).toHaveLength(1);
   const preview = Object.values(state.previews)[0] as any;
   expect(new Set(preview.items.map((item: any) => item.contentId)).size).toBe(2);
@@ -68,7 +68,7 @@ test("Bilibili filtered all-selection supports exclusions and retains scope afte
   await page.getByRole("button", { name: "预览下载清单", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("无访问权限");
   await expect(page.getByRole("dialog")).not.toContainText(excludedTitle);
-  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("alldownloads.demo.feedback1.v2")!));
+  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("alldownloads.demo.feedback2.v3")!));
   const preview = Object.values(state.previews)[0] as any;
   expect(new Set(preview.items.map((item: any) => item.contentId)).size).toBe(11);
 });
@@ -91,7 +91,7 @@ test("Quark folder selection expands only on preview and creates no order when c
   ).toHaveCount(2);
   await page.getByRole("button", { name: "返回选择", exact: true }).click();
   const state = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("alldownloads.demo.feedback1.v2")!),
+    JSON.parse(localStorage.getItem("alldownloads.demo.feedback2.v3")!),
   );
   expect(state.orders).toHaveLength(1);
 });
@@ -103,14 +103,16 @@ test("Quark share duplicate is reused; transfer is distinct from download", asyn
   await page
     .getByRole("textbox", { name: "夸克分享链接，每行一条" })
     .fill("https://pan.quark.cn/s/abcd12345678");
-  await page.getByRole("combobox", { name: "本批转存目标夸克文件夹" }).click();
-  await page.getByRole("option", { name: "/学习资料", exact: true }).click();
+  await page.getByRole("button", { name: "本批转存目标夸克文件夹" }).click();
+  const picker = page.getByRole("dialog", { name: "选择夸克文件夹", exact: true });
+  await picker.getByRole("button", { name: "学习资料", exact: true }).click();
+  await picker.getByRole("button", { name: "使用此文件夹", exact: true }).click();
   await page
     .getByRole("button", { name: "转存并维护更新", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toContainText("已复用已有分享");
   const state = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("alldownloads.demo.feedback1.v2")!),
+    JSON.parse(localStorage.getItem("alldownloads.demo.feedback2.v3")!),
   );
   expect(state.orders).toHaveLength(1);
   expect(state.shares).toHaveLength(2);
@@ -142,7 +144,7 @@ test("Telegram requires initial scan confirmation and expands metadata with Shan
     .click();
   await expect(page.locator(".sync-progress")).toContainText("等待中");
   const state = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("alldownloads.demo.feedback1.v2")!),
+    JSON.parse(localStorage.getItem("alldownloads.demo.feedback2.v3")!),
   );
   expect(
     state.tasks.find(
@@ -150,35 +152,14 @@ test("Telegram requires initial scan confirmation and expands metadata with Shan
     ).allowedActions,
   ).toEqual(["CANCEL"]);
 });
-test("Telegram links validate entire batch and resource search supports attachment file names", async ({
-  page,
-}) => {
-  await page.goto("/telegram");
-  await page.getByRole("button", { name: "消息链接下载", exact: true }).click();
-  await page
-    .getByRole("textbox", { name: "Telegram 消息链接", exact: true })
-    .fill("https://t.me/channelTest/123\nnot-a-link");
-  await expect(
-    page.getByRole("button", { name: "确认链接并继续" }),
-  ).toBeDisabled();
-  await page
-    .getByRole("textbox", { name: "Telegram 消息链接", exact: true })
-    .fill("https://t.me/channelTest/123\nhttps://t.me/channelTest/123");
-  await expect(page.locator(".link-input-footer")).toContainText("已去重 1 条");
-  await page.getByRole("button", { name: "确认链接并继续" }).click();
-  await expect(page.getByRole("dialog")).toContainText("1 个消息目标");
-  await page.getByRole("button", { name: "确认提交", exact: true }).click();
-  await page.getByRole("button", { name: "资源库", exact: true }).click();
-  await page
-    .getByRole("textbox", { name: "搜索资源", exact: true })
-    .fill("树林环境声.wav");
-  await expect(page.locator(".resource-card")).toHaveCount(1);
-  const downloadPromise = page.waitForEvent("download");
-  await page
-    .getByRole("button", { name: "导出元数据 JSON", exact: true })
-    .click();
-  const download = await downloadPromise;
-  expect(download.suggestedFilename()).toMatch(/\.metadata\.json$/);
+test("Telegram legacy tabs return to saved media with attachment search", async ({ page }) => {
+  await page.goto("/telegram?tab=resources");
+  await expect(page.getByRole("heading", { name: "收藏夹", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "消息链接下载", exact: true })).toHaveCount(0);
+  await page.getByRole("textbox", { name: "搜索消息正文", exact: true }).fill("树林环境声.wav");
+  await expect(page.locator(".message-card")).toHaveCount(1);
+  await page.getByRole("button", { name: "展开消息正文和附件", exact: true }).click();
+  await expect(page.locator(".attachment-row")).toHaveCount(4);
 });
 test("cleanup previews only eligible copies, and submission cannot precede confirmation", async ({
   page,
@@ -215,7 +196,7 @@ test("disk failure preserves preview selection and does not create a completed o
   await page.getByRole("button", { name: "提交下载", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("本机剩余空间不足");
   const state = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("alldownloads.demo.feedback1.v2")!),
+    JSON.parse(localStorage.getItem("alldownloads.demo.feedback2.v3")!),
   );
   expect(state.orders).toHaveLength(1);
 });

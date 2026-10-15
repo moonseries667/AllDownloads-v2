@@ -153,10 +153,7 @@ const activeShareIssue = computed(() => {
 });
 const activeShareTarget = computed(() => {
   if (!activeShare.value) return "尚未选择分享目录";
-  return (
-    activeShare.value.targetPath ||
-    "目标目录未知"
-  );
+  return shareTargetLabel(activeShare.value);
 });
 const targetRows = computed<DraftEntry[]>(() => {
   const counts = new Map<string, number>();
@@ -254,6 +251,9 @@ const breadcrumbs = computed(() => {
 
 function isFolder(node: CloudNode) {
   return String(node.kind).toUpperCase() === "FOLDER";
+}
+function shareTargetLabel(share: Share) {
+  return share.targetPath === "" && share.targetFolderId ? "我的云盘" : share.targetPath || "目标目录未知";
 }
 function rootTreeKey(shareId: string) {
   return "share-root:" + shareId;
@@ -705,14 +705,8 @@ watch(
                   }}</strong>
                   <span
                     class="share-target"
-                    :title="
-                      share.targetPath ||
-                      ''
-                    "
-                    >{{
-                      share.targetPath ||
-                      "目标目录未知"
-                    }}</span
+                    :title="shareTargetLabel(share)"
+                    >{{ shareTargetLabel(share) }}</span
                   >
                 </span>
                 <ChevronRight
