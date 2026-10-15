@@ -37,51 +37,40 @@ test("all desktop routes render without runtime errors or horizontal overflow", 
   }
   expect(errors).toEqual([]);
 });
-test("Bilibili cross-page selection stays fixed until preview and explicit order submission", async ({
-  page,
-}) => {
+test("Bilibili cross-page selection stays fixed until preview and explicit order submission", async ({ page }) => {
   await page.goto("/bilibili");
-  await page
-    .getByRole("button", {
-      name: "选择 把镜头交给山野：一场秋日徒步",
-      exact: true,
-    })
-    .click();
+  const firstTitle = await page.locator(".video-title").first().innerText();
+  await page.locator(".cover-checkbox").first().click();
   await page.locator(".el-pager .number").filter({ hasText: /^2$/ }).click();
-  await page
-    .getByRole("button", { name: "选择 宇宙的尺度 · 第一季", exact: true })
-    .click();
+  const secondTitle = await page.locator(".video-title").first().innerText();
+  await page.locator(".cover-checkbox").first().click();
   await expect(page.locator(".selection-bar")).toContainText("已选择 2 项");
   await page.getByRole("button", { name: "预览下载清单", exact: true }).click();
-  await expect(page.getByRole("dialog")).toContainText("5 个待下载");
-  const before = await page.evaluate(
-    () =>
-      JSON.parse(localStorage.getItem("alldownloads.demo.v1")!).orders.length,
-  );
-  expect(before).toBe(1);
+  await expect(page.getByRole("dialog")).toContainText(firstTitle);
+  await expect(page.getByRole("dialog")).toContainText(secondTitle);
+  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("alldownloads.demo.feedback1.v2")!));
+  expect(state.orders).toHaveLength(1);
+  const preview = Object.values(state.previews)[0] as any;
+  expect(new Set(preview.items.map((item: any) => item.contentId)).size).toBe(2);
   await page.getByRole("button", { name: "提交下载", exact: true }).click();
   await expect(page.getByRole("dialog")).toBeHidden();
   await page.goto("/downloads");
   await expect(page.locator(".el-table__body tbody tr")).toHaveCount(2);
   await expect(page.locator(".el-table__body")).toContainText("等待中");
 });
-test("Bilibili filtered all-selection supports exclusions and retains scope after filters change", async ({
-  page,
-}) => {
+test("Bilibili filtered all-selection supports exclusions and retains scope after filters change", async ({ page }) => {
   await page.goto("/bilibili");
+  const excludedTitle = await page.locator(".video-title").first().innerText();
   await page.getByRole("button", { name: "全选筛选结果（12）" }).click();
-  await page
-    .getByRole("button", {
-      name: "选择 把镜头交给山野：一场秋日徒步",
-      exact: true,
-    })
-    .click();
+  await page.locator(".cover-checkbox").first().click();
   await page.getByRole("button", { name: "多 P 视频", exact: true }).click();
   await expect(page.locator(".selection-bar")).toContainText("已选择 11 项");
   await page.getByRole("button", { name: "预览下载清单", exact: true }).click();
-  const rows = page.getByRole("dialog").locator(".el-table__body tbody tr");
-  await expect(rows).toHaveCount(17);
-  await expect(page.getByRole("dialog")).toContainText("无法处理");
+  await expect(page.getByRole("dialog")).toContainText("无访问权限");
+  await expect(page.getByRole("dialog")).not.toContainText(excludedTitle);
+  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("alldownloads.demo.feedback1.v2")!));
+  const preview = Object.values(state.previews)[0] as any;
+  expect(new Set(preview.items.map((item: any) => item.contentId)).size).toBe(11);
 });
 test("Quark folder selection expands only on preview and creates no order when cancelled", async ({
   page,
@@ -95,14 +84,14 @@ test("Quark folder selection expands only on preview and creates no order when c
   await expect(row.getByRole("checkbox")).toBeChecked();
   await page.getByRole("button", { name: "预览下载", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText(
-    "Quark/12345678/摄影课程/01 光线的方向.mp4",
+    "01 光线的方向.mp4",
   );
   await expect(
     page.getByRole("dialog").locator(".el-table__body tbody tr"),
   ).toHaveCount(2);
   await page.getByRole("button", { name: "返回选择", exact: true }).click();
   const state = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("alldownloads.demo.v1")!),
+    JSON.parse(localStorage.getItem("alldownloads.demo.feedback1.v2")!),
   );
   expect(state.orders).toHaveLength(1);
 });
@@ -121,7 +110,7 @@ test("Quark share duplicate is reused; transfer is distinct from download", asyn
     .click();
   await expect(page.getByRole("dialog")).toContainText("已复用已有分享");
   const state = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("alldownloads.demo.v1")!),
+    JSON.parse(localStorage.getItem("alldownloads.demo.feedback1.v2")!),
   );
   expect(state.orders).toHaveLength(1);
   expect(state.shares).toHaveLength(2);
@@ -153,7 +142,7 @@ test("Telegram requires initial scan confirmation and expands metadata with Shan
     .click();
   await expect(page.locator(".sync-progress")).toContainText("等待中");
   const state = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("alldownloads.demo.v1")!),
+    JSON.parse(localStorage.getItem("alldownloads.demo.feedback1.v2")!),
   );
   expect(
     state.tasks.find(
@@ -226,7 +215,7 @@ test("disk failure preserves preview selection and does not create a completed o
   await page.getByRole("button", { name: "提交下载", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("本机剩余空间不足");
   const state = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("alldownloads.demo.v1")!),
+    JSON.parse(localStorage.getItem("alldownloads.demo.feedback1.v2")!),
   );
   expect(state.orders).toHaveLength(1);
 });

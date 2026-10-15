@@ -21,6 +21,7 @@ import {
 } from "../api/client";
 import { platformName, formatDate } from "../format";
 import StatusBadge from "../components/StatusBadge.vue";
+import { serviceLabels, mountLabels } from "../components/runtimePresentation";
 const settings = ref<any>({}),
   form = ref<any>({}),
   accounts = ref<any[]>([]),
@@ -31,6 +32,9 @@ const settings = ref<any>({}),
   switching = ref(false),
   auth = ref<any>(null),
   authOpen = ref(false);
+function serviceState(id: string) {
+  return serviceLabels[health.value.runtime?.services?.find((service: { id: string }) => service.id.toLowerCase() === id)?.state] || "未知";
+}
 const scenarios = [
   {
     value: "normal",
@@ -76,15 +80,19 @@ const scenarios = [
 ];
 async function load() {
   try {
-    const [s, a, h] = await Promise.all([
+    const [s, a, h] = await Promise.allSettled([
       api.get("/settings"),
       api.get("/accounts"),
       api.get("/health"),
     ]);
-    settings.value = s;
-    if (!Object.keys(form.value).length) form.value = { ...s };
-    accounts.value = a.items;
-    health.value = h;
+    if (s.status === "fulfilled") {
+      settings.value = s.value;
+      if (!Object.keys(form.value).length) form.value = { ...s.value };
+    } else notifyError(s.reason);
+    if (a.status === "fulfilled") accounts.value = a.value.items;
+    else notifyError(a.reason);
+    if (h.status === "fulfilled") health.value = h.value;
+    else { health.value = {}; notifyError(h.reason); }
     if (isDemo) scenario.value = (await api.get("/__demo/status")).scenario;
   } catch (e) {
     notifyError(e);
@@ -305,24 +313,25 @@ watch(form, () => (validation.value = null), { deep: true });
           <div class="health-row">
             <span>Java 业务接口</span
             ><strong>{{
-              health.java === "UNAVAILABLE" ? "连接中断" : "演示替身"
+              serviceState('java')
             }}</strong>
           </div>
           <div class="health-row">
             <span>Go 执行程序</span
             ><strong>{{
-              health.go === "UNAVAILABLE" ? "不可用" : "未连接"
+              serviceState('go')
             }}</strong>
           </div>
           <div class="health-row">
-            <span>存储检查</span
+            <span>网盘挂载</span
             ><strong>{{
-              health.storage === "INSUFFICIENT_SPACE" ? "空间不足" : "示例状态"
+              mountLabels[health.runtime?.mount?.state || 'UNKNOWN'] || '挂载状态未知'
             }}</strong>
           </div>
           <p class="muted">
-            关闭网页后，真实任务由后端持续运行。当前演示不会执行后台下载或上传。
+            观测时间：{{ formatDate(health.runtime?.observedAt) }}。挂载与归档核验独立。
           </p>
+          <p v-if="isDemo" class="muted">隔离演示，不表示真实服务或网盘状态。</p>
         </section>
         <section v-if="isDemo" class="panel settings-section demo-controls">
           <h2><FlaskConical :size="21" />前端验收场景</h2>

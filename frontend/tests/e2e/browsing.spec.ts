@@ -58,7 +58,7 @@ test("workspace navigation scrolls at short desktop heights and 125/150 percent 
     const settings = page.locator(".sidebar-bottom").getByRole("link", { name: "设置与账号" });
     await page.locator(".sidebar nav").getByRole("link", { name: /任务与问题/ }).focus();
     await page.keyboard.press("Tab");
-    await expect(settings).toBeInViewport();
+    await expect(settings).toBeInViewport({ ratio: 1 });
     await expect(settings).toBeFocused();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     expect(await page.evaluate(() => window.scrollY)).toBe(0);
@@ -77,4 +77,35 @@ test("pin failure restores persisted state and keeps a useful reason", async ({ 
   await page.locator(".setting-inline .el-switch").click();
   await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
   if (before) await expect(pin).toBeChecked(); else await expect(pin).not.toBeChecked();
+});
+
+test("all four sorts remain global across pages and date bounds use Shanghai publication time", async ({ page }) => {
+  await page.goto("/bilibili");
+  await expect(page.locator(".video-card")).toHaveCount(6);
+  const data = await page.evaluate(() => {
+    const key = "alldownloads.demo.feedback1.v2";
+    const data = JSON.parse(localStorage.getItem(key)!);
+    const times = ["2026-10-14T15:59:59Z", "2026-10-14T16:00:00Z", "2026-10-15T15:59:59Z", "2026-10-15T16:00:00Z", null];
+    times.forEach((time, i) => { data.contents[i].publishedAt = time; data.contents[i].updatedAt = "2030-01-01T00:00:00Z"; });
+    localStorage.setItem(key, JSON.stringify(data));
+    return data.contents as { id: string; title: string; publishedAt: string | null }[];
+  });
+  await page.reload();
+  for (const label of ["最新视频", "最早视频", "标题正序", "标题逆序"]) {
+    await page.locator(".sort-select .el-select__wrapper").click();
+    await page.getByRole("option", { name: label, exact: true }).click();
+    const expected = [...data].sort((a, b) => {
+      if (label.startsWith("标题")) return (a.title < b.title ? -1 : a.title > b.title ? 1 : 0) * (label === "标题正序" ? 1 : -1);
+      if (a.publishedAt === null || b.publishedAt === null) return a.publishedAt === b.publishedAt ? 0 : a.publishedAt === null ? 1 : -1;
+      return (Date.parse(a.publishedAt) - Date.parse(b.publishedAt)) * (label === "最早视频" ? 1 : -1);
+    }).map(c => c.title);
+    await expect(page.locator(".video-title")).toHaveText(expected.slice(0, 6));
+    await page.locator(".el-pager .number").filter({ hasText: /^2$/ }).click();
+    await expect(page.locator(".video-title")).toHaveText(expected.slice(6));
+  }
+  const start = page.getByRole("combobox", { name: "发布时间起始日期" });
+  const end = page.getByRole("combobox", { name: "发布时间结束日期" });
+  await start.fill("2026-10-15"); await start.press("Enter");
+  await end.fill("2026-10-15"); await end.press("Enter");
+  await expect(page.locator(".video-title")).toHaveText([data[1].title, data[2].title].sort().reverse());
 });
