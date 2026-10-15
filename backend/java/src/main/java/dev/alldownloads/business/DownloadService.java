@@ -107,7 +107,7 @@ public final class DownloadService {
         List<JsonNode> tracks=list(unit.path("tracks")),out=new ArrayList<>();List<JsonNode> video=tracks.stream().filter(t->text(t,"kind").equals("VIDEO")).toList(),audio=tracks.stream().filter(t->text(t,"kind").equals("AUDIO")).toList();
         if(!video.isEmpty()&&!audio.isEmpty()) {List<JsonNode> av=new ArrayList<>(video);av.addAll(audio);out.add(output(content,base,"MUXED",av,"media.mp4"));}
         else {for(JsonNode track:video)out.add(output(content,base,"VIDEO",List.of(track),"video.mp4"));for(JsonNode track:audio)out.add(output(content,base,"AUDIO",List.of(track),"audio.m4a"));}
-        for(JsonNode track:tracks) {String kind=text(track,"kind");if(kind.equals("SUBTITLE"))out.add(output(content,base,kind,List.of(track),"subtitle-"+PathPlanner.safe(text(track,"language"))+"-"+PathPlanner.digest(text(track,"id")).substring(0,8)+".srt"));else if(kind.equals("DANMAKU"))out.add(output(content,base,kind,List.of(track),"danmaku.xml"));}
+        for(JsonNode track:tracks) {String kind=text(track,"kind");if(kind.equals("SUBTITLE"))out.add(output(content,base,kind,List.of(track),"subtitle-"+PathPlanner.safe(text(track,"language"))+"-"+PathPlanner.digest(text(track,"id")).substring(0,8)+".json"));else if(kind.equals("DANMAKU"))out.add(output(content,base,kind,List.of(track),"danmaku.xml"));}
         return out;
     }
     private JsonNode output(JsonNode content,String base,String kind,List<JsonNode> tracks,String filename) throws SQLException {
@@ -125,8 +125,16 @@ public final class DownloadService {
         int existing=0,archived=0;for(JsonNode output:item.path("outputs")) {ObjectNode artifact=store.optional("file",fileKey(target,output));if(artifact!=null&&text(artifact,"localState").equals("VERIFIED"))existing++;if(artifact!=null&&text(artifact,"archiveState").equals("VERIFIED"))archived++;}
         boolean custom=text(target,"archivePolicy").equals("NONE");int total=item.path("outputs").size();
         if(existing==total||!custom&&archived==total) {item.put("decision","REUSE");item.put("reasonCode",!custom&&archived==total?"ARCHIVE_VERIFIED":"LOCAL_VERIFIED");item.put("downloadState",existing==total?"VERIFIED":"MISSING");item.put("archiveState",archived==total?"VERIFIED":"NOT_REQUESTED");item.put("reason",!custom&&archived==total?"云端已核验归档":"所选文件已在当前目录下载完成");item.put("actionLabel",!custom&&archived==total?"已归档，无需下载":"已下载，无需重复下载");return;}
-        String[] active=store.row("SELECT task_id FROM operations WHERE resource_key=? AND status NOT IN ('SUCCEEDED','CANCELLED','FAILED')",planKey(item,target));
-        if(active!=null) {item.put("decision","REUSE");item.put("reasonCode","DOWNLOADING");item.put("reason","所选内容正在处理");item.put("actionLabel","正在下载，复用当前任务");item.put("downloadState","DOWNLOADING");return;}
+        String[] active=store.row("SELECT task_id,status FROM operations WHERE resource_key=? AND status NOT IN ('SUCCEEDED','CANCELLED','FAILED')",planKey(item,target));
+        if(active!=null) {
+            ObjectNode task=store.get("task",active[0]);
+            if(active[1].equals("NEEDS_ACTION")) {
+                String code=text(task.path("error"),"code");
+                String blockedReason=Set.of("RESOURCE_DELETED","PERMISSION_DENIED","REGION_RESTRICTED","PAYMENT_REQUIRED").contains(code)?code:code.startsWith("NETWORK")?"NETWORK_TEMPORARY":"STATE_UNKNOWN";
+                item.put("decision","BLOCKED");item.put("reasonCode",blockedReason);item.put("reason",reasonLabel(blockedReason));item.put("actionLabel",reasonLabel(blockedReason)+"，需先处理当前任务");item.put("downloadState","NEEDS_ACTION");return;
+            }
+            item.put("decision","REUSE");item.put("reasonCode",active[1].equals("WAITING_RETRY")?"NETWORK_TEMPORARY":"DOWNLOADING");item.put("reason",active[1].equals("WAITING_RETRY")?"当前任务等待重试":"所选内容正在处理");item.put("actionLabel","使用当前任务，不重复创建");item.put("downloadState",active[1].equals("RUNNING")?"DOWNLOADING":active[1]);return;
+        }
         if(existing>0) {item.put("reasonCode","PARTIAL_EXISTS");item.put("reason","仅部分所选文件已存在");item.put("downloadState","PARTIAL");item.put("actionLabel",custom?"补齐到指定目录，不归档":"补齐所选内容");}
         else if(custom) {item.put("reasonCode","CUSTOM_TARGET_NO_ARCHIVE");item.put("reason","仅本批次使用指定目录");item.put("actionLabel","下载到指定目录，不归档");}
     }
@@ -141,13 +149,21 @@ public final class DownloadService {
         if(!current.equals(target)||text(target,"id").equals("default")&&!text(preview,"storageRevision").equals(text(store.get("target","default"),"revision")))throw Failure.conflict("STORAGE_CHANGED");
         List<JsonNode> items=list(preview.path("items"));
         if(text(preview,"platform").equals("QUARK"))quark.validateFrozen(store.get("previewNodes",previewId).path("nodes"));
-        else for(JsonNode item:items)if(!text(store.get("content",text(item,"contentId")),"revision").equals(text(item,"version")))throw Failure.conflict("VERSION_CHANGED");
+        else for(JsonNode item:items) {
+            ObjectNode content=store.get("content",text(item,"contentId"));
+            if(!text(content,"revision").equals(text(item,"version")))throw Failure.conflict("VERSION_CHANGED");
+            if(text(item,"decision").equals("BLOCKED"))continue;
+            if(!text(content,"availability").equals("AVAILABLE"))throw Failure.conflict("VERSION_CHANGED");
+            JsonNode unit=list(content.path("mediaUnits")).stream().filter(u->text(u,"id").equals(text(item,"partId"))).findFirst().orElseThrow(()->Failure.conflict("VERSION_CHANGED"));
+            Set<String> available=new HashSet<>();for(JsonNode track:unit.path("tracks"))if(track.path("available").asBoolean())available.add(text(track,"id"));
+            if(!text(unit,"availability").equals("AVAILABLE")||!available.containsAll(strings(item.path("selectedTrackIds"))))throw Failure.conflict("VERSION_CHANGED");
+        }
         if(items.stream().allMatch(i->text(i,"decision").equals("BLOCKED")))throw new Failure(422,"EMPTY_SELECTION","所有选项都暂不可下载");
         Map<String,JsonNode> plans=new HashMap<>();for(JsonNode plan:store.get("previewPlans",previewId).path("plans"))plans.put(text(plan,"itemId"),plan);
         Set<String> tasks=new LinkedHashSet<>();
         for(JsonNode item:items) {
             if(text(item,"decision").equals("BLOCKED"))continue;JsonNode plan=plans.get(text(item,"id"));if(plan==null)continue;
-            if(text(item,"decision").equals("REUSE")) {if(text(item,"reasonCode").equals("DOWNLOADING")) {String[] active=store.row("SELECT task_id FROM operations WHERE resource_key=? ORDER BY created DESC LIMIT 1",text(plan,"key"));if(active!=null)tasks.add(active[0]);}continue;}
+            if(text(item,"decision").equals("REUSE")) {String[] active=store.row("SELECT task_id FROM operations WHERE resource_key=? AND status NOT IN ('SUCCEEDED','CANCELLED','FAILED') ORDER BY created DESC LIMIT 1",text(plan,"key"));if(active!=null)tasks.add(active[0]);continue;}
             ObjectNode payload=(ObjectNode)plan.path("payload").deepCopy();
             // A previous order may have finished after the preview. Only remove exactly proven outputs.
             List<JsonNode> missing=new ArrayList<>();

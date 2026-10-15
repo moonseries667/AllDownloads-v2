@@ -35,6 +35,7 @@ public final class BusinessStore implements AutoCloseable {
                 s.execute("CREATE TABLE IF NOT EXISTS requests(scope TEXT NOT NULL,key TEXT NOT NULL,body TEXT NOT NULL,response TEXT NOT NULL,PRIMARY KEY(scope,key))");
                 s.execute("CREATE TABLE IF NOT EXISTS operations(id TEXT PRIMARY KEY,task_id TEXT NOT NULL,type TEXT NOT NULL,resource_key TEXT NOT NULL,body TEXT NOT NULL,status TEXT NOT NULL,attempt INTEGER NOT NULL DEFAULT 0,fence INTEGER NOT NULL DEFAULT 0,lease_id TEXT,runner TEXT,expires INTEGER,retry_at INTEGER,seq INTEGER NOT NULL DEFAULT -1,created INTEGER NOT NULL)");
                 s.execute("CREATE INDEX IF NOT EXISTS operation_queue ON operations(status,type,retry_at,created)");
+                s.execute("CREATE INDEX IF NOT EXISTS operation_content ON operations(json_extract(body,'$.payload.contentId'),json_extract(body,'$.payload.contentRevision'),type)");
                 s.execute("CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY,body TEXT NOT NULL,ack TEXT NOT NULL)");
                 s.execute("CREATE TABLE IF NOT EXISTS paths(identity TEXT PRIMARY KEY,path TEXT NOT NULL COLLATE NOCASE UNIQUE)");
                 s.execute("CREATE TABLE IF NOT EXISTS output_claims(root_id TEXT NOT NULL,output_id TEXT NOT NULL,task_id TEXT NOT NULL,PRIMARY KEY(root_id,output_id))");

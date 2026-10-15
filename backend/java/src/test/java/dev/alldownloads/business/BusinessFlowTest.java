@@ -64,11 +64,42 @@ class BusinessFlowTest {
         ObjectNode all=preview(request((String[])null));JsonNode item=all.path("items").get(0);assertEquals(4,item.path("selectedTrackIds").size());assertEquals(3,item.path("outputs").size());assertEquals("MUX",text(item,"mergePolicy"));assertTrue(item.path("sizeBytes").isNull());
         assertEquals("AUDIO",text(preview(request("audio-fixture")).path("items").get(0).path("outputs").get(0),"kind"));
         assertEquals("SUBTITLE",text(preview(request("subtitle-fixture")).path("items").get(0).path("outputs").get(0),"kind"));
+        assertTrue(text(preview(request("subtitle-fixture")).path("items").get(0).path("outputs").get(0),"relativePath").endsWith(".json"));
     }
     @Test void resourceAndTargetChangesInvalidatePreviewAndSubmittedSnapshotRemainsFixed() {
         ObjectNode preview=preview(request("video-fixture"));ObjectNode updated=(ObjectNode)examples.path("content").deepCopy();updated.put("revision","v2");seed(updated);assertCode("VERSION_CHANGED",()->submit(preview));
         seed((ObjectNode)examples.path("content").deepCopy());ObjectNode next=preview(request("video-fixture"));ObjectNode submitted=submit(next);ObjectNode original=store.tx(()->app.downloads.order(text(submitted,"orderId")));store.tx(()->{app.downloads.configureDefault(temp.resolve("new-default").toString());return null;});
         assertEquals(original.path("target"),store.tx(()->app.downloads.order(text(submitted,"orderId"))).path("target"));assertEquals(next.path("target").path("path"),acquire("DOWNLOAD_MEDIA").path("destination").path("rootPath"));
+    }
+    @Test void submitRechecksContentUnitAndSelectedTrackAvailabilityAtTheFrozenRevision() {
+        ObjectNode contentUnavailable=preview(request("audio-fixture"));
+        store.tx(()->{ObjectNode content=store.get("content","content-fixture");content.put("availability","UNAVAILABLE");store.put("content","content-fixture",content);return null;});
+        assertCode("VERSION_CHANGED",()->submit(contentUnavailable));
+
+        seed((ObjectNode)examples.path("content").deepCopy());ObjectNode unitUnavailable=preview(request("audio-fixture"));
+        store.tx(()->{ObjectNode content=store.get("content","content-fixture");((ObjectNode)content.path("mediaUnits").get(0)).put("availability","UNAVAILABLE");store.put("content","content-fixture",content);return null;});
+        assertCode("VERSION_CHANGED",()->submit(unitUnavailable));
+
+        seed((ObjectNode)examples.path("content").deepCopy());ObjectNode trackUnavailable=preview(request("audio-fixture"));
+        store.tx(()->{ObjectNode content=store.get("content","content-fixture");for(JsonNode track:content.path("mediaUnits").get(0).path("tracks"))if(text(track,"id").equals("audio-fixture"))((ObjectNode)track).put("available",false);store.put("content","content-fixture",content);return null;});
+        assertCode("VERSION_CHANGED",()->submit(trackUnavailable));
+    }
+    @Test void activeQueuedAndPausedDownloadsAreReusedWithTheirActualState() {
+        ObjectNode submitted=submit(preview(request("video-fixture")));String taskId=strings(submitted.path("taskIds")).get(0);
+        JsonNode queuedItem=preview(request("video-fixture")).path("items").get(0);assertEquals("REUSE",text(queuedItem,"decision"));assertEquals("QUEUED",text(queuedItem,"downloadState"));assertEquals("使用当前任务，不重复创建",text(queuedItem,"actionLabel"));
+        store.tx(()->app.queue.control(taskId,text(store.get("task",taskId),"revision"),"PAUSE"));
+        ObjectNode paused=preview(request("video-fixture"));assertEquals("PAUSED",text(paused.path("items").get(0),"downloadState"));
+        assertTrue(strings(submit(paused).path("taskIds")).contains(taskId));
+    }
+    @Test void needsActionUsesTheProviderErrorCategoryAndBlocksTheItem() {
+        String[][] errors={{"RESOURCE_DELETED","RESOURCE_DELETED"},{"PERMISSION_DENIED","PERMISSION_DENIED"},{"REGION_RESTRICTED","REGION_RESTRICTED"},{"PAYMENT_REQUIRED","PAYMENT_REQUIRED"},{"NETWORK_TEMPORARY","NETWORK_TEMPORARY"},{"NETWORK_INTERRUPTED","NETWORK_TEMPORARY"},{"UNRECOGNIZED","STATE_UNKNOWN"}};
+        for(int i=0;i<errors.length;i++) {
+            String revision="error-case-"+i;ObjectNode content=(ObjectNode)examples.path("content").deepCopy();content.put("revision",revision);seed(content);
+            ObjectNode request=request("audio-fixture");((ObjectNode)request.path("selection").path("mediaSelections").get(0)).put("contentRevision",revision);
+            submit(preview(request));JsonNode operation=acquire("DOWNLOAD_MEDIA");ObjectNode failure=result(operation,null);failure.put("status","NEEDS_ACTION");failure.set("error",object("code",errors[i][0],"message","fixture","completedEffects",List.of(),"pendingEffects",List.of()));
+            store.tx(()->app.queue.result(text(operation,"operationId"),failure,false));JsonNode item=preview(request).path("items").get(0);
+            assertEquals("BLOCKED",text(item,"decision"));assertEquals(errors[i][1],text(item,"reasonCode"));assertEquals("NEEDS_ACTION",text(item,"downloadState"));
+        }
     }
     @Test void targetRevisionAndExpiryRejectUnsubmittedPreview() {
         ObjectNode p=preview(request("video-fixture"));store.tx(()->{app.downloads.configureDefault(temp.resolve("changed").toString());return null;});assertCode("STORAGE_CHANGED",()->submit(p));
@@ -98,6 +129,8 @@ class BusinessFlowTest {
         ObjectNode series=(ObjectNode)examples.path("content").deepCopy();series.put("kind","SERIES");series.put("externalIdType","SEASON_ID");series.put("id","season1");series.put("externalId","123");series.put("seasonId","123");((ObjectNode)series.path("mediaUnits").get(0)).put("kind","EPISODE");seed(series);ObjectNode s2=series.deepCopy();s2.put("id","season2");s2.put("externalId","124");s2.put("seasonId","124");seed(s2);
         store.tx(()->{PathPlanner paths=new PathPlanner(store);ObjectNode mc=app.catalog.content("multi");assertTrue(paths.unit(mc,mc.path("mediaUnits").get(0)).endsWith("/P01"));ObjectNode s1=app.catalog.content("season1"),ss2=app.catalog.content("season2");assertNotEquals(paths.content(s1),paths.content(ss2));assertTrue(paths.unit(s1,s1.path("mediaUnits").get(0)).contains("第01集("));return null;});
         assertEquals("_CON",PathPlanner.safe("CON"));assertEquals("a_b_c",PathPlanner.safe("a:b?c"));assertTrue(PathPlanner.safe("x".repeat(500)).length()<66);
+        String unicode="中".repeat(51)+"🎬"+"尾".repeat(100);String safeUnicode=PathPlanner.safe(unicode);assertTrue(safeUnicode.length()<=65);assertNoUnpairedSurrogates(safeUnicode);
+        String unicodePath=store.tx(()->new PathPlanner(store).assign("unicode-long-path","Bilibili/"+safeUnicode+"/"+safeUnicode+"(BVLong)"));assertTrue(unicodePath.length()<235);assertNoUnpairedSurrogates(unicodePath);
     }
     @Test void overviewNeverEquatesMountDirectoryWithArchiveAndLostRunnerIsVisible() {
         ObjectNode overview=store.tx(app::overview);assertEquals("UNKNOWN",text(overview.path("runtime").path("mount"),"state"));assertEquals(0,overview.path("bilibili").path("archiveCount").asInt());clock.now=clock.now.plusSeconds(91);assertEquals("PARTIAL",text(store.tx(app::overview).path("runtime"),"state"));
@@ -122,6 +155,21 @@ class BusinessFlowTest {
         List<JsonNode> captures=store.tx(()->List.of(object("schema","Source","data",app.catalog.publicSource(store.get("source","source-fixture"))),object("schema","Content","data",app.catalog.content("content-fixture")),object("schema","Preview","data",preview),object("schema","Target","data",store.get("target","default")),object("schema","Overview","data",app.overview())));
         Files.writeString(Path.of("target/contract-captures.json"),array(captures).toPrettyString());Files.writeString(Path.of("target/runner-capture.json"),operation.toPrettyString());
     }
+    @Test void stoppedDownloadPreservesPartialFactsAndRetriesOnlyItsFrozenOperation() {
+        ObjectNode p=preview(custom(request("audio-fixture","subtitle-fixture"),"partial"));ObjectNode submitted=submit(p);JsonNode op=acquire("DOWNLOAD_MEDIA");ObjectNode facts=fileFacts(op);((com.fasterxml.jackson.databind.node.ArrayNode)facts.path("files")).remove(1);
+        ObjectNode failed=result(op,facts);failed.put("status","RETRYABLE_ERROR");failed.set("error",object("code","NETWORK_INTERRUPTED","message","interrupted","completedEffects",List.of(facts.path("files").get(0).path("outputId").asText()),"pendingEffects",List.of("unfinished frozen outputs")));
+        store.tx(()->app.queue.result(text(op,"operationId"),failed,false));assertEquals(1,store.tx(()->store.all("file").size()));assertTrue(store.tx(()->store.rows("SELECT id FROM operations WHERE type='UPLOAD_ARTIFACT'")).isEmpty());
+        ObjectNode refresh=preview(customRequestFor(p,"audio-fixture","subtitle-fixture"));JsonNode waiting=refresh.path("items").get(0);assertEquals("NETWORK_TEMPORARY",text(waiting,"reasonCode"));assertEquals("WAITING_RETRY",text(waiting,"downloadState"));assertEquals(submitted.path("taskIds"),submit(refresh).path("taskIds"));
+        clock.now=clock.now.plusSeconds(31);JsonNode retry=acquire("DOWNLOAD_MEDIA");assertEquals(op.path("operationId"),retry.path("operationId"));assertEquals(op.path("payload"),retry.path("payload"));complete(retry,fileFacts(retry));assertEquals(2,store.tx(()->store.all("file").size()));assertTrue(store.tx(()->store.rows("SELECT id FROM operations WHERE type='UPLOAD_ARTIFACT'")).isEmpty());
+    }
+    ObjectNode customRequestFor(JsonNode preview,String... tracks) {ObjectNode request=request(tracks);request.set("target",object("id",preview.path("target").path("id"),"revision",preview.path("target").path("revision")));return request;}
+    @Test void confirmedMetadataDeletionInvalidatesOlderPreviewWithoutCreatingDownloads() {
+        ObjectNode added=store.tx(()->app.catalog.addSources(object("links",List.of("https://www.bilibili.com/video/BV1Fixture"))));String sourceId=added.path("items").get(0).path("sourceId").asText();JsonNode sync=acquire("SYNC_BIL_SOURCE");
+        complete(sync,object("source",object("title","示例"),"contents",List.of(examples.path("content")),"complete",true));ObjectNode oldPreview=preview(request("audio-fixture"));store.tx(()->app.catalog.refresh(sourceId,true));JsonNode refresh=acquire("SYNC_BIL_SOURCE");
+        ObjectNode failure=result(refresh,null);failure.put("status","NEEDS_ACTION");failure.set("error",object("code","RESOURCE_DELETED","message","confirmed","completedEffects",List.of(),"pendingEffects",List.of()));store.tx(()->app.queue.result(text(refresh,"operationId"),failure,false));
+        assertCode("VERSION_CHANGED",()->submit(oldPreview));assertEquals("RESOURCE_DELETED",text(preview(request((String[])null)).path("items").get(0),"reasonCode"));assertTrue(acquire("DOWNLOAD_MEDIA").isNull());
+    }
+    static void assertNoUnpairedSurrogates(String value) {for(int i=0;i<value.length();i++){char current=value.charAt(i);if(Character.isHighSurrogate(current)){assertTrue(i+1<value.length()&&Character.isLowSurrogate(value.charAt(i+1)));i++;}else assertFalse(Character.isLowSurrogate(current));}}
     static void assertCode(String code,Runnable action) {assertEquals(code,assertThrows(Failure.class,action::run).code);}
     static final class MutableClock extends Clock {Instant now=Instant.parse("2026-10-15T10:00:00Z");public ZoneId getZone(){return ZoneOffset.UTC;}public Clock withZone(ZoneId z){return this;}public Instant instant(){return now;}}
 }

@@ -98,7 +98,7 @@ public final class OperationQueue {
             }
             case "RETRYABLE_ERROR","NEEDS_ACTION","RESULT_UNKNOWN" -> {
                 errorCode=required(request.path("error"),"code");
-                if(status.equals("RETRYABLE_ERROR")&&!text(op,"operationType").equals("SELECT_LOCAL_DIRECTORY")&&request.path("error").path("completedEffects").size()==0&&request.path("error").path("pendingEffects").size()==0) {
+                if(status.equals("RETRYABLE_ERROR")&&!text(op,"operationType").equals("SELECT_LOCAL_DIRECTORY")&&(text(op,"operationType").equals("DOWNLOAD_MEDIA")||request.path("error").path("completedEffects").size()==0&&request.path("error").path("pendingEffects").size()==0)) {
                     if(text(task,"desiredAction").equals("CANCEL"))status="CANCELLED";
                     else if(text(task,"desiredAction").equals("PAUSE"))status="PAUSED";
                     else if(op.path("attempt").asInt()<=3) { status="WAITING_RETRY";retry=store.millis()+Math.max(new long[]{30_000,120_000,600_000}[op.path("attempt").asInt()-1],Math.min(86_400L,Math.max(0,request.path("error").path("retryAfterSeconds").asLong(0)))*1000); }
@@ -107,6 +107,9 @@ public final class OperationQueue {
                 issue(text(op,"taskId"),text(op,"resourceKey"),errorCode,"ERROR");
                 if(text(op,"operationType").equals("SYNC_BIL_SOURCE")) {
                     ObjectNode source=store.get("source",text(op.path("payload"),"sourceId"));source.put("status",status.equals("WAITING_RETRY")?"WAITING_RETRY":"NEEDS_ACTION");store.put("source",text(source,"id"),source);
+                    if(Set.of("USER_ADDED","SERIES","MOVIE").contains(text(source,"kind"))&&Set.of("RESOURCE_DELETED","PERMISSION_DENIED","REGION_RESTRICTED","PAYMENT_REQUIRED").contains(errorCode)) {
+                        for(JsonNode value:store.all("content")) {if(!text(value,"externalId").equals(text(op.path("payload"),"externalId")))continue;ObjectNode content=(ObjectNode)value;content.put("availability",errorCode.equals("RESOURCE_DELETED")?"REMOVED":"UNAVAILABLE");content.put("availabilityReason",errorCode);store.put("content",text(content,"id"),content);ObjectNode catalog=store.optional("meta","catalog");store.put("meta","catalog",object("revision",catalog==null?1:catalog.path("revision").asLong()+1));}
+                    }
                 }
                 if(text(op,"operationType").equals("VALIDATE_TARGET")) {
                     ObjectNode target=store.get("target",text(op.path("payload"),"targetId"));target.put("status","INVALID");target.set("error",object("code",errorCode,"message",message(errorCode)));store.put("target",text(target,"id"),target);
