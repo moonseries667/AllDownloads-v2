@@ -68,6 +68,8 @@ public final class BusinessStore implements AutoCloseable {
     public String[] row(String sql,Object... args) throws SQLException { List<String[]> rows=rows(sql,args);return rows.isEmpty()?null:rows.getFirst(); }
     private static void bind(PreparedStatement s,Object[] args) throws SQLException { for(int i=0;i<args.length;i++)s.setObject(i+1,args[i]); }
     public String now() { return clock.instant().toString(); }
+    /** Domain extensions participate in this store's transaction and must never close the connection. */
+    public Connection domainConnection() { return db; }
     public long millis() { return clock.millis(); }
     @Override public synchronized void close() throws SQLException,IOException { try { db.close(); } finally { try { lock.release(); } finally { channel.close(); } } }
 }

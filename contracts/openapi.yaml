@@ -1732,11 +1732,36 @@
     },
     "/issues": {
       "get": {
-        "operationId": "getissues",
-        "parameters": [],
+        "operationId": "getIssues",
+        "parameters": [
+          {
+            "name": "includeResolved",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "See FEEDBACK-PART1.md second-part semantics",
+            "description": "Current business state",
             "content": {
               "application/json": {
                 "schema": {
@@ -1744,7 +1769,32 @@
                   "properties": {
                     "data": {
                       "type": "object",
-                      "additionalProperties": true
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Issue"
+                          }
+                        },
+                        "nextCursor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "total": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "nextCursor",
+                        "total"
+                      ],
+                      "additionalProperties": false
                     },
                     "requestId": {
                       "type": "string"
@@ -1753,17 +1803,24 @@
                   "required": [
                     "data",
                     "requestId"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "409": {
+            "description": "Version, state, or snapshot conflict"
           }
         }
       }
     },
     "/issues/{id}/acknowledge": {
       "post": {
-        "operationId": "postissuesidacknowledge",
+        "operationId": "postIssuesIdAcknowledge",
         "parameters": [
           {
             "name": "id",
@@ -1776,15 +1833,14 @@
         ],
         "responses": {
           "200": {
-            "description": "See FEEDBACK-PART1.md second-part semantics",
+            "description": "Current business state",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
                     "data": {
-                      "type": "object",
-                      "additionalProperties": true
+                      "$ref": "#/components/schemas/Issue"
                     },
                     "requestId": {
                       "type": "string"
@@ -1793,29 +1849,44 @@
                   "required": [
                     "data",
                     "requestId"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "409": {
+            "description": "Version, state, or snapshot conflict"
           }
         }
       }
     },
     "/telegram/saved-sync": {
       "post": {
-        "operationId": "posttelegramsavedsync",
-        "parameters": [],
+        "operationId": "postTelegramSavedSync",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
-          "200": {
-            "description": "See FEEDBACK-PART1.md second-part semantics",
+          "202": {
+            "description": "Persisted request accepted",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
                     "data": {
-                      "type": "object",
-                      "additionalProperties": true
+                      "$ref": "#/components/schemas/AcceptedTask"
                     },
                     "requestId": {
                       "type": "string"
@@ -1824,8 +1895,34 @@
                   "required": [
                     "data",
                     "requestId"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "409": {
+            "description": "Version, state, or snapshot conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "accountId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "accountId"
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -1834,19 +1931,27 @@
     },
     "/telegram/watcher": {
       "get": {
-        "operationId": "gettelegramwatcher",
-        "parameters": [],
+        "operationId": "getTelegramWatcher",
+        "parameters": [
+          {
+            "name": "accountId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "See FEEDBACK-PART1.md second-part semantics",
+            "description": "Current business state",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
                     "data": {
-                      "type": "object",
-                      "additionalProperties": true
+                      "$ref": "#/components/schemas/SavedWatcher"
                     },
                     "requestId": {
                       "type": "string"
@@ -1855,27 +1960,42 @@
                   "required": [
                     "data",
                     "requestId"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "409": {
+            "description": "Version, state, or snapshot conflict"
           }
         }
       },
       "patch": {
-        "operationId": "patchtelegramwatcher",
-        "parameters": [],
+        "operationId": "patchTelegramWatcher",
+        "parameters": [
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "See FEEDBACK-PART1.md second-part semantics",
+            "description": "Current business state",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
                     "data": {
-                      "type": "object",
-                      "additionalProperties": true
+                      "$ref": "#/components/schemas/SavedWatcher"
                     },
                     "requestId": {
                       "type": "string"
@@ -1884,8 +2004,38 @@
                   "required": [
                     "data",
                     "requestId"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "409": {
+            "description": "Version, state, or snapshot conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "accountId": {
+                    "type": "string"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "accountId",
+                  "enabled"
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -1894,11 +2044,52 @@
     },
     "/telegram/messages": {
       "get": {
-        "operationId": "gettelegrammessages",
-        "parameters": [],
+        "operationId": "getTelegramMessages",
+        "parameters": [
+          {
+            "name": "accountId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "mediaType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "See FEEDBACK-PART1.md second-part semantics",
+            "description": "Current business state",
             "content": {
               "application/json": {
                 "schema": {
@@ -1906,7 +2097,32 @@
                   "properties": {
                     "data": {
                       "type": "object",
-                      "additionalProperties": true
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/SavedMessage"
+                          }
+                        },
+                        "nextCursor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "total": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "nextCursor",
+                        "total"
+                      ],
+                      "additionalProperties": false
                     },
                     "requestId": {
                       "type": "string"
@@ -1915,17 +2131,24 @@
                   "required": [
                     "data",
                     "requestId"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "409": {
+            "description": "Version, state, or snapshot conflict"
           }
         }
       }
     },
     "/telegram/messages/{id}": {
       "get": {
-        "operationId": "gettelegrammessagesid",
+        "operationId": "getTelegramMessagesId",
         "parameters": [
           {
             "name": "id",
@@ -1938,15 +2161,14 @@
         ],
         "responses": {
           "200": {
-            "description": "See FEEDBACK-PART1.md second-part semantics",
+            "description": "Current business state",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
                     "data": {
-                      "type": "object",
-                      "additionalProperties": true
+                      "$ref": "#/components/schemas/SavedMessage"
                     },
                     "requestId": {
                       "type": "string"
@@ -1955,29 +2177,44 @@
                   "required": [
                     "data",
                     "requestId"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "409": {
+            "description": "Version, state, or snapshot conflict"
           }
         }
       }
     },
     "/telegram/retry-incomplete": {
       "post": {
-        "operationId": "posttelegramretryincomplete",
-        "parameters": [],
+        "operationId": "postTelegramRetryIncomplete",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
-          "200": {
-            "description": "See FEEDBACK-PART1.md second-part semantics",
+          "202": {
+            "description": "Persisted request accepted",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
                     "data": {
-                      "type": "object",
-                      "additionalProperties": true
+                      "$ref": "#/components/schemas/RetryIncompleteResult"
                     },
                     "requestId": {
                       "type": "string"
@@ -1986,8 +2223,40 @@
                   "required": [
                     "data",
                     "requestId"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "409": {
+            "description": "Version, state, or snapshot conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "accountId": {
+                    "type": "string"
+                  },
+                  "resourceIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "accountId"
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -1996,19 +2265,51 @@
     },
     "/quark/folders": {
       "get": {
-        "operationId": "getquarkfolders",
-        "parameters": [],
+        "operationId": "getQuarkFolders",
+        "parameters": [
+          {
+            "name": "accountId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "parentId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "See FEEDBACK-PART1.md second-part semantics",
+            "description": "Current business state",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
                     "data": {
-                      "type": "object",
-                      "additionalProperties": true
+                      "$ref": "#/components/schemas/FolderListing"
                     },
                     "requestId": {
                       "type": "string"
@@ -2017,21 +2318,45 @@
                   "required": [
                     "data",
                     "requestId"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "409": {
+            "description": "Version, state, or snapshot conflict"
           }
         }
       }
     },
     "/quark/shares": {
       "get": {
-        "operationId": "getquarkshares",
-        "parameters": [],
+        "operationId": "getQuarkShares",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "See FEEDBACK-PART1.md second-part semantics",
+            "description": "Current business state",
             "content": {
               "application/json": {
                 "schema": {
@@ -2039,7 +2364,32 @@
                   "properties": {
                     "data": {
                       "type": "object",
-                      "additionalProperties": true
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/QuarkShare"
+                          }
+                        },
+                        "nextCursor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "total": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "nextCursor",
+                        "total"
+                      ],
+                      "additionalProperties": false
                     },
                     "requestId": {
                       "type": "string"
@@ -2048,27 +2398,42 @@
                   "required": [
                     "data",
                     "requestId"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "409": {
+            "description": "Version, state, or snapshot conflict"
           }
         }
       },
       "post": {
-        "operationId": "postquarkshares",
-        "parameters": [],
+        "operationId": "postQuarkShares",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
-          "200": {
-            "description": "See FEEDBACK-PART1.md second-part semantics",
+          "202": {
+            "description": "Persisted request accepted",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
                     "data": {
-                      "type": "object",
-                      "additionalProperties": true
+                      "$ref": "#/components/schemas/ShareBatch"
                     },
                     "requestId": {
                       "type": "string"
@@ -2077,8 +2442,25 @@
                   "required": [
                     "data",
                     "requestId"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "409": {
+            "description": "Version, state, or snapshot conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShareRequest"
               }
             }
           }
@@ -2087,7 +2469,7 @@
     },
     "/quark/shares/{id}": {
       "get": {
-        "operationId": "getquarksharesid",
+        "operationId": "getQuarkSharesId",
         "parameters": [
           {
             "name": "id",
@@ -2100,15 +2482,14 @@
         ],
         "responses": {
           "200": {
-            "description": "See FEEDBACK-PART1.md second-part semantics",
+            "description": "Current business state",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
                     "data": {
-                      "type": "object",
-                      "additionalProperties": true
+                      "$ref": "#/components/schemas/QuarkShare"
                     },
                     "requestId": {
                       "type": "string"
@@ -2117,17 +2498,24 @@
                   "required": [
                     "data",
                     "requestId"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "409": {
+            "description": "Version, state, or snapshot conflict"
           }
         }
       }
     },
     "/quark/shares/{id}/refresh-tree": {
       "post": {
-        "operationId": "postquarksharesidrefreshtree",
+        "operationId": "postQuarkSharesIdRefreshTree",
         "parameters": [
           {
             "name": "id",
@@ -2136,19 +2524,26 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
-          "200": {
-            "description": "See FEEDBACK-PART1.md second-part semantics",
+          "202": {
+            "description": "Persisted request accepted",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
                     "data": {
-                      "type": "object",
-                      "additionalProperties": true
+                      "$ref": "#/components/schemas/AcceptedTask"
                     },
                     "requestId": {
                       "type": "string"
@@ -2157,21 +2552,69 @@
                   "required": [
                     "data",
                     "requestId"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "409": {
+            "description": "Version, state, or snapshot conflict"
           }
         }
       }
     },
     "/quark/nodes": {
       "get": {
-        "operationId": "getquarknodes",
-        "parameters": [],
+        "operationId": "getQuarkNodes",
+        "parameters": [
+          {
+            "name": "shareId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "parentId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "See FEEDBACK-PART1.md second-part semantics",
+            "description": "Current business state",
             "content": {
               "application/json": {
                 "schema": {
@@ -2179,7 +2622,32 @@
                   "properties": {
                     "data": {
                       "type": "object",
-                      "additionalProperties": true
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/CloudNode"
+                          }
+                        },
+                        "nextCursor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "total": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "nextCursor",
+                        "total"
+                      ],
+                      "additionalProperties": false
                     },
                     "requestId": {
                       "type": "string"
@@ -2188,10 +2656,27 @@
                   "required": [
                     "data",
                     "requestId"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "409": {
+            "description": "Version, state, or snapshot conflict"
+          }
+        }
+      }
+    },
+    "/telegram/link-downloads": {
+      "post": {
+        "operationId": "removedTelegramLinkDownloads",
+        "responses": {
+          "410": {
+            "description": "FEATURE_REMOVED: use saved-message incremental download"
           }
         }
       }
@@ -3582,6 +4067,482 @@
           "sourceLinks",
           "authorTags",
           "channel"
+        ]
+      },
+      "SavedScanState": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "cursorMessageId": {
+            "type": "string"
+          },
+          "scannedThroughAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "initialScanCompleted": {
+            "type": "boolean"
+          },
+          "lastScanAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "activeTaskId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "accountId",
+          "cursorMessageId",
+          "scannedThroughAt",
+          "initialScanCompleted",
+          "lastScanAt",
+          "activeTaskId"
+        ],
+        "additionalProperties": false
+      },
+      "SavedWatcher": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "intervalSeconds": {
+            "type": "integer"
+          },
+          "lastCheckedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "nextCheckAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scanState": {
+            "$ref": "#/components/schemas/SavedScanState"
+          }
+        },
+        "required": [
+          "accountId",
+          "revision",
+          "enabled",
+          "intervalSeconds",
+          "lastCheckedAt",
+          "nextCheckAt",
+          "scanState"
+        ],
+        "additionalProperties": false
+      },
+      "SavedAttachment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "externalId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "mediaType": {
+            "enum": [
+              "VIDEO",
+              "AUDIO",
+              "PHOTO",
+              "DOCUMENT",
+              "UNKNOWN"
+            ]
+          },
+          "mimeType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sizeBytes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "messageId": {
+            "type": "string"
+          },
+          "relativePath": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metadataRelativePath": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "downloadState": {
+            "enum": [
+              "QUEUED",
+              "VERIFIED",
+              "NEEDS_ACTION"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "externalId",
+          "name",
+          "mediaType",
+          "mimeType",
+          "sizeBytes"
+        ]
+      },
+      "SavedMessage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "accountId": {
+            "type": "string"
+          },
+          "externalId": {
+            "type": "string"
+          },
+          "sentAt": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "groupId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "eligible": {
+            "const": true
+          },
+          "taskId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "messageIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SavedAttachment"
+            }
+          },
+          "sourceLinks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "downloadSummary": {
+            "$ref": "#/components/schemas/StateSummary"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "externalId",
+          "sentAt",
+          "text",
+          "groupId",
+          "eligible",
+          "taskId",
+          "messageIds",
+          "attachments",
+          "sourceLinks",
+          "downloadSummary"
+        ],
+        "additionalProperties": false
+      },
+      "QuarkShare": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "accountId": {
+            "type": "string"
+          },
+          "externalShareId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "shareFolderKey": {
+            "type": "string"
+          },
+          "targetFolderId": {
+            "type": "string"
+          },
+          "targetFolderRevision": {
+            "type": "string"
+          },
+          "targetFolderPath": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/QuarkFolder"
+          },
+          "status": {
+            "type": "string"
+          },
+          "watchEnabled": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "externalShareId",
+          "title",
+          "shareFolderKey",
+          "targetFolderId",
+          "targetFolderRevision",
+          "targetFolderPath",
+          "target",
+          "status",
+          "watchEnabled",
+          "revision",
+          "taskId"
+        ],
+        "additionalProperties": false
+      },
+      "AcceptedTask": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "reused": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "taskId"
+        ],
+        "additionalProperties": false
+      },
+      "RetryIncompleteResult": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "taskId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "taskId"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "taskIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "items",
+          "taskIds"
+        ],
+        "additionalProperties": false
+      },
+      "ShareBatch": {
+        "type": "object",
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "shareId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "taskId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "reused": {
+                  "type": "boolean"
+                },
+                "error": {
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "shareId",
+                "taskId",
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "batchId",
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "ShareRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "entries": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "format": "uri"
+                },
+                "targetFolderId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "targetFolderRevision": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "url",
+                "targetFolderId",
+                "targetFolderRevision"
+              ]
+            }
+          }
+        },
+        "required": [
+          "accountId",
+          "entries"
+        ]
+      },
+      "FolderListing": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuarkFolder"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "parent": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/QuarkFolder"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "breadcrumbs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuarkFolder"
+            }
+          },
+          "status": {
+            "enum": [
+              "READY",
+              "LOADING",
+              "NEEDS_ACTION"
+            ]
+          },
+          "taskId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor",
+          "total",
+          "parent",
+          "breadcrumbs",
+          "status",
+          "taskId"
         ]
       }
     }

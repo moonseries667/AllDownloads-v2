@@ -12,8 +12,14 @@ public final class OperationQueue {
     private final BusinessStore store;
     @FunctionalInterface public interface Completion { void accept(JsonNode operation,JsonNode result) throws Exception; }
     private Completion completion=(op,result)->{};
+    @FunctionalInterface public interface Report { void accept(JsonNode operation,JsonNode request,String status) throws Exception; }
+    private Report report=(op,request,status)->{};
     public OperationQueue(BusinessStore store) { this.store=store; }
     public void onCompletion(Completion value) { completion=value; }
+    public void onReport(Report value) { report=value; }
+    public void account(String taskId,String accountId) throws SQLException {
+        String[] r=store.row("SELECT id,body FROM operations WHERE task_id=?",taskId);if(r==null)throw Failure.missing();ObjectNode body=(ObjectNode)parse(r[1]);body.put("accountRef",accountId);store.update("UPDATE operations SET body=? WHERE id=?",body.toString(),r[0]);
+    }
     public String enqueue(String type,String platform,String key,JsonNode destination,String storageRevision,JsonNode payload) throws SQLException {
         String[] prior=store.row("SELECT task_id FROM operations WHERE resource_key=? AND type=? AND status NOT IN ('SUCCEEDED','CANCELLED','FAILED') ORDER BY created LIMIT 1",key,type);
         if(prior!=null)return prior[0];
@@ -80,8 +86,8 @@ public final class OperationQueue {
         switch(status) {
             case "SUCCEEDED" -> {
                 if(!request.path("result").isObject())throw Failure.bad("INVALID_INPUT","Result facts required");
-                resolveIssues(text(op,"taskId"));
                 completion.accept(op,request.path("result"));
+                resolveIssues(text(op,"taskId"));
             }
             case "PAUSED","CANCELLED" -> {
                 if(request.path("result").path("files").size()>0)throw Failure.conflict("EFFECTS_REQUIRE_RECONCILIATION");
@@ -106,6 +112,7 @@ public final class OperationQueue {
             }
             default -> throw Failure.bad("INVALID_INPUT","Unsupported result status");
         }
+        report.accept(op,request,status);
         store.update("UPDATE operations SET status=?,retry_at=? WHERE id=?",status,retry,operationId);state(task,status,errorCode,retry);
         return ack(event,route,request,object("ackId",id(),"eventId",event,"taskId",text(task,"id"),"status",status));
     }
@@ -142,9 +149,16 @@ public final class OperationQueue {
         task.set("allowedActions",MAPPER.valueToTree(allowed));store.put("task",text(task,"id"),task);
     }
     public void issue(String taskId,String objectId,String code,String severity) throws SQLException {
-        String identity=PathPlanner.digest(taskId+":"+code);ObjectNode old=store.optional("issue",identity);
-        ObjectNode issue=object("id",identity,"taskId",taskId,"objectId",objectId,"code",code,"message",message(code),"severity",severity,"occurredAt",old==null?store.now():text(old,"occurredAt"),"updatedAt",store.now(),"read",false,"resolved",false);store.put("issue",identity,issue);
+        new dev.alldownloads.feedback2.IssueRepository(store.domainConnection(),MAPPER,store.clock).record(taskId,objectId,code,severity);
     }
-    private void resolveIssues(String taskId) throws SQLException { for(JsonNode value:store.all("issue")) if(text(value,"taskId").equals(taskId)) { ObjectNode issue=(ObjectNode)value;issue.put("resolved",true);issue.put("updatedAt",store.now());store.put("issue",text(issue,"id"),issue); } }
+    private void resolveIssues(String taskId) throws SQLException {new dev.alldownloads.feedback2.IssueRepository(store.domainConnection(),MAPPER,store.clock).taskSucceeded(taskId);}
+    /** Only explicitly requested retries with persisted, known file effects may bypass reconciliation. */
+    public ObjectNode retryKnownDownload(String taskId) throws SQLException {
+        ObjectNode task=store.get("task",taskId);String status=text(task,"status");
+        if(status.equals("FAILED"))return control(taskId,text(task,"revision"),"RETRY");
+        if(status.equals("PAUSED"))return control(taskId,text(task,"revision"),"RESUME");
+        if(!status.equals("NEEDS_ACTION")||store.optional("knownDownloadFailure",taskId)==null)throw Failure.conflict("RECONCILE_REQUIRED");
+        task.set("allowedActions",MAPPER.valueToTree(List.of("RETRY")));store.put("task",taskId,task);return control(taskId,text(task,"revision"),"RETRY");
+    }
     public static String message(String code) { return switch(code) {case "RESOURCE_DELETED"->"原资源已确认删除";case "PERMISSION_DENIED","ACCOUNT_PERMISSION_DENIED"->"没有访问权限";case "REGION_RESTRICTED"->"当前地区不可访问";case "PAYMENT_REQUIRED"->"内容需要相应付费权限";case "NETWORK_TEMPORARY"->"网络暂时失败，可稍后重试";case "RESULT_UNKNOWN"->"执行结果待核对";case "INVALID_STORAGE_ROOT"->"下载目录无效或不可写";case "ACCOUNT_NOT_CONFIGURED","AUTH_REQUIRED"->"尚未配置可用账号";case "PROVIDER_CHANGED"->"平台接口或内容已改变，需要重新获取资料";default->"处理未完成（"+code.replaceAll("[^A-Z0-9_]","")+"）";}; }
 }

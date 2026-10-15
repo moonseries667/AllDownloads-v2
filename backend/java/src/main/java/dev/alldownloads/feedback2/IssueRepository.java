@@ -23,34 +23,26 @@ public final class IssueRepository extends DomainSql {
         Map.entry("RATE_LIMITED","平台暂时限制请求，请等待后重试。"),
         Map.entry("INSUFFICIENT_SPACE","本机可用空间不足，请处理后重试。"));
     public IssueRepository(Connection db,ObjectMapper json,Clock clock) { super(db,json,clock); }
-    public void initialize() throws SQLException { ddl("""
-        CREATE TABLE IF NOT EXISTS f2_issues(id TEXT PRIMARY KEY,task_id TEXT,object_id TEXT,
-        code TEXT NOT NULL,severity TEXT NOT NULL,occurred TEXT NOT NULL,updated TEXT NOT NULL,
-        is_read INTEGER NOT NULL DEFAULT 0,resolved INTEGER NOT NULL DEFAULT 0)
-        """); }
+    public void initialize() throws SQLException { writing(); }
     public ObjectNode record(String taskId,String objectId,String code,String severity) throws SQLException {
         writing(); require(taskId!=null || objectId!=null,"INVALID_INPUT"); require(code!=null && code.matches("[A-Z][A-Z0-9_]{0,79}"),"INVALID_INPUT");
         require("ERROR".equals(severity)||"WARNING".equals(severity),"INVALID_INPUT");
-        String id=stable("issue-",taskId==null?"object:"+objectId:"task:"+taskId,code);
-        exec("""
-            INSERT INTO f2_issues(id,task_id,object_id,code,severity,occurred,updated) VALUES(?,?,?,?,?,?,?)
-            ON CONFLICT(id) DO UPDATE SET updated=excluded.updated,severity=excluded.severity,
-            is_read=CASE WHEN f2_issues.resolved=1 THEN 0 ELSE f2_issues.is_read END,resolved=0
-            """,id,taskId,objectId,code,severity,now(),now()); return get(id);
+        String id=dev.alldownloads.business.PathPlanner.digest((taskId==null?"object:"+objectId:taskId)+":"+code);
+        var prior=row("SELECT body FROM objects WHERE kind='issue' AND id=?",id);ObjectNode old=prior==null?null:read(prior[0]);
+        ObjectNode value=obj().put("id",id).put("taskId",taskId).put("objectId",objectId).put("code",code)
+            .put("message",MESSAGES.getOrDefault(code,dev.alldownloads.business.OperationQueue.message(code))).put("severity",severity)
+            .put("occurredAt",old==null?now():old.path("occurredAt").asText()).put("updatedAt",now())
+            .put("read",old!=null&&!old.path("resolved").asBoolean()&&old.path("read").asBoolean()).put("resolved",false);
+        save(value);return value;
     }
     public ObjectNode get(String id) throws SQLException {
-        var r=row("SELECT id,task_id,object_id,code,severity,occurred,updated,is_read,resolved FROM f2_issues WHERE id=?",id);
-        require(r!=null,"NOT_FOUND"); return view(r);
+        var r=row("SELECT body FROM objects WHERE kind='issue' AND id=?",id);require(r!=null,"NOT_FOUND");return read(r[0]);
     }
     public ArrayNode list(boolean includeResolved) throws SQLException {
-        ArrayNode a=array(); for(var r:rows("SELECT id,task_id,object_id,code,severity,occurred,updated,is_read,resolved FROM f2_issues"+(includeResolved?"":" WHERE resolved=0")+" ORDER BY occurred DESC,id")) a.add(view(r)); return a;
+        ArrayNode a=array(); for(var r:rows("SELECT body FROM objects WHERE kind='issue'"+(includeResolved?"":" AND json_extract(body,'$.resolved')=0")+" ORDER BY json_extract(body,'$.occurredAt') DESC,id"))a.add(read(r[0]));return a;
     }
-    public ObjectNode acknowledge(String id) throws SQLException { writing(); require(exec("UPDATE f2_issues SET is_read=1 WHERE id=?",id)==1,"NOT_FOUND"); return get(id); }
-    public void taskSucceeded(String taskId) throws SQLException { writing(); exec("UPDATE f2_issues SET resolved=1,updated=? WHERE task_id=? AND severity='ERROR' AND resolved=0",now(),taskId); }
-    public void resolveObject(String objectId,String code) throws SQLException { writing(); exec("UPDATE f2_issues SET resolved=1,updated=? WHERE object_id=? AND code=? AND resolved=0",now(),objectId,code); }
-    private ObjectNode view(String[] r) {
-        return obj().put("id",r[0]).put("taskId",r[1]).put("objectId",r[2]).put("code",r[3])
-            .put("message",MESSAGES.getOrDefault(r[3],"操作未完成，请查看关联任务并处理。"))
-            .put("severity",r[4]).put("occurredAt",r[5]).put("updatedAt",r[6]).put("read","1".equals(r[7])).put("resolved","1".equals(r[8]));
-    }
+    public ObjectNode acknowledge(String id) throws SQLException {writing();ObjectNode value=get(id).put("read",true);save(value);return value;}
+    public void taskSucceeded(String taskId) throws SQLException {writing();for(var n:list(false))if(taskId.equals(nullable(n,"taskId"))&&n.path("severity").asText().equals("ERROR"))save(((ObjectNode)n).put("resolved",true).put("updatedAt",now()));}
+    public void resolveObject(String objectId,String code) throws SQLException {writing();for(var n:list(false))if(objectId.equals(nullable(n,"objectId"))&&code.equals(n.path("code").asText()))save(((ObjectNode)n).put("resolved",true).put("updatedAt",now()));}
+    private void save(ObjectNode value) throws SQLException {exec("INSERT INTO objects(kind,id,body) VALUES('issue',?,?) ON CONFLICT(kind,id) DO UPDATE SET body=excluded.body",value.path("id").asText(),value.toString());}
 }

@@ -27,7 +27,18 @@ class BusinessFlowTest {
     ObjectNode request(String... tracks) {ObjectNode selection=object("mode","EXPLICIT","resource","BILIBILI_CONTENTS","ids",List.of("content-fixture"));if(tracks!=null)selection.set("mediaSelections",array(List.of(object("contentId","content-fixture","contentRevision","fixture-v1","trackIds",Arrays.asList(tracks)))));return object("platform","BILIBILI","selection",selection);}
     ObjectNode preview(ObjectNode request) {String id=store.tx(()->app.downloads.preview(request)).path("previewId").asText();return store.tx(()->app.downloads.getPreview(id));}
     ObjectNode submit(ObjectNode preview) {return store.tx(()->app.downloads.submit(object("previewId",preview.path("id"))));}
-    ObjectNode custom(ObjectNode request,String name) {ObjectNode ref=store.tx(()->app.downloads.validateTarget(object("path",temp.resolve(name).toString())));JsonNode op=acquire("VALIDATE_TARGET");complete(op,object("targetId",ref.path("targetId"),"rootId","root-"+name,"canonicalPath",temp.resolve(name).toString(),"writable",true));request.set("target",object("id",ref.path("targetId"),"revision","1"));return request;}
+    ObjectNode custom(ObjectNode request,String name) {
+        ObjectNode ref=store.tx(()->app.downloads.validateTarget(object("path",temp.resolve(name).toString())));
+        // A settings change may already have queued validation. Answer each leased plan,
+        // rather than assuming a randomly ordered same-millisecond lease is this target.
+        for(int i=0;i<10;i++) {
+            JsonNode op=acquire("VALIDATE_TARGET");assertFalse(op.isNull());JsonNode payload=op.path("payload");
+            boolean ours=payload.path("targetId").equals(ref.path("targetId"));
+            complete(op,object("targetId",payload.path("targetId"),"rootId",ours?"root-"+name:"root-default","canonicalPath",payload.path("path"),"writable",true));
+            if(ours){request.set("target",object("id",ref.path("targetId"),"revision","1"));return request;}
+        }
+        throw new AssertionError("Custom target validation was not leased within the fixture bound");
+    }
     ObjectNode fileFacts(JsonNode op) {List<JsonNode> files=new ArrayList<>();for(JsonNode output:op.path("payload").path("outputs"))files.add(object("outputId",output.path("id"),"relativePath",output.path("relativePath"),"sizeBytes","12","sha256","a".repeat(64),"mediaKinds",text(output,"kind").equals("MUXED")?List.of("VIDEO","AUDIO"):List.of(text(output,"kind")),"durationSeconds",12,"verified",true));return object("files",files,"warnings",List.of());}
     @Test void allFourSortsUsePublishedTimeAndStablePaginationWithShanghaiBoundaries() {
         for(int i=0;i<4;i++) {ObjectNode c=(ObjectNode)examples.path("content").deepCopy();c.put("id","c"+i);c.put("externalId","BVFixture"+i);c.put("title",i<2?"A":"Z");c.put("publishedAt",new String[]{"2026-10-14T15:59:59Z","2026-10-14T16:00:00Z","2026-10-15T15:59:59Z",null}[i]);seed(c);}

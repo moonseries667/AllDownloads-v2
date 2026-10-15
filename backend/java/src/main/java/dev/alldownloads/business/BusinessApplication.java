@@ -13,12 +13,16 @@ public final class BusinessApplication {
     public final OperationQueue queue;
     public final CatalogService catalog;
     public final DownloadService downloads;
+    public final FeedbackService feedback;
     public BusinessApplication(BusinessStore store,String defaultRoot) {
         this.store=store;queue=new OperationQueue(store);catalog=new CatalogService(store,queue);downloads=new DownloadService(store,catalog,queue);
+        feedback=new FeedbackService(store,queue,downloads);
         queue.onCompletion(this::complete);
+        queue.onReport(feedback::reported);
         store.tx(()->{downloads.configureDefault(defaultRoot);queue.expire();return null;});
     }
     private void complete(JsonNode operation,JsonNode result) throws SQLException {
+        if(feedback.complete(operation,result))return;
         switch(text(operation,"operationType")) {
             case "VALIDATE_TARGET" -> downloads.targetResult(operation,result);
             case "SYNC_BIL_SOURCE" -> catalog.importSource(operation,result);

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://alldownloads.invalid/contracts/runner.schema.json",
-  "title": "Java-Go part 1",
+  "title": "Java-Go protocol v1, feedback parts one and two",
   "oneOf": [
     {
       "$ref": "#/$defs/Operation"
@@ -1233,7 +1233,124 @@
         "destination",
         "payload"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "operationType": {
+                "const": "SCAN_TEL_SAVED"
+              },
+              "platform": {
+                "const": "TELEGRAM"
+              }
+            },
+            "required": [
+              "operationType",
+              "platform"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "feedback2.schema.json#/$defs/ScanPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operationType": {
+                "const": "LIST_QUARK_TREE"
+              },
+              "platform": {
+                "const": "QUARK"
+              }
+            },
+            "required": [
+              "operationType",
+              "platform"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "feedback2.schema.json#/$defs/TreePayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operationType": {
+                "const": "TRANSFER_QUARK_ITEMS"
+              },
+              "platform": {
+                "const": "QUARK"
+              }
+            },
+            "required": [
+              "operationType",
+              "platform"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "feedback2.schema.json#/$defs/TransferPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operationType": {
+                "const": "DOWNLOAD_MEDIA"
+              },
+              "platform": {
+                "const": "TELEGRAM"
+              }
+            },
+            "required": [
+              "operationType",
+              "platform"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "feedback2.schema.json#/$defs/TelegramDownloadPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operationType": {
+                "const": "DOWNLOAD_MEDIA"
+              },
+              "platform": {
+                "const": "QUARK"
+              }
+            },
+            "required": [
+              "operationType",
+              "platform"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "feedback2.schema.json#/$defs/QuarkDownloadPayload"
+              }
+            }
+          }
+        }
+      ]
     },
     "DownloadPayload": {
       "type": "object",

@@ -19,6 +19,7 @@ class DomainBehaviorTest {
     @BeforeEach void open() throws Exception { examples=json.readTree(Path.of("../../contracts/feedback2.examples.json").toFile()); connect(); }
     void connect() throws Exception {
         db=DriverManager.getConnection("jdbc:sqlite:"+temp.resolve("domain.db"));db.setAutoCommit(false);
+        db.createStatement().execute("CREATE TABLE IF NOT EXISTS objects(kind TEXT NOT NULL,id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(kind,id))");
         issues=new IssueRepository(db,json,clock);tel=new TelegramLibrary(db,json,clock,issues);quark=new QuarkCatalog(db,json,clock);
         issues.initialize();tel.initialize();quark.initialize();
         db.createStatement().execute("CREATE TABLE IF NOT EXISTS test_queue(id TEXT PRIMARY KEY,type TEXT,resource TEXT UNIQUE,payload TEXT)");db.commit();

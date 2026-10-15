@@ -102,9 +102,9 @@ public final class TelegramLibrary extends DomainSql {
         }
         exec("INSERT INTO f2_tel_pages VALUES(?,?)",eventId,page.toString());
     }
-    public void scanStopped(String taskId) throws SQLException { writing(); exec("UPDATE f2_tel_accounts SET active_task=NULL,revision=revision+1 WHERE active_task=?",taskId); }
+    public void scanStopped(String taskId) throws SQLException { writing(); exec("UPDATE f2_tel_accounts SET active_task=NULL,last_scan=?,revision=revision+1 WHERE active_task=?",now(),taskId); }
     public ArrayNode messages(String accountId) throws SQLException {
-        ArrayNode out=array(); for(var r:rows("SELECT id FROM f2_tel_units WHERE account_id=? AND eligible=1 ORDER BY id",accountId)) out.add(message(r[0])); return out;
+        ArrayNode out=array(); for(var r:rows("SELECT id FROM f2_tel_units WHERE (? IS NULL OR account_id=?) AND eligible=1 ORDER BY id",accountId,accountId)) out.add(message(r[0])); return out;
     }
     public ObjectNode message(String id) throws SQLException {
         var r=row("SELECT account_id,eligible,payload,status,task_id FROM f2_tel_units WHERE id=?",id); require(r!=null && "1".equals(r[1]),"NOT_FOUND");
@@ -127,6 +127,7 @@ public final class TelegramLibrary extends DomainSql {
     public List<String> incompleteTasks(String accountId,Set<String> resourceIds) throws SQLException {
         List<String> out=new ArrayList<>(); for(var r:rows("SELECT id,task_id FROM f2_tel_units WHERE account_id=? AND eligible=1 AND status<>'VERIFIED' AND task_id IS NOT NULL",accountId)) if(resourceIds==null || resourceIds.contains(r[0])) out.add(r[1]); return out;
     }
+    public void replaceTask(String oldTask,String task) throws SQLException {writing();exec("UPDATE f2_tel_units SET task_id=?,status='QUEUED' WHERE task_id=?",task,oldTask);exec("INSERT OR IGNORE INTO f2_tel_files SELECT ?,output_id,body FROM f2_tel_files WHERE task_id=?",task,oldTask);}
     private void downloadResult(String taskId,boolean complete) throws SQLException { exec("UPDATE f2_tel_units SET status=? WHERE task_id=?",complete?"VERIFIED":"NEEDS_ACTION",taskId); }
     public void downloadFacts(String taskId,JsonNode files,boolean succeeded) throws SQLException {
         writing();var unit=row("SELECT payload FROM f2_tel_units WHERE task_id=?",taskId);require(unit!=null,"NOT_FOUND");ObjectNode payload=read(unit[0]);Map<String,JsonNode> expected=new HashMap<>();payload.path("outputs").forEach(o->expected.put(o.path("id").asText(),o));
