@@ -144,7 +144,7 @@ public final class DownloadManagement {
     /** Called in the same result transaction, after operation state has been persisted. */
     public void promote() throws SQLException {
         for(JsonNode raw:store.all("downloadProject")) {
-            String id=text(raw,"id");if(!text(raw,"archivePolicy").equals("AUTO")||store.optional("archive",id)!=null)continue;
+            String id=text(raw,"id");if(!text(raw,"archivePolicy").equals("AUTO")||store.optional("projectArchive",id)!=null||store.optional("archive",id)!=null)continue;
             ObjectNode project=project(id);
             if(!text(project,"status").equals("SUCCEEDED")||text(raw,"desiredAction").equals("CANCEL")||list(raw.path("items")).stream().anyMatch(i->text(i,"desiredAction").equals("CANCEL")))continue;
             if(!raw.path("archiveTarget").isObject()) {queue.issue(null,id,"ARCHIVE_TARGET_NOT_CONFIGURED","WARNING");continue;}
@@ -152,9 +152,14 @@ public final class DownloadManagement {
                 ObjectNode frozen=object();for(String field:List.of("outputId","relativePath","sizeBytes","sha256","mediaKinds","verified"))frozen.set(field,file.path(field));unique.put(text(file,"outputId"),frozen);
             }
             List<JsonNode> files=new ArrayList<>(unique.values());JsonNode local=raw.path("target");
+            files.sort(Comparator.comparing(f->text(f,"outputId")));
+            String manifest=PathPlanner.digest(canonical(object("rootId",local.path("rootId"),"target",raw.path("archiveTarget"),"files",files)));
+            ObjectNode shared=store.optional("archiveManifest",manifest);
+            if(shared!=null) {store.put("projectArchive",id,shared);continue;}
             String task=queue.enqueue("UPLOAD_ARTIFACT",text(raw,"platform"),"archive-project:"+id,object("rootId",local.path("rootId"),"rootPath",local.path("path"),"relativePath",""),text(local,"revision"),
                 object("schemaVersion",1,"projectId",id,"archivePolicy","AUTO","archiveTarget",raw.path("archiveTarget"),"files",files));
             store.put("archive",id,object("id",id,"projectId",id,"batchId",raw.path("batchId"),"platform",raw.path("platform"),"title",raw.path("title"),"target",raw.path("archiveTarget"),"files",files,"taskId",task,"createdAt",store.now()));
+            ObjectNode reference=object("archiveId",id);store.put("projectArchive",id,reference);store.put("archiveManifest",manifest,reference);
         }
     }
     public ObjectNode archives(Map<String,String> query) throws SQLException {

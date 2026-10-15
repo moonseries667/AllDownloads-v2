@@ -7,13 +7,11 @@
 `ManagementFlowTest` 覆盖精确 contentId/分页、共享消费者取消、运行停止确认、部分发布、完成竞争、失联对账、重启、显式新批次补齐与上传冻结；`StorageSettingsTest` 覆盖原生取消/不可用/迟到结果、设置冲突、Drive 重名/分页/权限变化；`ManagementHttpTest` 使用真实回环 HTTP 并生成 schema 校验样本。它们使用合成执行事实，不能替代实际 Go 文件执行或原生弹框。
 
 第三部分 schema 复现：在项目隔离 Python 环境安装 `tests/integration/requirements.txt`，仓库根目录运行 `python tests/integration/validate_contracts.py backend/java/target/contract-captures.json backend/java/target/runner-capture.json backend/java/target/management-captures.json`。先执行下述 Maven verify 生成样本。原生 Windows 对话框、真实 Drive、Y7000P 部署与长期运行不在本轮已验收范围。
-## 第二部分领域模块（接入前）
+## 第二部分公共接入
 
-契约基线 `6233234`，完整组与目标边界补充 `9e7886f`。`dev.alldownloads.feedback2` 使用调用方的 SQLite Connection 和事务，不新建业务数据库、HTTP 服务或平台调度器。`TelegramLibrary` 保存原始扫描事实、完整组资格与待处理单元，最终扫描页通过 Enqueue 接入公共操作队列；`IssueRepository` 提供稳定持久问题；`QuarkCatalog` 核验节点父链、冻结转存目标和展开文件版本。普通构造和查询不扫描平台。
+本分支已合入第一部分 Java `a5dcded`、第二部分 Java `bb0ebdb` 和第三部分 Go `4995708`（含前序 Go）。`TelegramLibrary`、`QuarkCatalog` 与 `FeedbackService` 使用同一 BusinessStore 事务及 OperationQueue；Telegram 完整组资格、游标推进、照片成员、稳定问题和夸克转存/下载边界均保留。
 
-开工核验 B10/B11/B12 均只有契约，未有 Java 实现；现已新增上述领域能力和 `DomainBehaviorTest` 的 12 项 SQLite 用例。Maven verify 共 22 项通过，包括原核心恢复测试。公共 HTTP、订单快照和 Runner 接入等待第一部分已完成提交；此处不把领域测试称作集成通过。Carbon 上只用合成数据，真实 Telegram、夸克、Y7000P 与持续运行均未验证。
-
-本机验证使用既有项目 Maven 3.9.16 缓存，临时 settings 仅选择已缓存的 aliyun-public 仓库；Java 21。沙盒访问旧缓存 JAR 的 toRealPath 被拒绝，因此该次离线 verify 经准确范围审批执行。未修改系统 Java、Maven 或代理。
+第三部分将 Telegram 执行拆为单附件及侧车，保留完整消息/媒体组归属。取消不因增量扫描重启；用户显式补齐取消项时创建新操作和新项目实例，原实例不改写。夸克按单文件执行、按分享聚合，一个分享未完成不阻塞其他完整分享入上传。
 
 Java 21 独占产品 SQLite、公共 HTTP、媒体选择和路径计划；Go 独占平台访问、目录探测与文件执行。第一部分契约提交为 `d508c7a`，见 [增量语义](../../contracts/FEEDBACK-PART1.md)、[OpenAPI](../../contracts/openapi.yaml) 和 [Runner schema](../../contracts/runner.schema.json)。旧 M1 `TaskStore` 与 fixture 测试保留，产品入口使用 `BusinessStore`/`OperationQueue`，不启动第二套队列。
 
@@ -33,7 +31,7 @@ Java 21 独占产品 SQLite、公共 HTTP、媒体选择和路径计划；Go 独
 | B08 Go 执行 | 文件发布/收据基础已有 | 由 Go 对话实现；Java 只接受精确清单、大小、SHA-256、媒体种类和 verified 事实 |
 | B09 跨进程 | 公共/内部 HTTP 均缺失 | `ApiController/RunnerController`、独立内部身份、租约/心跳/事实/结果/对账、持久订单和单事务后续调度 |
 
-第二部分一度误派，已按范围更正停止。仅保留已提交契约 `6233234`（增量文档末节和 schema 扩展）以及公共队列内问题记录辅助方法；没有实现 Telegram/夸克业务或第二部分公共路由，交由第二部分新对话接续。
+第一/二部分的契约与行为由其提交接续，第三部分没有重建公共 HTTP、租约或平台扫描系统。
 
 ## 构建与测试
 
@@ -76,6 +74,26 @@ java -jar target/alldownloads-backend-0.1.0-SNAPSHOT.jar --spring.config.additio
 
 ## 实质限制
 
-本轮 Java 提供第一部分 Bilibili 闭环；第二部分和其余原计划平台入口仍由对应任务实现。AUTO 后续归档任务可持久排队，但没有云端适配器/配置时不会成为 VERIFIED；本轮不执行真实上传，也不把挂载状态当云端事实。平台账号、付费/地区内容、实际 Bilibili 下载、真实挂载/归档、Y7000P 部署、电源断电与七天运行均未验收。Go 完成提交后的本地跨进程验证单独记录；模块单测不能冒充该验证。
+Java 公共业务已覆盖三部分反馈；Carbon 上验证使用合成平台事实或真实本地文件与回环替身。Go 默认命令仍未装配 Telegram/夸克真实会话客户端；Drive 账号与授权须在后续真实运行环境配置，选择能力不代表已经登录。上传保留相对层级要求目标下相应目录已存在且唯一，缺失/重名返回明确错误，本轮不创建云端目录。
+
+未执行原生 Windows 对话框的点击/视觉验收、真实 Bilibili/Telegram/夸克/Drive 账号及业务媒体、Y7000P 部署、电源断电或七天运行；本地跨进程通过不能替代这些结果。
+
+## 第三部分跨进程复现
+
+`tests/integration/feedback3_chain.py` 启动真实 Java jar、真实 Go Worker 和本地 HTTP 媒体/Drive 替身。它验证单部分取消实际关闭流、兄弟部分完成、未完整项目不入归档、固定清单上传核验，以及 Java/Go 重启不重复 I/O。运行数据与日志保留在 `backend/java/target/feedback3-chain-*`，不进入 Git；所有子进程有界结束，不修改系统配置。
+
+先完成 Maven verify，在仓库根目录执行（路径替换为现有 Java 21、Go 1.27.1、FFmpeg 9.0.2）：
+
+```powershell
+# 构建集成测试宿主；其 go.mod 只通过 replace 使用当前工作树生产 Go 源码。
+Push-Location tests/integration/go_runner
+go build -o ../../../backend/java/target/feedback3-runner.exe .
+Pop-Location
+python tests/integration/feedback3_chain.py --java '<Java21>/bin/java.exe' --runner '<仓库>/backend/java/target/feedback3-runner.exe' --ffmpeg-dir '<FFmpeg9.0.2>/bin'
+```
+
+本轮实际结果为两项目、一取消部分、一已核验上传项目和两远端替身文件；取消 HTTP 在 8 MiB 流的约 128 KiB 处中断，兄弟文件保留，重启后下载/上传调用数量不增加。Go 全量 race/vet/build 已在该组合分支通过，设置了 `ALLDOWNLOADS_TEST_FFMPEG_DIR`，真实临时媒体测试未跳过。
+
+当前组合的 Maven verify 为 64 项全部通过；共享 schema、HTTP 捕获、仓库 8 项回归与结构检查通过。前端源码不在本后端分支，没有把前端 skipped 记为界面验收。
 
 Refs [#2](https://github.com/moonseries667/AllDownloads-v2/issues/2)、[#4](https://github.com/moonseries667/AllDownloads-v2/issues/4)、[#5](https://github.com/moonseries667/AllDownloads-v2/issues/5)。

@@ -33,6 +33,8 @@ Go CANCELLED/NEEDS_ACTION 允许 result.files 返回已经发布并核验的冻�
 
 原项目的 archivePolicy=AUTO、全部原冻结必要 outputs 本机 verified、没有取消/失败/阻止/待核对子项，并且提交时已冻结有效 Drive 目标，才原子创建唯一上传任务和 ArchiveUpload。NONE 项目永不入队；旧项目没有 Drive 目标保持待配置问题，不从新全局设置吸收目标。每个独立项目自己判断资格。恢复扫描与结果重放复用 projectId 的唯一上传身份。
 
+多个逻辑实例复用完全相同的本机成果、冻结文件清单及 Drive 目标时，持久关联同一上传记录，不重复上传实体；取消一个消费者不能取消其他实例依赖的执行。Telegram 自动收录批次的订单 previewId=null；夸克 PreviewItem 可带 shareId/projectTitle 供明确分享归属，下载项目 contentId 为 shareId。
+
 UPLOAD_ARTIFACT payload：`{schemaVersion:1,projectId,archivePolicy:"AUTO",archiveTarget:DriveTarget,files:[ArtifactFile]}`，destination 为冻结的本机目标；ArtifactFile：`outputId,relativePath,sizeBytes,sha256,mediaKinds,verified:true`。仅传该项目不可变且已核验的实际成果，不能枚举目录后扩大上传。成功 result：`{projectId,archiveTarget:DriveTarget,files:[ArchivedFile],verified:true}`；ArchivedFile 包含上述 outputId/relativePath/sizeBytes/sha256，另含 `remoteId,remoteName,verified:true`。remoteId 为真实稳定对象，名称/大小/校验值匹配预期才成功。上传自行传输后核验，失败重试同操作，不重新下载源媒体。
 
 ## 全局设置

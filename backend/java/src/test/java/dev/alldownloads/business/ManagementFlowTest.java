@@ -50,6 +50,11 @@ class ManagementFlowTest {
         f.complete(op,f.fileFacts(op));assertEquals("SUCCEEDED",text(project(two),"status"));assertEquals(1,uploads());
         assertEquals(p2.path("id"),f.store.tx(()->f.app.management.archives(Map.of())).path("items").get(0).path("projectId"));
     }
+    @Test void duplicateLogicalRequestsShareOnePhysicalUploadManifest() {
+        configureDrive();ObjectNode first=submitAll(),second=submitAll();JsonNode operation=f.acquire("DOWNLOAD_MEDIA");f.complete(operation,f.fileFacts(operation));
+        assertEquals("SUCCEEDED",text(project(first),"status"));assertEquals("SUCCEEDED",text(project(second),"status"));assertEquals(1,uploads());
+        ObjectNode third=submitAll();assertEquals("SUCCEEDED",text(project(third),"status"));assertEquals(1,uploads());
+    }
     @Test void stableContentFilterSeparatesSameTitleAndKeepsAllBatchesWithBoundCursor() {
         ObjectNode first=submitAll();submitAll();ObjectNode other=(ObjectNode)f.examples.path("content").deepCopy();other.put("id","other-content");other.put("externalId","BV-other");
         for(JsonNode u:other.path("mediaUnits")){((ObjectNode)u).put("id",text(u,"id")+"-other");((ObjectNode)u).put("contentId","other-content");for(JsonNode t:u.path("tracks"))((ObjectNode)t).put("id",text(t,"id")+"-other");}f.seed(other);
