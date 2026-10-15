@@ -1,0 +1,1421 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alldownloads.invalid/contracts/runner.schema.json",
+  "title": "Java-Go part 1",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Operation"
+    },
+    {
+      "$ref": "#/$defs/Result"
+    },
+    {
+      "$ref": "#/$defs/Register"
+    }
+  ],
+  "$defs": {
+    "Source": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "BILIBILI"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "FAVORITE",
+            "COLLECTION",
+            "USER_ADDED",
+            "SERIES",
+            "MOVIE"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "alias": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "lastSyncedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "itemCount": {
+          "type": "integer"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "pinned": {
+          "type": "boolean"
+        },
+        "navigationGroup": {
+          "type": "string",
+          "enum": [
+            "FAVORITES",
+            "COLLECTIONS",
+            "OTHER"
+          ]
+        },
+        "displayLabel": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "platform",
+        "kind",
+        "title",
+        "alias",
+        "url",
+        "status",
+        "lastSyncedAt",
+        "itemCount",
+        "revision",
+        "pinned",
+        "navigationGroup",
+        "displayLabel"
+      ],
+      "additionalProperties": false
+    },
+    "MediaTrack": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "VIDEO",
+            "AUDIO",
+            "SUBTITLE",
+            "DANMAKU"
+          ]
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "reasonCode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "language": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "languageLabel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "subtitleOrigin": {
+          "type": "string",
+          "enum": [
+            "HUMAN",
+            "AI",
+            "UNKNOWN",
+            "NOT_APPLICABLE"
+          ]
+        },
+        "durationSeconds": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "sizeBytes": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]+$"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "available",
+        "reasonCode",
+        "language",
+        "languageLabel",
+        "subtitleOrigin",
+        "durationSeconds",
+        "sizeBytes"
+      ],
+      "additionalProperties": false
+    },
+    "MediaUnit": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "contentId": {
+          "type": "string"
+        },
+        "externalId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "MAIN",
+            "PART",
+            "EPISODE",
+            "LANGUAGE"
+          ]
+        },
+        "language": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "languageLabel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "durationSeconds": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "availability": {
+          "type": "string",
+          "enum": [
+            "AVAILABLE",
+            "REMOVED",
+            "UNAVAILABLE",
+            "UNKNOWN"
+          ]
+        },
+        "availabilityReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tracks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MediaTrack"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "contentId",
+        "externalId",
+        "title",
+        "index",
+        "kind",
+        "language",
+        "languageLabel",
+        "durationSeconds",
+        "availability",
+        "availabilityReason",
+        "tracks"
+      ],
+      "additionalProperties": false
+    },
+    "StateSummary": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "Content": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "BILIBILI"
+          ]
+        },
+        "externalId": {
+          "type": "string"
+        },
+        "externalIdType": {
+          "type": "string",
+          "enum": [
+            "BVID",
+            "SEASON_ID",
+            "EPISODE_ID",
+            "MEDIA_ID"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "SINGLE",
+            "MULTIPART",
+            "SERIES",
+            "MOVIE"
+          ]
+        },
+        "revision": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "coverUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sourceIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "originalUrl": {
+          "type": "string"
+        },
+        "availability": {
+          "type": "string",
+          "enum": [
+            "AVAILABLE",
+            "REMOVED",
+            "UNAVAILABLE",
+            "UNKNOWN"
+          ]
+        },
+        "availabilityReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "downloadSummary": {
+          "$ref": "#/$defs/StateSummary"
+        },
+        "archiveSummary": {
+          "$ref": "#/$defs/StateSummary"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "publishedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "author": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "seasonId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Source"
+          }
+        },
+        "mediaUnits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MediaUnit"
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "platform",
+        "externalId",
+        "externalIdType",
+        "kind",
+        "revision",
+        "title",
+        "coverUrl",
+        "sourceIds",
+        "originalUrl",
+        "availability",
+        "availabilityReason",
+        "downloadSummary",
+        "archiveSummary",
+        "updatedAt",
+        "publishedAt",
+        "author",
+        "description",
+        "seasonId",
+        "sources",
+        "mediaUnits",
+        "warnings"
+      ],
+      "additionalProperties": false
+    },
+    "Target": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "VALIDATING",
+            "VALID",
+            "INVALID"
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "rootId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "archivePolicy": {
+          "type": "string",
+          "enum": [
+            "AUTO",
+            "NONE"
+          ]
+        },
+        "error": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "status",
+        "path",
+        "label",
+        "rootId",
+        "archivePolicy",
+        "error"
+      ],
+      "additionalProperties": false
+    },
+    "Output": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "relativePath": {
+          "type": "string"
+        },
+        "trackIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "VIDEO",
+            "AUDIO",
+            "MUXED",
+            "SUBTITLE",
+            "DANMAKU"
+          ]
+        },
+        "sizeBytes": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]+$"
+        }
+      },
+      "required": [
+        "id",
+        "relativePath",
+        "trackIds",
+        "kind",
+        "sizeBytes"
+      ],
+      "additionalProperties": false
+    },
+    "MediaSelection": {
+      "type": "object",
+      "properties": {
+        "contentId": {
+          "type": "string"
+        },
+        "contentRevision": {
+          "type": "string"
+        },
+        "trackIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "contentId",
+        "contentRevision",
+        "trackIds"
+      ],
+      "additionalProperties": false
+    },
+    "Selection": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "EXPLICIT",
+            "QUERY"
+          ]
+        },
+        "resource": {
+          "type": "string",
+          "enum": [
+            "BILIBILI_CONTENTS",
+            "BILIBILI_PARTS"
+          ]
+        },
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "filters": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "excludeIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "mediaSelections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MediaSelection"
+          }
+        }
+      },
+      "required": [
+        "mode",
+        "resource"
+      ],
+      "additionalProperties": false
+    },
+    "PreviewRequest": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string",
+          "enum": [
+            "BILIBILI"
+          ]
+        },
+        "selection": {
+          "$ref": "#/$defs/Selection"
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "revision"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "platform",
+        "selection"
+      ],
+      "additionalProperties": false
+    },
+    "PreviewItem": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "contentId": {
+          "type": "string"
+        },
+        "partId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "relativePath": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]+$"
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "DOWNLOAD",
+            "REUSE",
+            "BLOCKED"
+          ]
+        },
+        "reasonCode": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "actionLabel": {
+          "type": "string"
+        },
+        "selectedTrackIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "mergePolicy": {
+          "type": "string",
+          "enum": [
+            "MUX",
+            "SEPARATE"
+          ]
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Output"
+          }
+        },
+        "downloadState": {
+          "type": "string"
+        },
+        "archiveState": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "contentId",
+        "partId",
+        "title",
+        "version",
+        "relativePath",
+        "sizeBytes",
+        "decision",
+        "reasonCode",
+        "reason",
+        "actionLabel",
+        "selectedTrackIds",
+        "mergePolicy",
+        "outputs",
+        "downloadState",
+        "archiveState"
+      ],
+      "additionalProperties": false
+    },
+    "Preview": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PREPARING",
+            "READY",
+            "EXPIRED",
+            "NEEDS_ACTION"
+          ]
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "BILIBILI"
+          ]
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "storageRevision": {
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/Target"
+        },
+        "archivePolicy": {
+          "type": "string",
+          "enum": [
+            "AUTO",
+            "NONE"
+          ]
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PreviewItem"
+          }
+        },
+        "summary": {
+          "type": "object",
+          "properties": {
+            "download": {
+              "type": "integer"
+            },
+            "reuse": {
+              "type": "integer"
+            },
+            "blocked": {
+              "type": "integer"
+            },
+            "total": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "download",
+            "reuse",
+            "blocked",
+            "total"
+          ],
+          "additionalProperties": false
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "platform",
+        "expiresAt",
+        "storageRevision",
+        "target",
+        "archivePolicy",
+        "items",
+        "summary",
+        "warnings"
+      ],
+      "additionalProperties": false
+    },
+    "Order": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "previewId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/Target"
+        },
+        "archivePolicy": {
+          "type": "string",
+          "enum": [
+            "AUTO",
+            "NONE"
+          ]
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PreviewItem"
+          }
+        },
+        "taskIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "createdAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "previewId",
+        "status",
+        "target",
+        "archivePolicy",
+        "items",
+        "taskIds",
+        "createdAt"
+      ],
+      "additionalProperties": false
+    },
+    "Error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "action": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryable",
+        "action",
+        "details"
+      ],
+      "additionalProperties": false
+    },
+    "Runtime": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "RUNNING",
+            "PARTIAL",
+            "UNAVAILABLE",
+            "UNKNOWN"
+          ]
+        },
+        "observedAt": {
+          "type": "string"
+        },
+        "services": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "ACTIVE",
+                  "LOST",
+                  "ERROR",
+                  "NOT_CONFIGURED",
+                  "UNKNOWN"
+                ]
+              },
+              "reasonCode": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "lastSeenAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "required",
+              "state",
+              "reasonCode",
+              "lastSeenAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "mount": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": [
+                "MOUNTED",
+                "NOT_MOUNTED",
+                "NOT_CONFIGURED",
+                "UNKNOWN",
+                "UNSUPPORTED"
+              ]
+            },
+            "reasonCode": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "observedAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "state",
+            "reasonCode",
+            "observedAt"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "state",
+        "observedAt",
+        "services",
+        "mount"
+      ],
+      "additionalProperties": false
+    },
+    "Overview": {
+      "type": "object",
+      "properties": {
+        "runtime": {
+          "$ref": "#/$defs/Runtime"
+        },
+        "bilibili": {
+          "type": "object",
+          "properties": {
+            "accountState": {
+              "type": "string"
+            },
+            "refreshState": {
+              "type": "string"
+            },
+            "downloadCount": {
+              "type": "integer"
+            },
+            "archiveCount": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "accountState",
+            "refreshState",
+            "downloadCount",
+            "archiveCount"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "runtime",
+        "bilibili"
+      ],
+      "additionalProperties": false
+    },
+    "Task": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "status",
+        "revision",
+        "allowedActions"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "desiredAction": {
+          "type": "string"
+        },
+        "allowedActions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "error": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "progress": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "nextRetryAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "Operation": {
+      "type": "object",
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "operationId": {
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "leaseId": {
+          "type": "string"
+        },
+        "runnerId": {
+          "type": "string"
+        },
+        "fencingToken": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "leaseExpiresAt": {
+          "type": "string"
+        },
+        "operationType": {
+          "type": "string",
+          "enum": [
+            "VALIDATE_TARGET",
+            "SYNC_BIL_SOURCE",
+            "FETCH_BIL_METADATA",
+            "DOWNLOAD_MEDIA",
+            "UPLOAD_ARTIFACT",
+            "VERIFY_ARCHIVE"
+          ]
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "BILIBILI"
+          ]
+        },
+        "accountRef": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resourceKey": {
+          "type": "string"
+        },
+        "storageRevision": {
+          "type": "string"
+        },
+        "destination": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "rootId": {
+                  "type": "string"
+                },
+                "rootPath": {
+                  "type": "string"
+                },
+                "relativePath": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "rootId",
+                "rootPath",
+                "relativePath"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "required": [
+            "schemaVersion"
+          ],
+          "properties": {
+            "schemaVersion": {
+              "const": 1
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "operationId",
+        "taskId",
+        "attempt",
+        "leaseId",
+        "runnerId",
+        "fencingToken",
+        "leaseExpiresAt",
+        "operationType",
+        "platform",
+        "accountRef",
+        "resourceKey",
+        "storageRevision",
+        "destination",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadPayload": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "contentId": {
+          "type": "string"
+        },
+        "contentRevision": {
+          "type": "string"
+        },
+        "contentKind": {
+          "type": "string",
+          "enum": [
+            "SINGLE",
+            "MULTIPART",
+            "SERIES",
+            "MOVIE"
+          ]
+        },
+        "externalId": {
+          "type": "string"
+        },
+        "externalIdType": {
+          "type": "string",
+          "enum": [
+            "BVID",
+            "SEASON_ID",
+            "EPISODE_ID",
+            "MEDIA_ID"
+          ]
+        },
+        "qualityPolicy": {
+          "const": "HIGHEST_AVAILABLE"
+        },
+        "archivePolicy": {
+          "type": "string",
+          "enum": [
+            "AUTO",
+            "NONE"
+          ]
+        },
+        "units": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MediaUnit"
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Output"
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "contentId",
+        "contentRevision",
+        "contentKind",
+        "externalId",
+        "externalIdType",
+        "qualityPolicy",
+        "archivePolicy",
+        "units",
+        "outputs"
+      ],
+      "additionalProperties": false
+    },
+    "FileEvidence": {
+      "type": "object",
+      "properties": {
+        "outputId": {
+          "type": "string"
+        },
+        "relativePath": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "mediaKinds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "VIDEO",
+              "AUDIO",
+              "SUBTITLE",
+              "DANMAKU"
+            ]
+          }
+        },
+        "durationSeconds": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "verified": {
+          "const": true
+        }
+      },
+      "required": [
+        "outputId",
+        "relativePath",
+        "sizeBytes",
+        "sha256",
+        "mediaKinds",
+        "durationSeconds",
+        "verified"
+      ],
+      "additionalProperties": false
+    },
+    "Result": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string"
+        },
+        "runnerId": {
+          "type": "string"
+        },
+        "leaseId": {
+          "type": "string"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fencingToken": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "SUCCEEDED",
+            "PAUSED",
+            "CANCELLED",
+            "RETRYABLE_ERROR",
+            "NEEDS_ACTION",
+            "RESULT_UNKNOWN"
+          ]
+        },
+        "result": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true
+        },
+        "error": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "eventId",
+        "runnerId",
+        "leaseId",
+        "attempt",
+        "fencingToken",
+        "status",
+        "result",
+        "error"
+      ],
+      "additionalProperties": false
+    },
+    "Register": {
+      "type": "object",
+      "properties": {
+        "runnerId": {
+          "type": "string"
+        },
+        "protocolVersion": {
+          "const": 1
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tools": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "facts": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "runnerId",
+        "protocolVersion",
+        "capabilities",
+        "tools"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

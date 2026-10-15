@@ -1,5 +1,7 @@
 # 前端与 Java 接口契约
 
+第一部分反馈的增量结构、批次目标和媒体选择以 [第一部分冻结契约](FEEDBACK-PART1.md) 与 [OpenAPI](openapi.yaml) 为准。
+
 ## 1 契约范围
 
 语义版本 `v1`，公共前缀 `/api/v1`，JSON UTF-8。浏览器只调用 Java。此文件冻结资源语义、关键字段和动作；Java 对话在首个开发阶段生成 `contracts/openapi.yaml`，覆盖本文的路由、模型、状态码及示例。前端可据本文先制作页面和 mock，生成式客户端及联调以审阅后的 OpenAPI 为准。不得在两端分别猜测字段。
