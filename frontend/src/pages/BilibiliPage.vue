@@ -697,8 +697,7 @@ async function removeSource() {
             @click="
               detailOpen = false;
               router.push(
-                '/downloads?platform=BILIBILI' +
-                  (source ? '&sourceId=' + source : ''),
+                { path: '/downloads', query: { platform: 'BILIBILI', contentId: detail.id } },
               );
             "
           >
