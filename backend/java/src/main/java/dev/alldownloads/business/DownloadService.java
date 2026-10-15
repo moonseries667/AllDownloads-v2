@@ -192,10 +192,34 @@ public final class DownloadService {
         content.set("downloadSummary",object("state",!expected.isEmpty()&&actual.containsAll(expected)?"VERIFIED":actual.isEmpty()?"NOT_REQUESTED":"PARTIAL","completedTracks",actual.size(),"totalTracks",expected.size()));store.put("content",contentId,content);
     }
     public ObjectNode defaultTarget() throws SQLException {return selectedTarget(object());}
-    public String savedDownload(String key,String account,ObjectNode payload) throws SQLException {
+    public String savedDownload(String key,String account,String batch,ObjectNode payload) throws SQLException {
         ObjectNode target=defaultTarget();String relative=required(payload.path("outputs").get(0),"relativePath");relative=relative.substring(0,relative.lastIndexOf('/'));
-        String task=queue.enqueue("DOWNLOAD_MEDIA","TELEGRAM",key,object("rootId",target.path("rootId"),"rootPath",target.path("path"),"relativePath",relative),text(target,"revision"),payload);queue.account(task,account);store.put("taskTarget",task,target);
-        for(var o:payload.path("outputs"))store.update("INSERT INTO output_claims VALUES(?,?,?) ON CONFLICT(root_id,output_id) DO UPDATE SET task_id=excluded.task_id",text(target,"rootId"),text(o,"id"),task);return task;
+        List<JsonNode> assignments=new ArrayList<>();
+        for(JsonNode attachment:payload.path("attachments")) {
+            ObjectNode scoped=payload.deepCopy();List<JsonNode> outputs=list(payload.path("outputs")).stream().filter(o->text(o,"attachmentId").equals(text(attachment,"id"))).toList();
+            scoped.set("attachments",array(List.of(attachment)));scoped.set("outputs",array(outputs));
+            String task=queue.enqueue("DOWNLOAD_MEDIA","TELEGRAM",key+":"+text(attachment,"id"),object("rootId",target.path("rootId"),"rootPath",target.path("path"),"relativePath",relative),text(target,"revision"),scoped);
+            queue.account(task,account);store.put("taskTarget",task,target);assignments.add(object("taskId",task,"outputs",outputs));
+            for(JsonNode output:outputs)store.update("INSERT INTO output_claims VALUES(?,?,?) ON CONFLICT(root_id,output_id) DO UPDATE SET task_id=excluded.task_id",text(target,"rootId"),text(output,"id"),task);
+        }
+        if(assignments.isEmpty())throw Failure.bad("EMPTY_SELECTION","收藏消息没有可执行附件");
+        String primary=text(assignments.getFirst(),"taskId"),resource=required(payload,"resourceId");
+        store.put("savedAssignments",primary,object("assignments",assignments));store.put("savedPolicy",resource,object("target",target,"archiveTarget",storageSettings.frozenArchiveTarget()));
+        registerSavedInstance(batch,payload);return primary;
+    }
+    public JsonNode savedAssignments(String primary) throws SQLException {return store.get("savedAssignments",primary).path("assignments");}
+    public void registerSavedInstance(String batch,JsonNode payload) throws SQLException {
+        String resource=required(payload,"resourceId");JsonNode policy=store.get("savedPolicy",resource),target=policy.path("target");List<JsonNode> items=new ArrayList<>();
+        String title="收藏消息 "+payload.path("messageIds").get(0).asText();
+        for(JsonNode attachment:payload.path("attachments")) {
+            List<JsonNode> outputs=list(payload.path("outputs")).stream().filter(o->text(o,"attachmentId").equals(text(attachment,"id"))).toList();
+            items.add(object("id",attachment.path("id"),"contentId",resource,"attachmentId",attachment.path("id"),"title",attachment.path("name"),"projectTitle",title,"outputs",outputs,"decision","DOWNLOAD"));
+        }
+        List<String> projectIds=management.registerBatch(batch,"TELEGRAM",target,items,store.now(),policy.path("archiveTarget"));
+        ObjectNode order=store.optional("order",batch);if(order==null)order=object("id",batch,"previewId",null,"platform","TELEGRAM","status","QUEUED","target",target,"archivePolicy","AUTO","items",List.of(),"taskIds",List.of(),"projectIds",List.of(),"createdAt",store.now());
+        List<JsonNode> allItems=new ArrayList<>(list(order.path("items")));allItems.addAll(items);order.set("items",array(allItems));
+        Set<String> allProjects=new LinkedHashSet<>(strings(order.path("projectIds")));allProjects.addAll(projectIds);order.set("projectIds",MAPPER.valueToTree(allProjects));
+        Set<String> tasks=new LinkedHashSet<>(strings(order.path("taskIds")));for(String project:projectIds)for(JsonNode child:management.project(project).path("items"))tasks.addAll(strings(child.path("taskIds")));order.set("taskIds",MAPPER.valueToTree(tasks));store.put("order",batch,order);
     }
     private ObjectNode quarkPreview(JsonNode request) throws SQLException {
         JsonNode selection=request.path("selection");if(!required(selection,"resource").equals("QUARK_NODES")||selection.has("mediaSelections"))throw Failure.bad("INVALID_INPUT","夸克清单只接受网盘节点选择");

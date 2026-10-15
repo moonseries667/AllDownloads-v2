@@ -18,7 +18,8 @@ public final class TelegramLibrary extends DomainSql {
         "CREATE TABLE IF NOT EXISTS f2_tel_messages(account_id TEXT NOT NULL,external_id TEXT NOT NULL,unit_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(account_id,external_id))",
         "CREATE TABLE IF NOT EXISTS f2_tel_units(id TEXT PRIMARY KEY,account_id TEXT NOT NULL,batch_id TEXT NOT NULL,complete INTEGER NOT NULL DEFAULT 0,eligible INTEGER NOT NULL DEFAULT 0,task_id TEXT,payload TEXT,status TEXT NOT NULL DEFAULT 'PENDING')",
         "CREATE TABLE IF NOT EXISTS f2_tel_pages(event_id TEXT PRIMARY KEY,body TEXT NOT NULL)",
-        "CREATE TABLE IF NOT EXISTS f2_tel_files(task_id TEXT NOT NULL,output_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(task_id,output_id))"); }
+        "CREATE TABLE IF NOT EXISTS f2_tel_files(task_id TEXT NOT NULL,output_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(task_id,output_id))",
+        "CREATE TABLE IF NOT EXISTS f3_tel_task_units(task_id TEXT PRIMARY KEY,unit_id TEXT NOT NULL,outputs TEXT NOT NULL)"); }
     public ObjectNode beginScan(String accountId,String taskId) throws SQLException {
         writing(); require(accountId!=null && !accountId.isBlank(),"INVALID_INPUT");
         exec("INSERT OR IGNORE INTO f2_tel_accounts(id) VALUES(?)",accountId);
@@ -118,19 +119,25 @@ public final class TelegramLibrary extends DomainSql {
         } else for(var m:members) for(var a:m.path("attachments")) attachments.add(publicAttachment(r[0],m,a));
         int completed=0;
         for(var a:attachments) {
-            String aid=a.path("id").asText();boolean verified=r[3].equals("VERIFIED") || row("SELECT output_id FROM f2_tel_files WHERE task_id=? AND output_id=?",r[4],aid)!=null && row("SELECT output_id FROM f2_tel_files WHERE task_id=? AND output_id=?",r[4],aid+"-metadata")!=null;
+            String aid=a.path("id").asText();boolean verified=verifiedFile(id,r[4],aid)&&verifiedFile(id,r[4],aid+"-metadata");
             if(verified)completed++;((ObjectNode)a).put("downloadState",verified?"VERIFIED":r[3].equals("NEEDS_ACTION")?"NEEDS_ACTION":"QUEUED");
         }
         out.put("text",text.toString()); out.set("messageIds",ids); out.set("attachments",attachments); out.set("sourceLinks",links);
         out.set("downloadSummary",obj().put("state",r[3].equals("VERIFIED")?"COMPLETE":r[3].equals("NEEDS_ACTION")?"NEEDS_ACTION":"QUEUED").put("completed",completed).put("total",attachments.size())); return out;
     }
     public List<String> incompleteTasks(String accountId,Set<String> resourceIds) throws SQLException {
-        List<String> out=new ArrayList<>(); for(var r:rows("SELECT id,task_id FROM f2_tel_units WHERE account_id=? AND eligible=1 AND status<>'VERIFIED' AND task_id IS NOT NULL",accountId)) if(resourceIds==null || resourceIds.contains(r[0])) out.add(r[1]); return out;
+        List<String> out=new ArrayList<>(); for(var r:rows("SELECT id,task_id FROM f2_tel_units WHERE account_id=? AND eligible=1 AND status<>'VERIFIED' AND task_id IS NOT NULL",accountId)) if(resourceIds==null || resourceIds.contains(r[0])) {
+            var tasks=rows("SELECT task_id FROM f3_tel_task_units WHERE unit_id=? ORDER BY task_id",r[0]);if(tasks.isEmpty())out.add(r[1]);else for(var t:tasks)out.add(t[0]);
+        } return out;
     }
-    public void replaceTask(String oldTask,String task) throws SQLException {writing();exec("UPDATE f2_tel_units SET task_id=?,status='QUEUED' WHERE task_id=?",task,oldTask);exec("INSERT OR IGNORE INTO f2_tel_files SELECT ?,output_id,body FROM f2_tel_files WHERE task_id=?",task,oldTask);}
-    private void downloadResult(String taskId,boolean complete) throws SQLException { exec("UPDATE f2_tel_units SET status=? WHERE task_id=?",complete?"VERIFIED":"NEEDS_ACTION",taskId); }
+    public void replaceTask(String oldTask,String task) throws SQLException {writing();exec("UPDATE f2_tel_units SET task_id=?,status='QUEUED' WHERE task_id=?",task,oldTask);exec("INSERT OR IGNORE INTO f2_tel_files SELECT ?,output_id,body FROM f2_tel_files WHERE task_id=?",task,oldTask);exec("UPDATE f3_tel_task_units SET task_id=? WHERE task_id=?",task,oldTask);}
+    public String batchId(String resourceId) throws SQLException {var r=row("SELECT batch_id FROM f2_tel_units WHERE id=?",resourceId);require(r!=null,"NOT_FOUND");return r[0];}
+    public ObjectNode payloadForTask(String taskId) throws SQLException {var r=row("SELECT payload FROM f2_tel_units WHERE task_id=? OR id=(SELECT unit_id FROM f3_tel_task_units WHERE task_id=?)",taskId,taskId);require(r!=null,"NOT_FOUND");return read(r[0]);}
+    public void bindTasks(String resourceId,JsonNode assignments) throws SQLException {writing();for(JsonNode assignment:assignments)exec("INSERT INTO f3_tel_task_units VALUES(?,?,?) ON CONFLICT(task_id) DO UPDATE SET unit_id=excluded.unit_id,outputs=excluded.outputs",text(assignment,"taskId"),resourceId,assignment.path("outputs").toString());}
+    private boolean verifiedFile(String unit,String primary,String output) throws SQLException {return row("SELECT output_id FROM f2_tel_files WHERE output_id=? AND (task_id=? OR task_id IN (SELECT task_id FROM f3_tel_task_units WHERE unit_id=?)) LIMIT 1",output,primary,unit)!=null;}
     public void downloadFacts(String taskId,JsonNode files,boolean succeeded) throws SQLException {
-        writing();var unit=row("SELECT payload FROM f2_tel_units WHERE task_id=?",taskId);require(unit!=null,"NOT_FOUND");ObjectNode payload=read(unit[0]);Map<String,JsonNode> expected=new HashMap<>();payload.path("outputs").forEach(o->expected.put(o.path("id").asText(),o));
+        writing();var unit=row("SELECT payload,id,task_id FROM f2_tel_units WHERE task_id=? OR id=(SELECT unit_id FROM f3_tel_task_units WHERE task_id=?)",taskId,taskId);require(unit!=null,"NOT_FOUND");ObjectNode payload=read(unit[0]);Map<String,JsonNode> expected=new HashMap<>();
+        var scoped=row("SELECT outputs FROM f3_tel_task_units WHERE task_id=?",taskId);JsonNode taskOutputs=scoped==null?payload.path("outputs"):readArray(scoped[0]);taskOutputs.forEach(o->expected.put(o.path("id").asText(),o));
         require(files.isArray(),"VERIFICATION_FAILED");Set<String> seen=new HashSet<>();
         for(var f:files) {
             String id=text(f,"outputId");JsonNode output=expected.get(id);require(output!=null&&seen.add(id)&&f.path("verified").asBoolean()&&output.path("relativePath").equals(f.path("relativePath")),"VERIFICATION_FAILED");
@@ -138,8 +145,11 @@ public final class TelegramLibrary extends DomainSql {
             if(output.hasNonNull("sizeBytes"))require(output.path("sizeBytes").equals(f.path("sizeBytes")),"VERIFICATION_FAILED");
             exec("INSERT INTO f2_tel_files VALUES(?,?,?) ON CONFLICT(task_id,output_id) DO UPDATE SET body=excluded.body",taskId,id,f.toString());
         }
-        if(succeeded)require(seen.equals(expected.keySet()),"VERIFICATION_FAILED");downloadResult(taskId,succeeded);
+        if(succeeded)require(seen.equals(expected.keySet()),"VERIFICATION_FAILED");
+        boolean complete=true;for(JsonNode output:payload.path("outputs"))complete &= verifiedFile(unit[1],unit[2],text(output,"id"));
+        exec("UPDATE f2_tel_units SET status=? WHERE id=?",complete?"VERIFIED":succeeded?"QUEUED":"NEEDS_ACTION",unit[1]);
     }
+    private JsonNode readArray(String value) {try{return json.readTree(value);}catch(Exception e){throw new IllegalStateException("Invalid frozen output mapping",e);}}
     private ObjectNode freeze(String account,String unit,String directory) throws SQLException {
         List<ObjectNode> members=members(unit); ArrayNode attachments=array(),outputs=array(),ids=array(); Set<String> names=new HashSet<>();
         String base="Telegram/"+directory+"/"+members.getFirst().path("externalId").asText();

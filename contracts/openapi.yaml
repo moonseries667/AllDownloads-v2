@@ -4315,6 +4315,15 @@
           },
           "nodeId": {
             "type": "string"
+          },
+          "shareId": {
+            "type": "string"
+          },
+          "projectTitle": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -4433,7 +4442,10 @@
             "type": "string"
           },
           "previewId": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "status": {
             "type": "string"
@@ -4451,7 +4463,14 @@
           "items": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/PreviewItem"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PreviewItem"
+                },
+                {
+                  "$ref": "#/components/schemas/SavedOrderItem"
+                }
+              ]
             }
           },
           "taskIds": {
@@ -4474,6 +4493,13 @@
             "items": {
               "$ref": "#/components/schemas/DownloadProject"
             }
+          },
+          "platform": {
+            "enum": [
+              "BILIBILI",
+              "TELEGRAM",
+              "QUARK"
+            ]
           }
         },
         "required": [
@@ -6040,6 +6066,45 @@
           "status",
           "taskId"
         ]
+      },
+      "SavedOrderItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "contentId": {
+            "type": "string"
+          },
+          "attachmentId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "projectTitle": {
+            "type": "string"
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Output"
+            }
+          },
+          "decision": {
+            "const": "DOWNLOAD"
+          }
+        },
+        "required": [
+          "id",
+          "contentId",
+          "attachmentId",
+          "title",
+          "projectTitle",
+          "outputs",
+          "decision"
+        ],
+        "additionalProperties": false
       }
     }
   }

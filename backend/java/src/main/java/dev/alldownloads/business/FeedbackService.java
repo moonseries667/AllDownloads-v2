@@ -22,7 +22,7 @@ public final class FeedbackService {
         store.tx(()->{issues.initialize();telegram.initialize();quark.initialize();return null;});downloads.useQuark(quark);
     }
     private String enqueue(String type,String platform,String account,String key,ObjectNode payload) throws SQLException {
-        if(type.equals("DOWNLOAD_MEDIA"))return downloads.savedDownload(key,account,payload);
+        if(type.equals("DOWNLOAD_MEDIA")) {String resource=required(payload,"resourceId");String task=downloads.savedDownload(key,account,telegram.batchId(resource),payload);telegram.bindTasks(resource,downloads.savedAssignments(task));return task;}
         String task=queue.enqueue(type,platform,key,null,"1",payload);queue.account(task,account);return task;
     }
     public ObjectNode savedSync(JsonNode request) throws SQLException {
@@ -37,15 +37,19 @@ public final class FeedbackService {
     public ObjectNode retryIncomplete(JsonNode request) throws SQLException {
         String account=required(request,"accountId");Set<String> selected=request.has("resourceIds")?new HashSet<>(strings(request.path("resourceIds"))):null;
         List<String> taskIds=telegram.incompleteTasks(account,selected);List<JsonNode> items=new ArrayList<>();
+        Map<String,JsonNode> newInstances=new LinkedHashMap<>();
         for(String taskId:taskIds) {
             ObjectNode task=store.get("task",taskId);String state=text(task,"status");
             if(Set.of("FAILED","PAUSED","NEEDS_ACTION").contains(state))queue.retryKnownDownload(taskId);
             else if(state.equals("CANCELLED")) {
+                JsonNode manifest=telegram.payloadForTask(taskId);newInstances.put(text(manifest,"resourceId"),manifest);
                 String[] r=store.row("SELECT body FROM operations WHERE task_id=?",taskId);ObjectNode op=(ObjectNode)parse(r[0]);
                 String next=queue.enqueue("DOWNLOAD_MEDIA","TELEGRAM",text(op,"resourceKey"),op.path("destination"),text(op,"storageRevision"),op.path("payload"));queue.account(next,account);store.put("taskTarget",next,store.get("taskTarget",taskId));telegram.replaceTask(taskId,next);taskId=next;
+                for(JsonNode output:op.path("payload").path("outputs"))store.update("UPDATE output_claims SET task_id=? WHERE root_id=? AND output_id=?",next,text(op.path("destination"),"rootId"),text(output,"id"));
             }
             items.add(object("taskId",taskId));
         }
+        String retryBatch=id();for(JsonNode manifest:newInstances.values())downloads.registerSavedInstance(retryBatch,manifest);
         return object("items",items,"taskIds",items.stream().map(n->text(n,"taskId")).toList());
     }
     public ObjectNode folders(Map<String,String> query) throws SQLException {

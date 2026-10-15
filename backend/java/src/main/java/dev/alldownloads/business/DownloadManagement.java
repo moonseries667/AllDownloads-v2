@@ -22,6 +22,9 @@ public final class DownloadManagement {
     }
     /** Items must have contentId (video, logical message, or share) and original outputs. */
     public List<String> registerBatch(String batchId,String platform,JsonNode target,List<JsonNode> items,String createdAt) throws SQLException {
+        return registerBatch(batchId,platform,target,items,createdAt,settings.frozenArchiveTarget());
+    }
+    public List<String> registerBatch(String batchId,String platform,JsonNode target,List<JsonNode> items,String createdAt,JsonNode archiveTarget) throws SQLException {
         Map<String,List<JsonNode>> groups=new LinkedHashMap<>();
         for(JsonNode item:items) {String content=text(item,"contentId");if(content.isBlank())content=text(item,"shareId");if(content.isBlank())content=text(item,"resourceId");if(content.isBlank())throw Failure.conflict("MISSING_PROJECT_IDENTITY");groups.computeIfAbsent(content,k->new ArrayList<>()).add(item);}
         List<String> ids=new ArrayList<>();
@@ -43,7 +46,7 @@ public final class DownloadManagement {
             String title=entry.getValue().getFirst().path("projectTitle").asText(text(entry.getValue().getFirst(),"title"));
             if(platform.equals("BILIBILI")) {ObjectNode content=store.optional("content",entry.getKey());if(content!=null)title=text(content,"title");}
             store.put("downloadProject",projectId,object("id",projectId,"batchId",batchId,"platform",platform,"contentId",entry.getKey(),"title",title,
-                "createdAt",createdAt,"target",target,"archivePolicy",target.path("archivePolicy"),"archiveTarget",settings.frozenArchiveTarget(),"desiredAction","CONTINUE","items",children));
+                "createdAt",createdAt,"target",target,"archivePolicy",target.path("archivePolicy"),"archiveTarget",archiveTarget,"desiredAction","CONTINUE","items",children));
         }
         promote();return ids;
     }
@@ -145,7 +148,9 @@ public final class DownloadManagement {
             ObjectNode project=project(id);
             if(!text(project,"status").equals("SUCCEEDED")||text(raw,"desiredAction").equals("CANCEL")||list(raw.path("items")).stream().anyMatch(i->text(i,"desiredAction").equals("CANCEL")))continue;
             if(!raw.path("archiveTarget").isObject()) {queue.issue(null,id,"ARCHIVE_TARGET_NOT_CONFIGURED","WARNING");continue;}
-            Map<String,JsonNode> unique=new LinkedHashMap<>();for(JsonNode item:project.path("items"))for(JsonNode file:item.path("files"))unique.put(text(file,"outputId"),file);
+            Map<String,JsonNode> unique=new LinkedHashMap<>();for(JsonNode item:project.path("items"))for(JsonNode file:item.path("files")) {
+                ObjectNode frozen=object();for(String field:List.of("outputId","relativePath","sizeBytes","sha256","mediaKinds","verified"))frozen.set(field,file.path(field));unique.put(text(file,"outputId"),frozen);
+            }
             List<JsonNode> files=new ArrayList<>(unique.values());JsonNode local=raw.path("target");
             String task=queue.enqueue("UPLOAD_ARTIFACT",text(raw,"platform"),"archive-project:"+id,object("rootId",local.path("rootId"),"rootPath",local.path("path"),"relativePath",""),text(local,"revision"),
                 object("schemaVersion",1,"projectId",id,"archivePolicy","AUTO","archiveTarget",raw.path("archiveTarget"),"files",files));
