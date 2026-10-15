@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "AllDownloads feedback part 1",
-    "version": "1.1.0"
+    "version": "1.2.0"
   },
   "servers": [
     {
@@ -1729,6 +1729,472 @@
           }
         ]
       }
+    },
+    "/issues": {
+      "get": {
+        "operationId": "getissues",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "See FEEDBACK-PART1.md second-part semantics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/issues/{id}/acknowledge": {
+      "post": {
+        "operationId": "postissuesidacknowledge",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "See FEEDBACK-PART1.md second-part semantics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/telegram/saved-sync": {
+      "post": {
+        "operationId": "posttelegramsavedsync",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "See FEEDBACK-PART1.md second-part semantics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/telegram/watcher": {
+      "get": {
+        "operationId": "gettelegramwatcher",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "See FEEDBACK-PART1.md second-part semantics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patchtelegramwatcher",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "See FEEDBACK-PART1.md second-part semantics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/telegram/messages": {
+      "get": {
+        "operationId": "gettelegrammessages",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "See FEEDBACK-PART1.md second-part semantics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/telegram/messages/{id}": {
+      "get": {
+        "operationId": "gettelegrammessagesid",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "See FEEDBACK-PART1.md second-part semantics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/telegram/retry-incomplete": {
+      "post": {
+        "operationId": "posttelegramretryincomplete",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "See FEEDBACK-PART1.md second-part semantics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/quark/folders": {
+      "get": {
+        "operationId": "getquarkfolders",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "See FEEDBACK-PART1.md second-part semantics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/quark/shares": {
+      "get": {
+        "operationId": "getquarkshares",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "See FEEDBACK-PART1.md second-part semantics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postquarkshares",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "See FEEDBACK-PART1.md second-part semantics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/quark/shares/{id}": {
+      "get": {
+        "operationId": "getquarksharesid",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "See FEEDBACK-PART1.md second-part semantics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/quark/shares/{id}/refresh-tree": {
+      "post": {
+        "operationId": "postquarksharesidrefreshtree",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "See FEEDBACK-PART1.md second-part semantics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/quark/nodes": {
+      "get": {
+        "operationId": "getquarknodes",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "See FEEDBACK-PART1.md second-part semantics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2221,7 +2687,11 @@
               "AUDIO",
               "MUXED",
               "SUBTITLE",
-              "DANMAKU"
+              "DANMAKU",
+              "FILE",
+              "PHOTO",
+              "DOCUMENT",
+              "METADATA"
             ]
           },
           "sizeBytes": {
@@ -2230,6 +2700,12 @@
               "null"
             ],
             "pattern": "^[0-9]+$"
+          },
+          "attachmentId": {
+            "type": "string"
+          },
+          "nodeId": {
+            "type": "string"
           }
         },
         "required": [
@@ -2278,7 +2754,8 @@
             "type": "string",
             "enum": [
               "BILIBILI_CONTENTS",
-              "BILIBILI_PARTS"
+              "BILIBILI_PARTS",
+              "QUARK_NODES"
             ]
           },
           "ids": {
@@ -2318,7 +2795,8 @@
           "platform": {
             "type": "string",
             "enum": [
-              "BILIBILI"
+              "BILIBILI",
+              "QUARK"
             ]
           },
           "selection": {
@@ -2354,10 +2832,16 @@
             "type": "string"
           },
           "contentId": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "partId": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "title": {
             "type": "string"
@@ -2416,6 +2900,9 @@
           },
           "archiveState": {
             "type": "string"
+          },
+          "nodeId": {
+            "type": "string"
           }
         },
         "required": [
@@ -2456,7 +2943,8 @@
           "platform": {
             "type": "string",
             "enum": [
-              "BILIBILI"
+              "BILIBILI",
+              "QUARK"
             ]
           },
           "expiresAt": {
@@ -2809,6 +3297,292 @@
           }
         },
         "additionalProperties": true
+      },
+      "Issue": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "objectId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "WARNING",
+              "ERROR"
+            ]
+          },
+          "occurredAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "read": {
+            "type": "boolean"
+          },
+          "resolved": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "taskId",
+          "objectId",
+          "code",
+          "message",
+          "severity",
+          "occurredAt",
+          "updatedAt",
+          "read",
+          "resolved"
+        ]
+      },
+      "QuarkFolder": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "accountId": {
+            "type": "string"
+          },
+          "parentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "const": "FOLDER"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "selectable": {
+            "type": "boolean"
+          },
+          "availability": {
+            "type": "string"
+          },
+          "availabilityReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "parentId",
+          "name",
+          "kind",
+          "revision",
+          "selectable",
+          "availability",
+          "availabilityReason",
+          "path"
+        ]
+      },
+      "CloudNode": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "shareId": {
+            "type": "string"
+          },
+          "parentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "externalId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "FILE",
+              "FOLDER"
+            ]
+          },
+          "relativePath": {
+            "type": "string"
+          },
+          "sizeBytes": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9]+$"
+          },
+          "modifiedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "availability": {
+            "type": "string"
+          },
+          "availabilityReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "downloadSummary": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "shareId",
+          "parentId",
+          "externalId",
+          "version",
+          "name",
+          "kind",
+          "relativePath",
+          "sizeBytes",
+          "modifiedAt",
+          "availability",
+          "availabilityReason",
+          "downloadSummary"
+        ]
+      },
+      "TelegramScanMessage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "externalId": {
+            "type": "string"
+          },
+          "sentAt": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "groupId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "groupComplete": {
+            "type": "boolean"
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "externalId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "mediaType": {
+                  "enum": [
+                    "VIDEO",
+                    "AUDIO",
+                    "PHOTO",
+                    "DOCUMENT",
+                    "UNKNOWN"
+                  ]
+                },
+                "mimeType": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "sizeBytes": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "externalId",
+                "name",
+                "mediaType",
+                "mimeType",
+                "sizeBytes"
+              ]
+            }
+          },
+          "sourceLinks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "authorTags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "externalId",
+          "sentAt",
+          "text",
+          "groupId",
+          "groupComplete",
+          "attachments",
+          "sourceLinks",
+          "authorTags",
+          "channel"
+        ]
       }
     }
   }

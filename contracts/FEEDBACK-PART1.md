@@ -64,3 +64,31 @@ Operation：`protocolVersion,operationId,taskId,attempt,leaseId,runnerId,fencing
 * UPLOAD_ARTIFACT/VERIFY_ARCHIVE：沿用旧语义；本轮没有真实云端配置/能力则保持排队或 NEEDS_ACTION，不执行占位成功。
 
 兼容：旧 fixture WRITE_FIXTURE/VERIFY_FIXTURE 不暴露到产品公共 API。旧前端无 mediaSelections 的请求仍默认全部可选项；新增枚举/模型由本轮前端同步消费。已有源站元数据与真实平台适配未验证时，公共返回 UNKNOWN/NEEDS_ACTION，不能用样例自动填充真实目录。
+
+## 第二部分增量（同一 v1 协议）
+
+### Telegram 收藏夹唯一入口
+
+普通启动/GET 不扫描。`POST /telegram/saved-sync {accountId}`（Idempotency-Key）创建/复用 SCAN_TEL_SAVED；`GET /telegram/watcher?accountId=` 返回 `{accountId,enabled,intervalSeconds:60,lastCheckedAt,nextCheckAt,scanState}`；`PATCH /telegram/watcher {accountId,enabled}`（If-Match）首次完整扫描前拒绝启用 INITIAL_SCAN_REQUIRED。`GET /telegram/messages` 仅返回符合资格的逻辑收藏单元；`GET /telegram/messages/{id}` 同一单元完整内容；`POST /telegram/retry-incomplete {accountId,resourceIds?}` 只补已入库符合资格的附件。旧 `/telegram/link-downloads` 不再作为可操作下载入口，返回 410 FEATURE_REMOVED；不新增资源库下载入口。
+
+资格规则：完整的单消息或平台稳定 groupId 媒体组，至少一个附件 mediaType 为 VIDEO/AUDIO，才下载该单元**全部实际附件**（PHOTO/DOCUMENT 也包含）。纯文字、纯照片、纯文档、照片+文档均跳过并推进扫描。按真实平台属性/MIME 分类；UNKNOWN 不能猜成音视频；缩略图不属于附件。组不完整时保留扫描事实，不提前判定、下载或跨过未完整组推进确认游标。
+
+`SCAN_TEL_SAVED` payload：`{schemaVersion:1,accountId,afterMessageId:string,continuation:null|string}`。成功 result：`{accountId,messages:TelegramScanMessage[],complete:boolean,scannedThroughMessageId:string,continuation:null|string}`。每条消息 `{id,externalId,sentAt,text,groupId:null|string,groupComplete:boolean,attachments:[{id,externalId,name,mediaType:VIDEO/AUDIO/PHOTO/DOCUMENT/UNKNOWN,mimeType:null|string,sizeBytes:null|string}],sourceLinks:string[],authorTags:string[],channel:null|string}`。groupComplete 是 Go 完整收集事实；跨页 incomplete 可重复返回，Java 根据 accountId/externalId 合并。Java 持久全部扫描事实，完整组统一判定/入队，再推进到最早未完整组之前。complete=true 但仍有未完整组不能标初扫完成。每页入库和后续扫描操作原子提交；下一页使用 continuation，最终回到确认游标。不得由 Go 自行决定只返回音视频，不能丢照片成员。
+
+公开收藏单元保留 Message 字段，新增 `messageIds:string[],groupId,eligible:true,attachments,downloadSummary`，text 汇总成员正文而不重复，id 为稳定资源身份。下载任务 operationType=DOWNLOAD_MEDIA、platform=TELEGRAM，payload `{schemaVersion:1,accountId,resourceId,messageIds,attachments,outputs,archivePolicy:"AUTO",metadata:{...}}`；每个输出 kind 为 VIDEO/AUDIO/PHOTO/DOCUMENT/METADATA，包含 `attachmentId`，侧车路径为附件完整文件名后 `.metadata.json`。Go 用实际文件事实报告，Java 必须全部附件+侧车完整才标单元完成。下载/重试仍不触发新的消息链接扫描。
+
+### 持久问题
+
+`GET /issues` 分页 `{id,taskId:null|string,objectId:null|string,code,message,severity:WARNING/ERROR,occurredAt,updatedAt,read:boolean,resolved:boolean}`，默认未解决非成功事项。`POST /issues/{id}/acknowledge` 仅设置 read=true，不解决、不重试、不更改任务；任务实际恢复成功才解决相关问题。任务同一错误使用稳定 issue id，重复结果/轮询不增殖。客户端提示由前端本地记录，不要求服务器先成功。
+
+### 夸克云盘目录与本机批次目标
+
+`GET /quark/folders?accountId=&parentId=&cursor=` 返回 `{items:QuarkFolder[],nextCursor,total,parent:QuarkFolder|null,breadcrumbs:QuarkFolder[],status:READY/LOADING/NEEDS_ACTION,taskId:null|string}`；缺少目录快照时只创建 LIST_QUARK_TREE 信息操作，不能触发转存或下载。根 id 使用平台实际根标识，前端根标签“我的云盘”；name 只保存节点自身真实名称。QuarkFolder：`id,accountId,parentId:null|string,name,kind:"FOLDER",revision,selectable:boolean,availability,availabilityReason:null|string,path:string`，path 仅展示，由真实父链生成，不能拿显示路径当身份。
+
+`POST /quark/shares {accountId,entries:[{url,targetFolderId,targetFolderRevision}]}` 每条冻结实际目标；前端统一/逐条模式均展开成 entries，服务端不接受手工云盘路径。目标不存在、不是目录、不允许写入或 revision 改变分别拒绝，不能回退。响应 `{batchId,items:[{shareId,taskId,error}]}`，仅 TRANSFER_QUARK_ITEMS。`GET /quark/shares`、`GET /quark/shares/{id}` 返回分享与目标快照；`GET /quark/nodes?shareId=&parentId=` 返回已收录 CloudNode。`POST /quark/shares/{id}/refresh-tree` 创建 LIST_QUARK_TREE，绝不创建本机下载。
+
+LIST_QUARK_TREE payload：`{schemaVersion:1,accountId,parentId:null|string,shareId:null|string}` → `{accountId,parentId:null|string,folders:QuarkFolder[],nodes:CloudNode[],complete:boolean}`。CloudNode：`id,shareId,parentId:null|string,externalId,version,name,kind:FILE/FOLDER,relativePath,sizeBytes:null|string,modifiedAt:null|string,availability,availabilityReason:null|string,downloadSummary`。不完整结果不能移除旧节点。TRANSFER_QUARK_ITEMS payload：`{schemaVersion:1,shareId,url,targetFolderId,targetFolderRevision}` → `{shareId,targetFolderId,targetFolderRevision,nodes:CloudNode[],complete:boolean}`，Go 必须重新核验真实目标，失效返回明确错误。
+
+PreviewRequest.platform 扩展 QUARK；selection.resource=QUARK_NODES，EXPLICIT ids 可包括目录，Java 从完整快照展开所有后代文件并固定 node.version；QUERY 允许 shareId 等筛选。mediaSelections 不适用于夸克。PreviewItem 新增可选 nodeId，contentId/partId 对夸克为 null，selectedTrackIds=[]，mergePolicy=SEPARATE；文件输出 kind=FILE。其余 target、archivePolicy、预览过期/目标改变、去重、结果重放和 NONE 不归档语义完全复用。夸克输出为 `Quark/分享后缀/relativePath`，真实 sizeBytes 保留，未知 null。
+
+DOWNLOAD_MEDIA platform=QUARK payload：`{schemaVersion:1,shareId,nodes:CloudNode[],outputs:Output[],archivePolicy:"AUTO"|"NONE"}`，每个 output 新增 nodeId，Go 严格按节点版本执行。Java 不把浏览器输入路径或下载 URL 传给 Go 冒充已核验节点。
