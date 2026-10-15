@@ -142,6 +142,10 @@ func (d Downloader) Fetch(ctx context.Context, source Source, path string) error
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		var fileError *os.PathError
+		if errors.As(err, &fileError) {
+			return err
+		}
 		return Fail("NETWORK_INTERRUPTED", "DOWNLOAD", true)
 	}
 	actual := offset + n
