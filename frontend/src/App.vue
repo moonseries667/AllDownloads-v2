@@ -12,14 +12,17 @@ import {
   Settings,
   Search,
   ArrowDownToLine,
-  Bell,
   ChevronRight,
   PanelLeftClose,
   PanelLeftOpen,
   ArrowUpRight,
 } from "lucide-vue-next";
 import AppMain from "./components/AppMain.vue";
-import { api, dataRevision, isDemo, notifyError } from "./api/client";
+import NotificationCenter from "./components/NotificationCenter.vue";
+import { readAttentionIssues } from "./api/notifications";
+import type { ServerIssue } from "./notifications/store";
+import { api, dataRevision, isDemo } from "./api/client";
+import { notifyError } from "./notifications/notify";
 import { platformName } from "./format";
 const route = useRoute(),
   router = useRouter(),
@@ -28,7 +31,7 @@ const route = useRoute(),
   q = ref(""),
   results = ref<any[]>([]),
   searching = ref(false),
-  issues = ref<any[]>([]),
+  issues = ref<ServerIssue[]>([]),
   overview = ref<any>({}),
   scenario = ref("normal"),
   connectionError = ref("");
@@ -41,19 +44,26 @@ const nav = [
   { label: "文件与归档", path: "/archives", icon: Archive },
   { label: "任务与问题", path: "/tasks", icon: Activity },
 ];
-let searchRun = 0,
+let loadRun = 0,
+  searchRun = 0,
   timer: ReturnType<typeof setTimeout> | undefined,
   searchTimer: ReturnType<typeof setTimeout> | undefined;
 async function load() {
+  const run = ++loadRun;
   try {
-    [overview.value, issues.value] = await Promise.all([
+    const [nextOverview, nextIssues] = await Promise.all([
       api.get("/overview"),
-      api.get("/issues").then((x) => x.items),
+      readAttentionIssues(),
     ]);
+    if (run !== loadRun) return;
+    overview.value = nextOverview;
+    issues.value = nextIssues;
     if (isDemo) scenario.value = (await api.get("/__demo/status")).scenario;
     connectionError.value = "";
   } catch (e) {
+    if (run !== loadRun) return;
     connectionError.value = (e as Error).message;
+    notifyError(e);
   }
 }
 async function search() {
@@ -101,6 +111,7 @@ onMounted(() => {
   document.addEventListener("keydown", keys);
 });
 onBeforeUnmount(() => {
+  loadRun++;
   clearTimeout(timer);
   clearTimeout(searchTimer);
   document.removeEventListener("keydown", keys);
@@ -173,29 +184,7 @@ onBeforeUnmount(() => {
           <Search :size="17" /><span>搜索标题、文件名…</span><kbd>Ctrl K</kbd>
         </button>
         <span v-if="isDemo" class="demo-indicator">前端演示</span>
-        <el-popover placement="bottom-end" width="360" trigger="click"
-          ><template #reference
-            ><button
-              class="icon-button notification-button"
-              aria-label="查看问题通知"
-            >
-              <Bell :size="19" /><span
-                v-if="issues.length"
-                class="notification-dot"
-              ></span></button
-          ></template>
-          <h3>需要关注</h3>
-          <p v-if="!issues.length" class="muted">当前没有待处理问题</p>
-          <button
-            v-for="issue in issues"
-            :key="issue.id"
-            class="issue-notice"
-            @click="router.push('/tasks')"
-          >
-            <strong>{{ issue.title }}</strong
-            ><span>{{ issue.error.message }}</span>
-          </button></el-popover
-        >
+        <NotificationCenter :issues="issues" />
         <span class="avatar">我</span>
       </header>
       <div
