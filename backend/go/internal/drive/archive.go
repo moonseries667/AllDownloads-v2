@@ -50,11 +50,14 @@ type ArchiveResult struct {
 	Verified      bool           `json:"verified"`
 }
 type uploadRecord struct {
-	Identity  string
-	RemoteIDs map[string]string
-	Parents   map[string]string
-	Folders   map[string]folderRecord
+	Identity    string
+	AuthBinding string `json:"authBinding,omitempty"`
+	RemoteIDs   map[string]string
+	Parents     map[string]string
+	Folders     map[string]folderRecord
 }
+
+type archiveAuthKey struct{}
 
 // Archive never enumerates local directories or creates a business operation.
 // It creates only the remote directories implied by the immutable file list,
@@ -72,6 +75,15 @@ func (c *Client) archive(ctx context.Context, state *executor.State, operationID
 	result := ArchiveResult{ProjectID: req.ProjectID, ArchiveTarget: req.ArchiveTarget, Files: []ArchivedFile{}}
 	if state == nil || operationID == "" || req.SchemaVersion != 1 || req.ProjectID == "" || req.ArchivePolicy != "AUTO" || len(req.Files) == 0 || req.ArchiveTarget.AccountID != c.AccountID {
 		return result, fault("INVALID_ARCHIVE_MANIFEST")
+	}
+	binding := ""
+	if c.auth != nil {
+		stored, err := c.auth.credentials(ctx, c)
+		if err != nil {
+			return result, err
+		}
+		binding = authBinding(stored)
+		ctx = context.WithValue(ctx, archiveAuthKey{}, binding)
 	}
 	seenID, seenPath := map[string]bool{}, map[string]bool{}
 	for _, f := range req.Files {
@@ -97,9 +109,18 @@ func (c *Client) archive(ctx context.Context, state *executor.State, operationID
 	}{filepath.Clean(root), req})
 	identity := digest(raw)
 	name := "upload-" + digest([]byte(operationID))
-	record := uploadRecord{Identity: identity, RemoteIDs: map[string]string{}, Parents: map[string]string{}}
-	if err := state.Read(name, &record); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return result, err
+	var record uploadRecord
+	readErr := state.Read(name, &record)
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		return result, readErr
+	}
+	// Do not silently adopt legacy records whose actual Google identity was
+	// never pinned. They remain available to the original tokenEnv client.
+	if readErr == nil && record.AuthBinding != binding {
+		return result, fault("ACCOUNT_IDENTITY_CHANGED")
+	}
+	if errors.Is(readErr, os.ErrNotExist) {
+		record = uploadRecord{Identity: identity, AuthBinding: binding, RemoteIDs: map[string]string{}, Parents: map[string]string{}}
 	}
 	if record.Identity != identity || record.RemoteIDs == nil || record.Parents == nil {
 		return result, fault("ARCHIVE_MANIFEST_CHANGED")
