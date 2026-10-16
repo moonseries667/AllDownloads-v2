@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/media"
+	p "github.com/moonseries667/AllDownloads-v2/backend/go/internal/platforms"
 )
 
 // Account contains public account facts, never provider credentials or sessions.
@@ -278,13 +279,17 @@ func (w *AccountWorker) Handle(ctx context.Context, op Operation) (any, []File, 
 
 func accountFailure(err error) *media.Failure {
 	failure := media.Classify(err, "ACCOUNT")
+	var platformFault *p.Fault
+	if errors.As(err, &platformFault) {
+		failure = &media.Failure{Code: platformFault.Code, Stage: "ACCOUNT", Retryable: platformFault.Status == "RETRYABLE_ERROR"}
+	}
 	code := safeAccountCode(failure.Code)
 	return &media.Failure{Code: code, Stage: "ACCOUNT", Retryable: code == "NETWORK_TEMPORARY" || code == "NETWORK_TIMEOUT" || code == "RATE_LIMITED"}
 }
 
 func safeAccountCode(code string) string {
 	switch code {
-	case "AUTH_REQUIRED", "ACCOUNT_NOT_CONFIGURED", "ACCOUNT_IDENTITY_CHANGED", "AUTH_OR_TOOL_REQUIRED", "PERMISSION_DENIED", "NETWORK_TEMPORARY", "NETWORK_TIMEOUT", "RATE_LIMITED", "PROVIDER_CHANGED", "AUTH_SESSION_NOT_FOUND", "AUTH_SESSION_MISMATCH", "AUTH_EXPIRED", "CANCELLED", "LOCAL_FILE_NOT_FOUND", "IO_ERROR":
+	case "AUTH_REQUIRED", "ACCOUNT_NOT_CONFIGURED", "ACCOUNT_IDENTITY_CHANGED", "AUTH_OR_TOOL_REQUIRED", "PERMISSION_DENIED", "NETWORK_TEMPORARY", "NETWORK_TIMEOUT", "RATE_LIMITED", "PROVIDER_CHANGED", "AUTH_SESSION_NOT_FOUND", "AUTH_SESSION_MISMATCH", "AUTH_EXPIRED", "CANCELLED", "LOCAL_FILE_NOT_FOUND", "IO_ERROR", "AUTH_CLIENT_REQUIRED", "AUTH_CONFIG_INVALID", "AUTH_SCOPE_REQUIRED", "AUTH_CALLBACK_UNAVAILABLE", "AUTH_STORE_UNAVAILABLE", "AUTH_STORE_INVALID", "AUTH_STORE_BUSY", "TARGET_PERMISSION_DENIED":
 		return code
 	default:
 		return "ACCOUNT_CHECK_FAILED"

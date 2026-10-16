@@ -19,6 +19,7 @@ import (
 	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/executor"
 	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/folder"
 	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/media"
+	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/platforms/bilibili"
 	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/platforms/binding"
 	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/platforms/quark"
 	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/platforms/telegram"
@@ -37,7 +38,13 @@ type config struct {
 	FFprobe          string            `json:"ffprobe"`
 	FixtureCatalog   string            `json:"fixtureCatalog"`
 	IsolatedTestMode bool              `json:"isolatedTestMode"`
-	Telegram         struct {
+	Bilibili         struct {
+		CookieFile     string `json:"cookieFile"`
+		ExpectedUserID string `json:"expectedUserId"`
+		APIBase        string `json:"apiBase"`
+		PassportBase   string `json:"passportBase"`
+	} `json:"bilibili"`
+	Telegram struct {
 		Executable string                         `json:"executable"`
 		Accounts   map[string]telegram.TDLAccount `json:"accounts"`
 	} `json:"telegram"`
@@ -48,8 +55,10 @@ type config struct {
 		AccountURL     string `json:"accountUrl"`
 	} `json:"quarkAccounts"`
 	DriveAccounts map[string]struct {
-		TokenEnv string `json:"tokenEnv"`
-		RootID   string `json:"rootId"`
+		TokenEnv   string `json:"tokenEnv"`
+		TokenFile  string `json:"tokenFile"`
+		ClientFile string `json:"clientFile"`
+		RootID     string `json:"rootId"`
 	} `json:"driveAccounts"`
 }
 
@@ -110,7 +119,19 @@ func run(ctx context.Context, path string, once bool) error {
 		return err
 	}
 	defer state.Close()
-	var provider media.Provider = &media.Bilibili{Client: &http.Client{Timeout: 30 * time.Second}}
+	if cfg.Bilibili.CookieFile == "" {
+		cfg.Bilibili.CookieFile, err = filepath.Abs(filepath.Join(cfg.StateDir, "auth", "bilibili.session"))
+		if err != nil {
+			return errors.New("cannot resolve private Bilibili session path")
+		}
+	}
+	bilSession, err := bilibili.New(bilibili.Config{CookieFile: cfg.Bilibili.CookieFile, ExpectedUserID: cfg.Bilibili.ExpectedUserID,
+		IsolatedTestMode: cfg.IsolatedTestMode, APIBase: cfg.Bilibili.APIBase, PassportBase: cfg.Bilibili.PassportBase})
+	if err != nil {
+		return err
+	}
+	var provider media.Provider = &media.Bilibili{Session: bilSession}
+	downloadClient := bilSession.DownloadClient()
 	if cfg.FixtureCatalog != "" {
 		if !cfg.IsolatedTestMode {
 			return errors.New("fixtureCatalog requires isolatedTestMode")
@@ -137,6 +158,7 @@ func run(ctx context.Context, path string, once bool) error {
 			}
 		}
 		provider = catalog
+		downloadClient = &http.Client{Timeout: 30 * time.Minute}
 	}
 	var mediaTools *media.Tools
 	versions := map[string]string{}
@@ -148,7 +170,7 @@ func run(ctx context.Context, path string, once bool) error {
 		versions["ffmpeg"] = media.FFmpegVersion
 		versions["ffprobe"] = media.FFmpegVersion
 	}
-	handler := &runner.Handler{State: state, StateDir: cfg.StateDir, AllowedRoots: cfg.AllowedRoots, Roots: cfg.Roots, Provider: provider, Tools: mediaTools, Downloads: media.Downloader{Client: &http.Client{Timeout: 30 * time.Minute}}}
+	handler := &runner.Handler{State: state, StateDir: cfg.StateDir, AllowedRoots: cfg.AllowedRoots, Roots: cfg.Roots, Provider: provider, Tools: mediaTools, Downloads: media.Downloader{Client: downloadClient}}
 	tel := &telegram.TDL{Executable: cfg.Telegram.Executable, Accounts: cfg.Telegram.Accounts, State: state, WorkDir: filepath.Join(cfg.StateDir, "telegram-work")}
 	if len(cfg.Telegram.Accounts) > 0 {
 		if err := tel.Check(ctx); err != nil {
@@ -175,12 +197,23 @@ func run(ctx context.Context, path string, once bool) error {
 	platforms := &binding.Worker{Base: handler, Saved: tel, Telegram: tel, Tree: transfers, Quark: transfers, Transfers: transfers}
 	drives := map[string]*drive.Client{}
 	for account, settings := range cfg.DriveAccounts {
-		if account == "" || settings.TokenEnv == "" {
-			return errors.New("drive account and tokenEnv are required")
+		if account == "" || (settings.TokenEnv != "" && settings.TokenFile != "") {
+			return errors.New("drive account requires exactly one private authentication source")
 		}
-		drives[account] = &drive.Client{AccountID: account, RootID: settings.RootID, Token: func() string { return os.Getenv(settings.TokenEnv) }}
+		if settings.TokenEnv != "" {
+			drives[account] = &drive.Client{AccountID: account, RootID: settings.RootID, Token: func() string { return os.Getenv(settings.TokenEnv) }}
+		} else {
+			if settings.TokenFile == "" {
+				return errors.New("drive account requires a private tokenFile")
+			}
+			drives[account], err = drive.NewGoogle(drive.GoogleConfig{AccountID: account, RootID: settings.RootID, TokenFile: settings.TokenFile, ClientFile: settings.ClientFile})
+			if err != nil {
+				return err
+			}
+		}
 	}
 	storage := &runner.StorageWorker{Next: platforms, Roots: handler, State: state, HostID: cfg.RunnerID, Picker: &folder.Picker{}, PickerReady: folder.InteractiveDesktop, Drives: drives}
-	service := runner.Runner{ID: cfg.RunnerID, Client: client, State: state, Worker: storage, ToolVersions: versions, Log: func(s string) { fmt.Fprintln(os.Stderr, s) }}
+	accounts := &runner.AccountWorker{Next: storage, Accounts: accountAdapters(bilSession, drives, transfers, tel)}
+	service := runner.Runner{ID: cfg.RunnerID, Client: client, State: state, Worker: accounts, ToolVersions: versions, Log: func(s string) { fmt.Fprintln(os.Stderr, s) }}
 	return service.Run(ctx, once)
 }

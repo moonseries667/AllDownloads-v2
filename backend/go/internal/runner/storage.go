@@ -34,7 +34,7 @@ func (w *StorageWorker) SupportsOperation(op Operation) bool {
 	switch op.OperationType {
 	case "SELECT_LOCAL_DIRECTORY":
 		return w.Picker != nil
-	case "LIST_DRIVE_FOLDERS", "VALIDATE_DRIVE_TARGET", "UPLOAD_ARTIFACT":
+	case "LIST_DRIVE_FOLDERS", "VALIDATE_DRIVE_TARGET", "UPLOAD_ARTIFACT", "VERIFY_ARCHIVE":
 		return len(w.Drives) > 0
 	}
 	if adapter, ok := w.Next.(interface{ SupportsOperation(Operation) bool }); ok {
@@ -55,7 +55,7 @@ func (w *StorageWorker) Capabilities() []string {
 		caps = append(caps, "SELECT_LOCAL_DIRECTORY")
 	}
 	if len(w.Drives) > 0 {
-		caps = append(caps, "LIST_DRIVE_FOLDERS", "VALIDATE_DRIVE_TARGET", "UPLOAD_ARTIFACT")
+		caps = append(caps, "LIST_DRIVE_FOLDERS", "VALIDATE_DRIVE_TARGET", "UPLOAD_ARTIFACT", "VERIFY_ARCHIVE")
 	}
 	return caps
 }
@@ -150,6 +150,8 @@ func (w *StorageWorker) Handle(ctx context.Context, op Operation) (any, []File, 
 		return map[string]any{"validationId": p.ValidationID, "target": target, "writable": true}, nil, nil
 	case "UPLOAD_ARTIFACT":
 		return w.archive(ctx, op, false)
+	case "VERIFY_ARCHIVE":
+		return w.reconcileArchive(ctx, op)
 	default:
 		if w.Next == nil {
 			return nil, nil, media.Fail("UNSUPPORTED_OPERATION", "EXECUTE", false)
@@ -159,12 +161,27 @@ func (w *StorageWorker) Handle(ctx context.Context, op Operation) (any, []File, 
 }
 func (w *StorageWorker) archive(ctx context.Context, op Operation, verify bool) (any, []File, error) {
 	var p drive.ArchiveRequest
-	if decode(op.Payload, &p) != nil || op.Destination == nil || w.Roots == nil {
+	if decode(op.Payload, &p) != nil || p.SchemaVersion != 1 || p.ProjectID == "" || p.ArchivePolicy != "AUTO" || len(p.Files) == 0 || op.Destination == nil || w.Roots == nil {
 		return nil, nil, media.Fail("INVALID_PAYLOAD", "UPLOAD", false)
 	}
 	c, err := w.client(p.ArchiveTarget.AccountID, op)
 	if err != nil {
+		if !verify && media.Classify(err, "DRIVE").Code == "AUTH_REQUIRED" {
+			return nil, nil, &uploadPreflightAuthFailure{code: "AUTH_REQUIRED"}
+		}
 		return nil, nil, err
+	}
+	if !verify {
+		// This stage is read-only and precedes every upload write. Its precise
+		// no-effects authentication failure lets the user log in and retry the
+		// same intent; later failures still require remote reconciliation.
+		if err := c.Check(ctx); err != nil {
+			code := media.Classify(err, "DRIVE").Code
+			if code == "AUTH_REQUIRED" || code == "ACCOUNT_NOT_CONFIGURED" {
+				return nil, nil, &uploadPreflightAuthFailure{code: code}
+			}
+			return nil, nil, err
+		}
 	}
 	root, err := w.Roots.canonicalRoot(op.Destination.RootPath)
 	if err != nil {
@@ -184,6 +201,13 @@ func (w *StorageWorker) archive(ctx context.Context, op Operation, verify bool) 
 		files = append(files, File{OutputID: done.OutputID, RelativePath: done.RelativePath, SizeBytes: done.SizeBytes, SHA256: done.SHA256, Verified: true})
 	}
 	return result, files, err
+}
+
+type uploadPreflightAuthFailure struct{ code string }
+
+func (f *uploadPreflightAuthFailure) Error() string { return "DRIVE: " + f.code }
+func (f *uploadPreflightAuthFailure) RunnerFailure() (string, *ResultError) {
+	return "NEEDS_ACTION", &ResultError{Code: f.code, Message: "上传尚未开始，请完成账号登录后重试", CompletedEffects: []string{}, PendingEffects: []string{}}
 }
 func (w *StorageWorker) Recover(op Operation) (any, []File, bool, error) {
 	if op.OperationType == "UPLOAD_ARTIFACT" {
