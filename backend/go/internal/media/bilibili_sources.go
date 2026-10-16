@@ -14,6 +14,11 @@ type SourceProvider interface {
 // FetchSource does not return a complete snapshot until every page and content
 // was obtained. Any failure preserves Java's previously published membership.
 func (b *Bilibili) FetchSource(ctx context.Context, kind, id, sourceURL string) ([]Metadata, string, error) {
+	bound, err := b.bind(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	b = bound
 	parsed, err := url.Parse(sourceURL)
 	if err != nil {
 		return nil, "", Fail("INVALID_SOURCE", "METADATA", false)
