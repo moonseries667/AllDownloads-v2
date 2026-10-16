@@ -17,12 +17,14 @@ public final class BusinessApplication {
     public final StorageSettings storageSettings;
     public final DownloadManagement management;
     public final AuthService auth;
+    public final ArchiveRecovery archiveRecovery;
     public BusinessApplication(BusinessStore store,String defaultRoot) {
         this.store=store;queue=new OperationQueue(store);catalog=new CatalogService(store,queue);downloads=new DownloadService(store,catalog,queue);
         storageSettings=new StorageSettings(store,queue);management=new DownloadManagement(store,queue,storageSettings);downloads.management(management,storageSettings);
         feedback=new FeedbackService(store,queue,downloads);
         auth=new AuthService(store,queue);
-        queue.onReconcile(feedback::reconcile);
+        archiveRecovery=new ArchiveRecovery(store,queue,management);
+        queue.onReconcile(op->{if(text(op,"operationType").equals("UPLOAD_ARTIFACT"))archiveRecovery.request(op);else feedback.reconcile(op);});
         queue.onReport((op,request,status)->{auth.reported(op,request,status);feedback.reported(op,request,status);});
         queue.onCompletion(this::complete);
         queue.onOutcome(this::outcome);
@@ -37,6 +39,7 @@ public final class BusinessApplication {
             case "FETCH_BIL_METADATA" -> catalog.importContent(result.path("content"),null);
             case "DOWNLOAD_MEDIA" -> downloads.downloadResult(operation,result);
             case "UPLOAD_ARTIFACT" -> management.uploadResult(operation,result);
+            case "VERIFY_ARCHIVE" -> archiveRecovery.complete(operation,result);
             case "SELECT_LOCAL_DIRECTORY" -> storageSettings.selectionResult(operation,result);
             case "LIST_DRIVE_FOLDERS" -> storageSettings.foldersResult(operation,result);
             case "VALIDATE_DRIVE_TARGET" -> storageSettings.driveValidationResult(operation,result);
