@@ -8,11 +8,11 @@
 
 ```json
 {
-  "proxyURL": "http://127.0.0.1:40000",
   "driveAccounts": {
     "drive-main": {
+      "proxyURL": "http://127.0.0.1:40000",
       "rclone": {
-        "executable": "<部署目录>\\tools\\rclone\\rclone.exe",
+        "executable": "<部署目录>\\tools\\rclone-1.74.4\\rclone.exe",
         "configFile": "C:\\Users\\WIN\\AppData\\Roaming\\rclone\\rclone.conf",
         "remote": "gdrive",
         "bindingFile": "<新v2运行目录>\\auth\\drive-binding.json"
@@ -28,7 +28,7 @@
 }
 ```
 
-`proxyURL`、`driveAccounts` 的解码与互斥规则由协调者 main 单写；上面的嵌套 rclone 节为组件接入示例，最终字段以协调者 main 为准。**driveMount 的三字段已经按协调者方案确定**，可直接使用本包 `MountSettings`：
+`proxyURL` 位于 `driveAccounts.drive-main`，只作用于该 Drive 账号，不是全 Go 的全局代理。`driveAccounts` 的解码与互斥规则由协调者 main 单写；上面的嵌套 rclone 节为组件接入示例，最终字段以协调者 main 为准。**driveMount 的三字段已经按协调者方案确定**，可直接使用本包 `MountSettings`：
 
 | 字段 | 类型、默认与来源 |
 | --- | --- |
@@ -81,6 +81,8 @@ err = m.Close()
 `Run` 是必需的共享 media 适配回调，签名参数顺序为 ctx、exe、timeout、**exactEnvironment**、args。必须无 shell、Job 控制、有界 stdout/stderr；输出只在 Go 内存供本包解析，不能记录/展示，也不能放测试 captures。构造不读文件/联网/执行工具。没有 Run、非绝对路径、非 `gdrive` remote 或非指定 WARP 代理均明确拒绝配置。
 
 `MountStarter` 适配协调者提供的 `media.StartManaged(ctx,exe,args,exactEnvironment)`。返回的 ManagedProcess 至少实现 Done/Stop；Stop 必须幂等、有界，确认自身 Job 内进程树停止。stdout/stderr 丢弃。此包不复制 Job Object 控制代码。main 的生命周期 context 必须长于单次租约，退出时 Close；认证成功不创建媒体任务。
+
+`Start(ctx)` 已内含一次成功挂载后的监控协程，异常时只停止自身挂载，**不包含自动恢复/重启循环**。Root 可用单个周期 Ensure 重试未挂载状态；MOUNT_ALREADY_RUNNING 不另开实例，MOUNT_STOP_UNCONFIRMED 保留所有权并拒绝重启。`Status()` 不联网或刷新认证，只检查本地进程、盘符与配置元数据；main 将内部 STOPPED/STARTING/ERROR 映射为公共 NOT_MOUNTED。`RcloneConfig.Run` 的准确 shim 为 `media.RunControlledExactEnvironment(ctx,exe,timeout,env,args...)`，由 main 装配共享实现，不在本包复制进程代码。
 
 ## 认证与恢复语义
 
