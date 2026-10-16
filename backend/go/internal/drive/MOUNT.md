@@ -98,6 +98,19 @@ err = m.Close()
 
 已有任何 G 盘占用均拒绝。WinFsp 通过只读安装探测检查，缺失返回 WINFSP_REQUIRED，本包不安装。只有自己的子进程仍存活且新网络盘实际出现、指向 `\\server\MyGDrive`，才返回 MOUNTED。`Status()` 只返回 State/ReasonCode/Remote/MountPoint/VolumeName；main 映射动态注册事实。配置变化未复核时不报告 MOUNTED；监测到身份变化、代理失效、子进程退出或盘符消失后结束自己的挂载，不杀全机 rclone，不覆盖/移除他人的盘。停止无法确认时保留所有权和缓存锁，拒绝第二次启动。
 
+### 原生盘符探测的源码依据
+
+`observeMount` 的 UNC 比较不是根据替身的 matches=true 推断，完整依据为：
+
+| 层次 | primary 源码与实际转换 |
+| --- | --- |
+| rclone 1.74.4 | [mountpoint_windows.go 的 handleVolumeName](https://github.com/rclone/rclone/blob/v1.74.4/cmd/cmount/mountpoint_windows.go#L124-L148) 在 network-mode 下把普通卷名 MyGDrive 转换为 **单个前导反斜杠**的 `\server\MyGDrive`；[cmount.mountOptions](https://github.com/rclone/rclone/blob/v1.74.4/cmd/cmount/mount.go#L43-L52) 把它传作 `--VolumePrefix`。 |
+| cgofuse | [rclone go.mod](https://github.com/rclone/rclone/blob/v1.74.4/go.mod#L86) 锁定 cgofuse `f2c4fccdb286`；[该提交的 Mount 参数传递](https://github.com/winfsp/cgofuse/blob/f2c4fccdb286/fuse/host.go#L667-L707) 原样复制 opts，[host_cgo.go](https://github.com/winfsp/cgofuse/blob/f2c4fccdb286/fuse/host_cgo.go) 加载系统 WinFsp 并调用其 FUSE 入口，不把此前缀替换为另一 UNC 名称。 |
+| WinFsp FUSE / NP | [WinFsp fuse.c](https://github.com/winfsp/winfsp/blob/4425d4807aea4626affb151e38c1cc774ccd5e75/src/dll/fuse/fuse.c#L641-L658) 将 VolumePrefix 写入卷参数；[NPGetConnection](https://github.com/winfsp/winfsp/blob/4425d4807aea4626affb151e38c1cc774ccd5e75/src/dll/np.c#L458-L527) 先核对 QueryDosDevice 对应的真实 WinFsp 卷，再提取前缀并额外补一个前导反斜杠，返回 `\\server\MyGDrive`。 |
+| Go 探测 | GetLogicalDrives 只用于判定 G 是否占用；随后必须 WNetGetConnectionW 成功并返回上述完整 UNC（大小写无关）。Mounter 另核对自身进程仍存活。其他 G 盘、MPR 失败或只存在进程都不会成为 MOUNTED。 |
+
+因此当前完整 UNC 匹配与上游源码一致，不增加只看卷名、只看 G 存在或宽松后缀匹配的回退。WinFsp DLL 为系统安装版本，以上 WinFsp 链路按官方提交固定取证，**没有在 Carbon 声称已实测 Y7000P 的 DLL/MPR/Explorer**。正式验收需确认 WinFsp 网络提供程序工作正常，并在 runner 启动其子进程的同一登录上下文检查 G；Windows 对跨登录会话的网络映射可见性有明确限制，见 [WNetGetConnectionW 官方说明](https://learn.microsoft.com/en-us/windows/win32/api/winnetwk/nf-winnetwk-wnetgetconnectionw#remarks)。进程和 Explorer 的可见性分别记录，不用源码核验代替真实验收。
+
 挂载不证明远端文件完整。强制停止、掉电时可能仍有 VFS 待写回，新 cache 保留，不清空、不伪报已归档；下一次用相同 cache/source 启动仍须核对远端事实。rclone 挂载读写与 Go 的固定 Artifact 上传是不同用户操作，不能用 Explorer/VFS 状态替代归档收据。
 
 ## 验证范围
