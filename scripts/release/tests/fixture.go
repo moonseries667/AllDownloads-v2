@@ -22,6 +22,12 @@ func main() {
 		return
 	}
 	if len(os.Args) > 1 && (os.Args[1] == "-version" || os.Args[1] == "version") {
+		if capture := os.Getenv("ALLDOWNLOADS_RELEASE_TEST_ENV_FILE"); capture != "" {
+			data, _ := json.Marshal(map[string]string{"tool": name, "USERPROFILE": os.Getenv("USERPROFILE"), "HOME": os.Getenv("HOME"), "TDL_DEBUG": os.Getenv("TDL_DEBUG")})
+			if err := os.WriteFile(capture, data, 0600); err != nil {
+				panic(err)
+			}
+		}
 		switch name {
 		case "java":
 			fmt.Fprintln(os.Stderr, `openjdk version "21.0.12"`)
