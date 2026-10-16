@@ -1,6 +1,8 @@
 """Validate shared lifecycle examples and optional captured real HTTP exchanges."""
 import json
+import re
 import sys
+from urllib.parse import urljoin
 from pathlib import Path
 from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
@@ -19,11 +21,15 @@ def main():
     examples=load("runner-lifecycle.examples.json")
     Draft202012Validator.check_schema(runner)
     Draft202012Validator(fixture).validate(load("fixture.examples.json"))
-    registry=Registry().with_resource((CONTRACTS / "runner.schema.json").as_uri(),Resource.from_contents(runner))
+    registry=Registry()
+    for name in ("runner.schema.json","feedback2.schema.json","management.schema.json","fixture.schema.json"):
+        document=load(name);resource=Resource.from_contents(document)
+        for uri in {(CONTRACTS/name).as_uri(),document.get("$id"),urljoin(runner["$id"],name)}:
+            if uri: registry=registry.with_resource(uri,resource)
     def validate(ref,value):
         if ref.startswith("runner.schema.json#"):
-            schema={"$ref":ref.split("runner.schema.json",1)[1],"$defs":runner["$defs"]}
-            Draft202012Validator(schema).validate(value)
+            schema={"$id":runner["$id"],"$ref":ref.split("runner.schema.json",1)[1],"$defs":runner["$defs"]}
+            Draft202012Validator(schema,registry=registry).validate(value)
         else:
             raise AssertionError("Unknown local schema ref")
     for key,ref in examples["schemaByExample"].items():
@@ -43,10 +49,12 @@ def main():
             if "schema" in exchange:
                 validate("runner.schema.json#/$defs/"+exchange["schema"],exchange["data"])
             else:
-                operation=api["paths"][exchange["path"]]["post"]
+                shape=lambda path:re.sub(r"\{[^}]+\}","{}",path)
+                route=next(path for path in api["paths"] if shape(path)==shape(exchange["path"]))
+                operation=api["paths"][route]["post"]
                 if exchange.get("request") is not None:
                     schema=operation["requestBody"]["content"]["application/json"]["schema"]
-                    Draft202012Validator(schema,registry=registry).evolve(schema={"$id":(CONTRACTS/"runner-lifecycle.openapi.json").as_uri(),**schema}).validate(exchange["request"])
+                    Draft202012Validator({"$id":(CONTRACTS/"runner-lifecycle.openapi.json").as_uri(),**schema},registry=registry).validate(exchange["request"])
                 status=str(exchange["status"])
                 response=operation["responses"].get(status,operation["responses"].get("default"))
                 schema=response["content"]["application/json"]["schema"]
