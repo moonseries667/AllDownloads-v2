@@ -92,6 +92,31 @@ class AccountsFlowTest {
         invalid(()->complete(driveOp,facts(drive,"PENDING","OPEN_URL",official.replace("127.0.0.1","evil.invalid"),null)));
         complete(driveOp,facts(drive,"PENDING","OPEN_URL",official,null));assertEquals(official,text(session(drive),"url"));
     }
+    @Test void nativeBilibiliAccountScanRouteAcceptsOnlyTheFrozenPublicShape() {
+        ObjectNode first=begin("BILIBILI");JsonNode op=acquire("AUTH_STEP");
+        String official="https://account.bilibili.com/h5/account-h5/auth/scan-web?navhide=1&callback=close&from=&qrcode_key=fixture-current-key";
+        complete(op,facts(first,"PENDING","SCAN_QR",official,null));ObjectNode current=session(first);
+        assertEquals("PENDING",text(current,"state"));assertEquals("SCAN_QR",text(current,"nextAction"));assertEquals(official,text(current,"url"));
+        ObjectNode polling=store.tx(()->app.auth.poll(text(first,"authSessionId"),object("action","POLL")));JsonNode poll=acquire("AUTH_STEP");
+        for(String url:List.of(
+            official+"&access_token=synthetic-secret",official+"&refresh_token=synthetic-secret",official+"&cookie=synthetic-secret",
+            official.replace("callback=close","callback=open"),official+"&callback=close",
+            official+"&qrcode_key=fixture-current-key",official+"&%71rcode_key=another-key",
+            official.replace("navhide=1","navhide=0"),official.replace("from=","from=main_web"),
+            official.replace("callback=close&",""),official.replace("navhide=1&",""),official.replace("from=&",""),
+            official.replace("qrcode_key=fixture-current-key","qrcode_key="),official.replace("&qrcode_key=fixture-current-key",""),
+            official.replace("https:","http:"),official.replace("account.bilibili.com","user@account.bilibili.com"),
+            official.replace("account.bilibili.com","account.bilibili.com:"),
+            official.replace("account.bilibili.com","account.bilibili.com:443"),official.replace("account.bilibili.com","account.bilibili.com:8443"),
+            official+"#",official.replace("account.bilibili.com","account.bilibili.com.evil.invalid"),
+            official.replace("account.bilibili.com","www.bilibili.com"),official.replace("account.bilibili.com","passport.bilibili.com"),
+            official.replace("/h5/account-h5/auth/scan-web","/h5-app/passport/login/scan"),
+            "https://passport.bilibili.com/h5-app/passport/login/scan?qrcode_key=fixture-key&qrcode_key=another-key",
+            "https://passport.bilibili.com:443/h5-app/passport/login/scan?qrcode_key=fixture-key"
+        ))invalid(()->complete(poll,facts(polling,"PENDING","SCAN_QR",url,null)));
+        invalid(()->complete(poll,facts(polling,"PENDING","OPEN_URL",official,null)));
+        complete(poll,facts(polling,"PENDING","SCAN_QR",official,null));assertEquals(official,text(session(first),"url"));
+    }
     @Test void localSetupAndRequestBoundariesNeverAcceptBrowserSecrets() {
         for(String platform:List.of("TELEGRAM","QUARK","GOOGLE_DRIVE")) {
             ObjectNode first=begin(platform);JsonNode op=acquire("AUTH_STEP");complete(op,facts(first,"NEEDS_ACTION","LOCAL_SETUP",null,"ACCOUNT_NOT_CONFIGURED"));assertEquals("LOCAL_SETUP",text(session(first),"nextAction"));assertEquals(text(first,"authSessionId"),text(begin(platform),"authSessionId"));

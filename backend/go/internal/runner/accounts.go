@@ -284,12 +284,14 @@ func accountFailure(err error) *media.Failure {
 		failure = &media.Failure{Code: platformFault.Code, Stage: "ACCOUNT", Retryable: platformFault.Status == "RETRYABLE_ERROR"}
 	}
 	code := safeAccountCode(failure.Code)
-	return &media.Failure{Code: code, Stage: "ACCOUNT", Retryable: code == "NETWORK_TEMPORARY" || code == "NETWORK_TIMEOUT" || code == "RATE_LIMITED"}
+	return &media.Failure{Code: code, Stage: "ACCOUNT", Retryable: code == "NETWORK_TEMPORARY" || code == "NETWORK_TIMEOUT" || code == "NETWORK_ERROR" || code == "RATE_LIMITED"}
 }
 
 func safeAccountCode(code string) string {
 	switch code {
 	case "AUTH_REQUIRED", "ACCOUNT_NOT_CONFIGURED", "ACCOUNT_IDENTITY_CHANGED", "AUTH_OR_TOOL_REQUIRED", "PERMISSION_DENIED", "NETWORK_TEMPORARY", "NETWORK_TIMEOUT", "RATE_LIMITED", "PROVIDER_CHANGED", "AUTH_SESSION_NOT_FOUND", "AUTH_SESSION_MISMATCH", "AUTH_EXPIRED", "CANCELLED", "LOCAL_FILE_NOT_FOUND", "IO_ERROR", "AUTH_CLIENT_REQUIRED", "AUTH_CONFIG_INVALID", "AUTH_SCOPE_REQUIRED", "AUTH_CALLBACK_UNAVAILABLE", "AUTH_STORE_UNAVAILABLE", "AUTH_STORE_INVALID", "AUTH_STORE_BUSY", "TARGET_PERMISSION_DENIED", "AUTH_MANAGED_EXTERNALLY", "AUTH_RCLONE_FAILED", "AUTH_MODE_UNSUPPORTED", "AUTH_ROOT_MISMATCH", "AUTH_SOURCE_CHANGED", "AUTH_PROXY_REQUIRED", "SHARED_DRIVE_UNSUPPORTED":
+		return code
+	case "PLATFORM_RESPONSE_UNKNOWN", "NETWORK_ERROR", "RESOURCE_UNAVAILABLE", "SESSION_WRITE_FAILED", "LOGIN_IN_PROGRESS":
 		return code
 	default:
 		return "ACCOUNT_CHECK_FAILED"
@@ -332,8 +334,11 @@ func validAuthURL(platform, action, raw string) bool {
 		return false
 	}
 	var allowed map[string]bool
+	modernBilibili := platform == "BILIBILI" && action == "SCAN_QR" && parsed.Host == "account.bilibili.com" && parsed.Path == "/h5/account-h5/auth/scan-web"
 	if platform == "BILIBILI" && action == "SCAN_QR" && parsed.Host == "passport.bilibili.com" {
 		allowed = map[string]bool{"navhide": true, "qrcode_key": true, "from": true}
+	} else if modernBilibili {
+		allowed = map[string]bool{"navhide": true, "qrcode_key": true, "from": true, "callback": true}
 	} else if platform == "GOOGLE_DRIVE" && action == "OPEN_URL" && parsed.Host == "accounts.google.com" {
 		allowed = map[string]bool{"client_id": true, "redirect_uri": true, "response_type": true, "scope": true, "state": true, "access_type": true, "prompt": true, "include_granted_scopes": true, "code_challenge": true, "code_challenge_method": true, "hl": true}
 	} else {
@@ -343,10 +348,14 @@ func validAuthURL(platform, action, raw string) bool {
 	if err != nil {
 		return false
 	}
-	for key := range query {
-		if !allowed[key] {
+	for key, values := range query {
+		if !allowed[key] || (modernBilibili && len(values) != 1) {
 			return false
 		}
+	}
+	if modernBilibili {
+		key := query.Get("qrcode_key")
+		return len(query) == 4 && query.Get("callback") == "close" && query.Get("navhide") == "1" && query.Get("from") == "" && key != "" && len(key) <= 256 && strings.IndexFunc(key, func(r rune) bool { return r < 32 || r == 127 }) < 0
 	}
 	return true
 }

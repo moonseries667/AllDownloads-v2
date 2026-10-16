@@ -239,6 +239,11 @@ func TestAccountWorkerOnlyReturnsOfficialCredentialFreeAuthorizationURLs(t *test
 		valid                 bool
 	}{
 		{"BILIBILI", "SCAN_QR", "https://passport.bilibili.com/h5-app/passport/login/scan?qrcode_key=synthetic", true},
+		{"BILIBILI", "SCAN_QR", "https://account.bilibili.com/h5/account-h5/auth/scan-web?navhide=1&callback=close&from=&qrcode_key=synthetic", true},
+		{"BILIBILI", "SCAN_QR", "https://account.bilibili.com/h5/account-h5/auth/scan-web?navhide=1&callback=https%3A%2F%2Fevil.test&from=&qrcode_key=synthetic", false},
+		{"BILIBILI", "SCAN_QR", "https://account.bilibili.com/h5/account-h5/auth/scan-web?navhide=1&callback=close&from=&qrcode_key=one&qrcode_key=two", false},
+		{"BILIBILI", "SCAN_QR", "https://account.bilibili.com/h5/account-h5/auth/scan-web?navhide=1&callback=close&from=&qrcode_key=", false},
+		{"BILIBILI", "SCAN_QR", "https://account.bilibili.com/other?navhide=1&callback=close&from=&qrcode_key=synthetic", false},
 		{"GOOGLE_DRIVE", "OPEN_URL", "https://accounts.google.com/o/oauth2/v2/auth?client_id=synthetic&redirect_uri=http%3A%2F%2F127.0.0.1%3A4000&response_type=code&scope=drive.file&state=synthetic", true},
 		{"BILIBILI", "SCAN_QR", "http://passport.bilibili.com/login", false},
 		{"BILIBILI", "SCAN_QR", "https://passport.bilibili.com.evil.test/login", false},
@@ -299,6 +304,21 @@ func TestAccountWorkerSanitizesProviderFailuresAndPublicText(t *testing.T) {
 	encoded, _ := json.Marshal(value)
 	if strings.Contains(string(encoded), "synthetic-secret") || sessionValue(t, value).Message != "请在 Y7000P 的受控入口创建新 Telegram 会话。" {
 		t.Fatalf("unsafe public callback text: %s", encoded)
+	}
+}
+
+func TestAccountWorkerPreservesControlledLoginFailureCategories(t *testing.T) {
+	for _, code := range []string{"PLATFORM_RESPONSE_UNKNOWN", "NETWORK_ERROR", "RESOURCE_UNAVAILABLE", "SESSION_WRITE_FAILED", "LOGIN_IN_PROGRESS"} {
+		t.Run(code, func(t *testing.T) {
+			w := AccountWorker{Accounts: map[string]AccountAdapter{"bilibili-main": {Begin: func(context.Context, string) (AuthSession, error) {
+				return AuthSession{}, media.Fail(code, "BILIBILI_SESSION", code == "NETWORK_ERROR")
+			}}}}
+			_, _, err := w.Handle(context.Background(), accountTestOperation("AUTH_STEP", "bilibili-main", "BILIBILI", "BEGIN"))
+			failure := media.Classify(err, "ACCOUNT")
+			if failure.Code != code || failure.Retryable != (code == "NETWORK_ERROR") {
+				t.Fatalf("lost controlled login failure: %#v", failure)
+			}
+		})
 	}
 }
 
