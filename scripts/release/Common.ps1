@@ -66,9 +66,9 @@ function Invoke-Checked([string] $Executable, [string[]] $Arguments) {
     if ($LASTEXITCODE -ne 0) { throw "Command failed ($LASTEXITCODE): $Executable" }
 }
 
-function Get-ToolVersion([string] $Executable, [ValidateSet('ffmpeg', 'ffprobe', 'tdl', 'java')] [string] $Tool) {
+function Get-ToolVersion([string] $Executable, [ValidateSet('ffmpeg', 'ffprobe', 'tdl', 'rclone', 'java')] [string] $Tool) {
     $arguments = @('-version')
-    if ($Tool -eq 'tdl') { $arguments = @('version') }
+    if ($Tool -in @('tdl', 'rclone')) { $arguments = @('version') }
     $process = [Diagnostics.Process]::new()
     $process.StartInfo.FileName = $Executable
     $process.StartInfo.Arguments = ($arguments | ForEach-Object { ConvertTo-ProcessArgument $_ }) -join ' '
@@ -84,6 +84,15 @@ function Get-ToolVersion([string] $Executable, [ValidateSet('ffmpeg', 'ffprobe',
         $process.StartInfo.EnvironmentVariables['HOME'] = $probeHome
         $process.StartInfo.EnvironmentVariables['TDL_DEBUG'] = 'false'
     }
+    if ($Tool -eq 'rclone') {
+        $probeHome = Get-FullPath (Join-Path ([IO.Path]::GetTempPath()) 'AllDownloads-v2/tool-probes/rclone-1.74.4')
+        [void][IO.Directory]::CreateDirectory($probeHome)
+        $probeConfig = Join-Path $probeHome 'rclone.conf'
+        $process.StartInfo.EnvironmentVariables['USERPROFILE'] = $probeHome
+        $process.StartInfo.EnvironmentVariables['HOME'] = $probeHome
+        $process.StartInfo.EnvironmentVariables['RCLONE_CONFIG'] = $probeConfig
+        $process.StartInfo.Arguments = (@('version', '--config', $probeConfig) | ForEach-Object { ConvertTo-ProcessArgument $_ }) -join ' '
+    }
     try {
         [void]$process.Start()
         $stdout = $process.StandardOutput.ReadToEndAsync()
@@ -95,6 +104,7 @@ function Get-ToolVersion([string] $Executable, [ValidateSet('ffmpeg', 'ffprobe',
     switch ($Tool) {
         'java' { if ($output -notmatch 'version\s+"21(?:\.|["+])') { throw 'Java 21 is required.' }; return '21' }
         'tdl' { if ($output -notmatch '(?im)^\s*Version:\s*v?0\.20\.4\s*$') { throw 'tdl 0.20.4 is required.' }; return '0.20.4' }
+        'rclone' { if ($output -notmatch '(?m)^rclone v1\.74\.4[ \t]*\r?$') { throw 'rclone 1.74.4 is required.' }; return '1.74.4' }
         default { if ($output -notmatch ('(?m)^' + $Tool + ' version 9\.0\.2(?:[-\s]|$)')) { throw "$Tool 9.0.2 is required; system FFmpeg is not substituted." }; return '9.0.2' }
     }
 }
@@ -113,7 +123,7 @@ function Get-Release([string] $Root) {
 
 function Initialize-Runtime([string] $Root, [int] $Port = 8080, [string] $JavaExecutable = 'java.exe') {
     if ($Port -lt 1024 -or $Port -gt 65535) { throw 'Port must be between 1024 and 65535.' }
-    foreach ($directory in @('runtime/config', 'runtime/auth', 'runtime/control', 'runtime/runner', 'runtime/logs', 'runtime/processes', 'downloads')) {
+    foreach ($directory in @('runtime/config', 'runtime/auth', 'runtime/control', 'runtime/runner', 'runtime/cache/gdrive', 'runtime/logs', 'runtime/processes', 'downloads')) {
         [void][IO.Directory]::CreateDirectory((Join-Path $Root $directory))
     }
     $settingsPath = Join-Path $Root 'runtime/config/deployment.local.json'
@@ -130,9 +140,10 @@ function Initialize-Runtime([string] $Root, [int] $Port = 8080, [string] $JavaEx
             allowedRoots = @((Join-Path $Root 'downloads')); roots = @{ 'download-root' = (Join-Path $Root 'downloads') }
             ffmpeg = (Join-Path $Root 'tools/ffmpeg-9.0.2/ffmpeg.exe'); ffprobe = (Join-Path $Root 'tools/ffmpeg-9.0.2/ffprobe.exe')
             bilibili = @{ cookieFile = (Join-Path $Root 'runtime/auth/bilibili.session'); expectedUserId = '' }
-            telegram = @{ executable = (Join-Path $Root 'tools/tdl-0.20.4/tdl.exe'); accounts = @{} }
+            telegram = @{ executable = (Join-Path $Root 'tools/tdl-0.20.4/tdl.exe'); proxyURL = 'http://127.0.0.1:40000'; accounts = @{} }
             quarkAccounts = @{}
-            driveAccounts = @{ 'drive-main' = @{ rootId = 'root'; tokenFile = (Join-Path $Root 'runtime/auth/drive.session'); clientFile = (Join-Path $Root 'runtime/auth/google-desktop-client.json') } }
+            driveAccounts = @{ 'drive-main' = @{ rootId = 'root'; proxyURL = 'http://127.0.0.1:40000'; rclone = @{ executable = (Join-Path $Root 'tools/rclone-1.74.4/rclone.exe'); configFile = 'C:/Users/WIN/AppData/Roaming/rclone/rclone.conf'; remote = 'gdrive'; bindingFile = (Join-Path $Root 'runtime/auth/drive-binding.json') } } }
+            driveMount = @{ enabled = $true; accountId = 'drive-main'; cacheDir = (Join-Path $Root 'runtime/cache/gdrive') }
         }
         Write-NewText $runnerPath ($configuration | ConvertTo-Json -Depth 10)
     }
@@ -257,6 +268,31 @@ function Wait-DeploymentHealth([int] $Port, $Record, [int] $TimeoutSeconds, [swi
     throw "Health check timed out for $($Record.name) on port $Port."
 }
 
+function Get-MountObservation($Health) {
+    try {
+        $mount = $Health.data.runtime.mount
+        if ($mount.state -notin @('MOUNTED', 'NOT_MOUNTED', 'NOT_CONFIGURED', 'UNKNOWN', 'UNSUPPORTED')) { throw 'Unknown mount state.' }
+        $reason = $mount.reasonCode
+        if ($null -ne $reason -and $reason -notmatch '^[A-Z0-9_]{1,96}$') { $reason = 'MOUNT_STATUS_INVALID' }
+        return [pscustomobject]@{ state = $mount.state; reasonCode = $reason }
+    } catch { return [pscustomobject]@{ state = 'UNKNOWN'; reasonCode = 'MOUNT_OBSERVATION_UNAVAILABLE' } }
+}
+
+function Wait-DeploymentMount([int] $Port, $JavaRecord, $RunnerRecord, [int] $TimeoutSeconds) {
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $observation = [pscustomobject]@{ state = 'UNKNOWN'; reasonCode = 'MOUNT_OBSERVATION_UNAVAILABLE' }
+    do {
+        foreach ($record in @($JavaRecord, $RunnerRecord)) {
+            if ($null -eq (Get-RecordedProcess $record)) { throw "$($record.name) exited while waiting for mount readiness." }
+        }
+        try { $observation = Get-MountObservation (Read-LocalHealth $Port) } catch { }
+        if ($observation.state -eq 'MOUNTED') { return $observation }
+        Start-Sleep -Milliseconds 500
+    } while ([DateTime]::UtcNow -lt $deadline)
+    # Keep the healthy base services and UI available for account/proxy recovery.
+    return $observation
+}
+
 function Start-Deployment([string] $Root, [int] $TimeoutSeconds = 60) {
     $release = Get-Release $Root
     $settings = Initialize-Runtime $Root
@@ -270,6 +306,13 @@ function Start-Deployment([string] $Root, [int] $TimeoutSeconds = 60) {
     [void](Get-ToolVersion $java java)
     $runnerConfigurationPath = Join-Path $Root 'runtime/config/runner.local.json'
     $runner = Read-JsonFile $runnerConfigurationPath
+    $mountRequired = $runner.PSObject.Properties.Name -contains 'driveMount' -and $runner.driveMount.enabled
+    if ($mountRequired) {
+        if ($runner.driveMount.accountId -ne 'drive-main' -or $runner.driveMount.cacheDir -ne (Join-Path $Root 'runtime/cache/gdrive')) { throw 'driveMount must use drive-main and this deployment runtime/cache/gdrive.' }
+        $mountAuth = $runner.driveAccounts.'drive-main'.rclone
+        if ($mountAuth.executable -ne (Join-Path $Root 'tools/rclone-1.74.4/rclone.exe') -or $mountAuth.remote -ne 'gdrive' -or
+            -not [IO.Path]::IsPathRooted($mountAuth.configFile) -or $mountAuth.bindingFile -ne (Join-Path $Root 'runtime/auth/drive-binding.json')) { throw 'Mount authentication must use the configured rclone/gdrive source and this v2 identity binding.' }
+    }
     # Inspect structural settings, never token/cookie/session contents.
     if ($runner.controlUrl -ne "http://127.0.0.1:$($settings.port)" -or
         $runner.tokenFile -ne (Join-Path $Root 'runtime/auth/runner.token') -or
@@ -282,11 +325,12 @@ function Start-Deployment([string] $Root, [int] $TimeoutSeconds = 60) {
     [void](Get-ToolVersion $runner.ffmpeg ffmpeg)
     [void](Get-ToolVersion $runner.ffprobe ffprobe)
     [void](Get-ToolVersion $runner.telegram.executable tdl)
+    [void](Get-ToolVersion (Join-Path $Root 'tools/rclone-1.74.4/rclone.exe') rclone)
     $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, [int]$settings.port)
     try { $listener.Start() } catch { throw "Port $($settings.port) is occupied. No existing process will be stopped." } finally { $listener.Stop() }
     $stamp = [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffZ')
     $statePath = Join-Path $Root 'runtime/processes/active.json'
-    $state = [ordered]@{ schemaVersion = 1; root = $Root; version = $release.Manifest.version; port = $settings.port; status = 'STARTING'; startedAt = [DateTime]::UtcNow.ToString('o'); logPrefix = $stamp; processes = @() }
+    $state = [ordered]@{ schemaVersion = 1; root = $Root; version = $release.Manifest.version; port = $settings.port; status = 'STARTING'; mountRequired = [bool]$mountRequired; mount = $null; startedAt = [DateTime]::UtcNow.ToString('o'); logPrefix = $stamp; processes = @() }
     Write-JsonFile $statePath $state
     try {
         # Generated launch settings contain paths only; personal runner configuration stays untouched.
@@ -325,8 +369,12 @@ function Start-Deployment([string] $Root, [int] $TimeoutSeconds = 60) {
         if ($deep.StatusCode -ne 200 -or $deep.Content -notmatch '<div\s+id="app"') { throw 'Frontend deep-route fallback is unavailable.' }
         if ($null -eq (Get-RecordedProcess $runnerRecord)) { throw 'Runner exited while checking the frontend.' }
         $state.status = 'RUNNING'
+        if ($mountRequired) {
+            $state.mount = Wait-DeploymentMount $settings.port $javaRecord $runnerRecord $TimeoutSeconds
+            if ($state.mount.state -ne 'MOUNTED') { $state.status = 'RUNNING_WITH_MOUNT_PENDING' }
+        }
         Write-JsonFile $statePath $state
-        return [pscustomobject]@{ status = 'RUNNING'; version = $state.version; url = "http://127.0.0.1:$($settings.port)"; logs = (Join-Path $Root 'runtime/logs') }
+        return [pscustomobject]@{ status = $state.status; version = $state.version; url = "http://127.0.0.1:$($settings.port)"; mountRequired = $state.mountRequired; mount = $state.mount; logs = (Join-Path $Root 'runtime/logs') }
     } catch {
         $failure = $_
         $state.status = 'START_FAILED'
