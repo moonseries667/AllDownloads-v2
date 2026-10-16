@@ -10,6 +10,12 @@ import (
 	"testing"
 )
 
+type fixedBilibiliSession struct{ client *http.Client }
+
+func (s fixedBilibiliSession) Bind(context.Context) (*http.Client, string, error) {
+	return s.client, "42", nil
+}
+
 func TestBilibiliMetadataMultiPartSeasonsAndSubtitleEvidence(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -17,7 +23,7 @@ func TestBilibiliMetadataMultiPartSeasonsAndSubtitleEvidence(t *testing.T) {
 		case "/x/web-interface/view":
 			fmt.Fprint(w, `{"code":0,"data":{"bvid":"BVfixture","title":"标题","pubdate":1700000000,"owner":{"name":"作者"},"pages":[{"cid":11,"part":"开场","duration":12},{"cid":12,"part":"","duration":13}]}}`)
 		case "/x/web-interface/nav":
-			fmt.Fprint(w, `{"code":-101,"data":{"wbi_img":{"img_url":"https://example/abcdefghijklmnopqrstuvwxyz012345.png","sub_url":"https://example/ABCDEFGHIJKLMNOPQRSTUVWXYZ678901.png"}}}`)
+			fmt.Fprint(w, `{"code":0,"data":{"isLogin":true,"mid":42,"wbi_img":{"img_url":"https://example/abcdefghijklmnopqrstuvwxyz012345.png","sub_url":"https://example/ABCDEFGHIJKLMNOPQRSTUVWXYZ678901.png"}}}`)
 		case "/x/player/wbi/playurl", "/pgc/player/web/v2/playurl":
 			if r.URL.Path == "/x/player/wbi/playurl" && r.URL.Query().Get("w_rid") == "" {
 				t.Error("missing platform signature")
@@ -37,7 +43,7 @@ func TestBilibiliMetadataMultiPartSeasonsAndSubtitleEvidence(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	provider := &Bilibili{Client: server.Client(), APIBase: server.URL}
+	provider := &Bilibili{Session: fixedBilibiliSession{server.Client()}, APIBase: server.URL}
 	meta, err := provider.Fetch(context.Background(), Reference{"BVID", "BVfixture"})
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +84,7 @@ func TestBilibiliFailuresAndAbsentClassification(t *testing.T) {
 				json.NewEncoder(w).Encode(map[string]any{"code": code, "message": "private details"})
 			}))
 			defer s.Close()
-			_, err := (&Bilibili{Client: s.Client(), APIBase: s.URL}).Fetch(context.Background(), Reference{"BVID", "BVfixture"})
+			_, err := (&Bilibili{Session: fixedBilibiliSession{s.Client()}, APIBase: s.URL}).Fetch(context.Background(), Reference{"BVID", "BVfixture"})
 			f := Classify(err, "")
 			if err == nil || strings.Contains(err.Error(), "private") {
 				t.Fatal(err)
@@ -113,7 +119,7 @@ func TestNativeMovieLanguagesKeepSharedVideoAndBestAudioPerLanguage(t *testing.T
 		}
 	}))
 	defer server.Close()
-	meta, err := (&Bilibili{Client: server.Client(), APIBase: server.URL}).Fetch(context.Background(), Reference{"SEASON_ID", "10"})
+	meta, err := (&Bilibili{Session: fixedBilibiliSession{server.Client()}, APIBase: server.URL}).Fetch(context.Background(), Reference{"SEASON_ID", "10"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,5 +132,67 @@ func TestNativeMovieLanguagesKeepSharedVideoAndBestAudioPerLanguage(t *testing.T
 	}
 	if len(first.Tracks) != 3 || first.Tracks[1].Source.URL != "https://cdn.invalid/zh" {
 		t.Fatal("did not select highest audio per language")
+	}
+}
+
+func TestBilibiliMissingSessionDoesNotUseAnonymousClient(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("unconfigured provider attempted an anonymous request")
+	}))
+	defer server.Close()
+	b := &Bilibili{Client: server.Client(), APIBase: server.URL}
+	_, err := b.Fetch(context.Background(), Reference{"BVID", "BVfixture"})
+	if Classify(err, "").Code != "AUTH_REQUIRED" {
+		t.Fatal(err)
+	}
+	_, _, err = b.FetchSource(context.Background(), "FAVORITE", "1", "https://www.bilibili.com/")
+	if Classify(err, "").Code != "AUTH_REQUIRED" {
+		t.Fatal(err)
+	}
+}
+
+func TestBilibiliAuthFailureNeverBecomesPartialMetadata(t *testing.T) {
+	for _, failed := range []string{"/x/web-interface/nav", "/x/player/wbi/playurl", "/x/player/wbi/v2", "/x/v2/dm/web/view", "need_login_subtitle", "nav-logged-out", "nav-wrong-user"} {
+		t.Run(failed, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == failed {
+					if failed == "/x/v2/dm/web/view" {
+						w.WriteHeader(http.StatusUnauthorized)
+					} else {
+						// Even WBI signing keys in -101 cannot authorize anonymous playback.
+						fmt.Fprint(w, `{"code":-101,"data":{"wbi_img":{"img_url":"https://example/abcdefghijklmnopqrstuvwxyz012345.png","sub_url":"https://example/ABCDEFGHIJKLMNOPQRSTUVWXYZ678901.png"}}}`)
+					}
+					return
+				}
+				switch r.URL.Path {
+				case "/x/web-interface/view":
+					fmt.Fprint(w, `{"code":0,"data":{"bvid":"BVfixture","pages":[{"cid":11}]}}`)
+				case "/x/web-interface/nav":
+					mid := 42
+					if failed == "nav-wrong-user" {
+						mid = 43
+					}
+					fmt.Fprintf(w, `{"code":0,"data":{"isLogin":%t,"mid":%d,"wbi_img":{"img_url":"https://example/abcdefghijklmnopqrstuvwxyz012345.png","sub_url":"https://example/ABCDEFGHIJKLMNOPQRSTUVWXYZ678901.png"}}}`, failed != "nav-logged-out", mid)
+				case "/x/player/wbi/playurl":
+					fmt.Fprint(w, `{"code":0,"data":{"dash":{"video":[],"audio":[]}}}`)
+				case "/x/player/wbi/v2":
+					fmt.Fprintf(w, `{"code":0,"data":{"need_login_subtitle":%t,"subtitle":{"subtitles":[]}}}`, failed == "need_login_subtitle")
+				case "/x/v3/fav/resource/list":
+					fmt.Fprint(w, `{"code":0,"data":{"info":{"title":"收藏"},"medias":[{"bvid":"BVfixture"}],"has_more":false}}`)
+				default:
+					w.Write([]byte{8, 0})
+				}
+			}))
+			defer server.Close()
+			b := &Bilibili{Session: fixedBilibiliSession{server.Client()}, APIBase: server.URL}
+			meta, err := b.Fetch(context.Background(), Reference{"BVID", "BVfixture"})
+			if err == nil || Classify(err, "").Code != "AUTH_REQUIRED" || len(meta.Units) != 0 {
+				t.Fatal("authentication failure published partial metadata", err)
+			}
+			items, _, err := b.FetchSource(context.Background(), "FAVORITE", "1", "https://www.bilibili.com/")
+			if err == nil || Classify(err, "").Code != "AUTH_REQUIRED" || items != nil {
+				t.Fatal("authentication failure published source membership", err)
+			}
+		})
 	}
 }

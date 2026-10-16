@@ -15,11 +15,21 @@ import (
 	"time"
 )
 
-// Bilibili reads platform metadata without downloading media. Client may carry
-// an application-owned session; no browser cookies or legacy sessions are read.
+// BilibiliSession binds one metadata operation to a verified, immutable session.
+// Implementations never expose credentials through the identity string.
+type BilibiliSession interface {
+	Bind(context.Context) (*http.Client, string, error)
+}
+
+// BilibiliIdentityHeader is private snapshot data, removed before network I/O.
+const BilibiliIdentityHeader = "X-Alldownloads-Bilibili-Identity"
+
+// Bilibili reads platform metadata using the one explicitly configured account.
 type Bilibili struct {
 	Client               *http.Client
 	APIBase, CommentBase string
+	Session              BilibiliSession
+	identity             string
 }
 type object map[string]any
 
@@ -96,9 +106,7 @@ func (b *Bilibili) api(ctx context.Context, route string, q url.Values) (object,
 		}
 		return nil, Fail("RESOURCE_UNAVAILABLE", "METADATA", false)
 	case -101:
-		if route != "/x/web-interface/nav" || len(obj(obj(data["data"])["wbi_img"])) == 0 {
-			return nil, Fail("AUTH_REQUIRED", "METADATA", false)
-		}
+		return nil, Fail("AUTH_REQUIRED", "METADATA", false)
 	case -403:
 		return nil, Fail("PERMISSION_DENIED", "METADATA", false)
 	case -412, -352, -509:
@@ -114,6 +122,9 @@ func (b *Bilibili) api(ctx context.Context, route string, q url.Values) (object,
 	}
 	if len(value) == 0 {
 		return nil, Fail("PLATFORM_RESPONSE_UNKNOWN", "METADATA", false)
+	}
+	if route == "/x/web-interface/nav" && (!bval(value["isLogin"]) || str(value["mid"]) != b.identity) {
+		return nil, Fail("AUTH_REQUIRED", "METADATA", false)
 	}
 	return value, nil
 }
@@ -155,6 +166,11 @@ func (b *Bilibili) signed(ctx context.Context, q url.Values) (url.Values, error)
 func (b *Bilibili) Fetch(ctx context.Context, ref Reference) (Metadata, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
+	bound, err := b.bind(ctx)
+	if err != nil {
+		return Metadata{}, err
+	}
+	b = bound
 	switch ref.Kind {
 	case "BVID":
 		return b.video(ctx, ref.ID)
@@ -205,7 +221,9 @@ func (b *Bilibili) video(ctx context.Context, bvid string) (Metadata, error) {
 			kind = "PART"
 		}
 		unit := Unit{ID: "cid:" + cid, ExternalID: cid, Kind: kind, Title: str(page["part"]), Index: i + 1, Duration: number(page["duration"])}
-		b.populate(ctx, &unit, bvid, "")
+		if err := b.populate(ctx, &unit, bvid, ""); err != nil {
+			return Metadata{}, err
+		}
 		meta.Units = append(meta.Units, unit)
 	}
 	return meta, nil
@@ -265,7 +283,9 @@ func (b *Bilibili) season(ctx context.Context, ref Reference) (Metadata, error) 
 		// The CID addresses playback and subtitles; episode identity remains independent.
 		playback := unit
 		playback.ExternalID = cid
-		b.populate(ctx, &playback, str(ep["bvid"]), id)
+		if err := b.populate(ctx, &playback, str(ep["bvid"]), id); err != nil {
+			return Metadata{}, err
+		}
 		unit.Tracks, unit.Warnings = playback.Tracks, playback.Warnings
 		if meta.Kind == "MOVIE" {
 			meta.Units = append(meta.Units, movieLanguages(unit)...)
@@ -275,7 +295,7 @@ func (b *Bilibili) season(ctx context.Context, ref Reference) (Metadata, error) 
 	}
 	return meta, nil
 }
-func (b *Bilibili) populate(ctx context.Context, unit *Unit, bvid, episode string) {
+func (b *Bilibili) populate(ctx context.Context, unit *Unit, bvid, episode string) error {
 	q := url.Values{"bvid": {bvid}, "cid": {unit.ExternalID}, "qn": {"127"}, "fnval": {"4048"}, "fourk": {"1"}}
 	route := "/x/player/wbi/playurl"
 	var play object
@@ -290,6 +310,9 @@ func (b *Bilibili) populate(ctx context.Context, unit *Unit, bvid, episode strin
 		play, err = b.api(ctx, route, q)
 	}
 	if err != nil {
+		if fatalBilibiliError(ctx, err) {
+			return err
+		}
 		unit.Warnings = append(unit.Warnings, Classify(err, "METADATA").Code)
 	} else {
 		if info := obj(play["video_info"]); len(info) > 0 {
@@ -350,7 +373,7 @@ func (b *Bilibili) populate(ctx context.Context, unit *Unit, bvid, episode strin
 							size = &n
 						}
 					}
-					unit.Tracks = append(unit.Tracks, Track{ID: id, Kind: kind, Language: language, LanguageName: firstString(item, "language_doc", "lang_doc", "lan_doc", "languageDoc", "langDoc", "lanDoc"), SubtitleType: "NOT_APPLICABLE", Availability: "AVAILABLE", Duration: unit.Duration, Size: size, Source: Source{URL: normalizeURL(locator), Version: id, Headers: mediaHeaders(), Size: size}})
+					unit.Tracks = append(unit.Tracks, Track{ID: id, Kind: kind, Language: language, LanguageName: firstString(item, "language_doc", "lang_doc", "lan_doc", "languageDoc", "langDoc", "lanDoc"), SubtitleType: "NOT_APPLICABLE", Availability: "AVAILABLE", Duration: unit.Duration, Size: size, Source: Source{URL: normalizeURL(locator), Version: b.sourceVersion(id), Headers: b.sourceHeaders(), Size: size}})
 					seenLanguage[language] = true
 				}
 			}
@@ -361,10 +384,13 @@ func (b *Bilibili) populate(ctx context.Context, unit *Unit, bvid, episode strin
 	}
 	player, err := b.api(ctx, "/x/player/wbi/v2", url.Values{"bvid": {bvid}, "cid": {unit.ExternalID}})
 	if err != nil {
+		if fatalBilibiliError(ctx, err) {
+			return err
+		}
 		unit.Warnings = append(unit.Warnings, Classify(err, "METADATA").Code+"_SUBTITLE")
 	} else {
 		if bval(player["need_login_subtitle"]) {
-			unit.Warnings = append(unit.Warnings, "SUBTITLE_AUTH_REQUIRED")
+			return Fail("AUTH_REQUIRED", "METADATA", false)
 		}
 		for _, value := range list(obj(player["subtitle"])["subtitles"]) {
 			sub := obj(value)
@@ -383,7 +409,7 @@ func (b *Bilibili) populate(ctx context.Context, unit *Unit, bvid, episode strin
 				continue
 			}
 			trackID := unit.ID + ":subtitle:" + id
-			unit.Tracks = append(unit.Tracks, Track{ID: trackID, Kind: "SUBTITLE", Language: str(sub["lan"]), LanguageName: str(sub["lan_doc"]), SubtitleType: origin, Availability: "AVAILABLE", Source: Source{URL: normalizeURL(locator), Version: trackID, Headers: mediaHeaders()}})
+			unit.Tracks = append(unit.Tracks, Track{ID: trackID, Kind: "SUBTITLE", Language: str(sub["lan"]), LanguageName: str(sub["lan_doc"]), SubtitleType: origin, Availability: "AVAILABLE", Source: Source{URL: normalizeURL(locator), Version: b.sourceVersion(trackID), Headers: b.sourceHeaders()}})
 		}
 	}
 	// Endpoint is addressable by CID. Availability is established by the metadata
@@ -396,11 +422,46 @@ func (b *Bilibili) populate(ctx context.Context, unit *Unit, bvid, episode strin
 		}
 		track.Availability = "AVAILABLE"
 		track.Reason = ""
-		track.Source = Source{URL: strings.TrimRight(base, "/") + "/" + unit.ExternalID + ".xml", Version: track.ID, Headers: mediaHeaders()}
+		track.Source = Source{URL: strings.TrimRight(base, "/") + "/" + unit.ExternalID + ".xml", Version: b.sourceVersion(track.ID), Headers: b.sourceHeaders()}
 	} else {
+		if fatalBilibiliError(ctx, err) {
+			return err
+		}
 		unit.Warnings = append(unit.Warnings, Classify(err, "METADATA").Code+"_DANMAKU")
 	}
 	unit.Tracks = append(unit.Tracks, track)
+	return nil
+}
+
+func (b *Bilibili) bind(ctx context.Context) (*Bilibili, error) {
+	if b.identity != "" {
+		return b, nil
+	}
+	if b.Session == nil {
+		return nil, Fail("AUTH_REQUIRED", "METADATA", false)
+	}
+	client, identity, err := b.Session.Bind(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if client == nil || identity == "" {
+		return nil, Fail("AUTH_REQUIRED", "METADATA", false)
+	}
+	bound := *b
+	bound.Client, bound.identity = client, identity
+	return &bound, nil
+}
+
+func (b *Bilibili) sourceHeaders() http.Header {
+	h := mediaHeaders()
+	h.Set(BilibiliIdentityHeader, b.identity)
+	return h
+}
+
+func (b *Bilibili) sourceVersion(id string) string { return "bilibili:" + b.identity + ":" + id }
+
+func fatalBilibiliError(ctx context.Context, err error) bool {
+	return ctx.Err() != nil || Classify(err, "METADATA").Code == "AUTH_REQUIRED"
 }
 
 func firstString(item object, keys ...string) string {
