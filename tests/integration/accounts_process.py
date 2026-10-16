@@ -75,8 +75,8 @@ def platform_handler(fixture):
                     fixture.errors.append("credential sent during QR generation")
                 key = "fixture-key-" + str(sequence)
                 data = {"code": 0, "data": {
-                    "url": "https://passport.bilibili.com/h5-app/passport/login/scan"
-                           "?navhide=1&qrcode_key=" + key,
+                    "url": "https://account.bilibili.com/h5/account-h5/auth/scan-web"
+                           "?navhide=1&callback=close&from=&qrcode_key=" + key,
                     "qrcode_key": key,
                 }}
             elif parsed.path == "/x/passport-login/web/qrcode/poll":
@@ -303,10 +303,12 @@ def main():
         ready = session(begun["authSessionId"])
         require(ready["state"] == "PENDING" and ready["nextAction"] == "SCAN_QR", "native BEGIN did not provide scan action")
         scan = urlparse(ready["url"])
-        require(scan.scheme == "https" and scan.netloc == "passport.bilibili.com"
-                and scan.path == "/h5-app/passport/login/scan"
-                and set(parse_qs(scan.query)) <= {"navhide", "from", "qrcode_key"}
-                and parse_qs(scan.query).get("qrcode_key"), "native BEGIN did not return the official QR URL")
+        query = parse_qs(scan.query, keep_blank_values=True)
+        require(scan.scheme == "https" and scan.netloc == "account.bilibili.com"
+                and scan.path == "/h5/account-h5/auth/scan-web"
+                and set(query) == {"navhide", "callback", "from", "qrcode_key"}
+                and query.get("navhide") == ["1"] and query.get("callback") == ["close"]
+                and query.get("from") == [""] and query.get("qrcode_key"), "native BEGIN did not return the current official QR URL")
         require(ready["revision"] != begun["revision"], "BEGIN result did not advance Java revision")
         return ready
 

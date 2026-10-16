@@ -181,19 +181,27 @@ public final class AuthService {
         String value=required(node,"url");if(value.length()>4096||value.chars().anyMatch(c->c<32||c==127))throw invalid();
         try {
             URI uri=URI.create(value);if(!"https".equals(uri.getScheme())||uri.getUserInfo()!=null||uri.getFragment()!=null||uri.getPort()!=-1&&uri.getPort()!=443)throw invalid();
+            boolean bilibiliScan=platform.equals("BILIBILI")&&next.equals("SCAN_QR");
+            if(bilibiliScan&&!Objects.equals(uri.getRawAuthority(),uri.getHost()))throw invalid();
+            boolean currentBilibiliScan=bilibiliScan&&"account.bilibili.com".equals(uri.getHost())&&"/h5/account-h5/auth/scan-web".equals(uri.getPath());
             Set<String> parameters;
-            if(platform.equals("BILIBILI")&&"passport.bilibili.com".equals(uri.getHost())&&Set.of("/h5-app/passport/login/scan","/qrcode/h5/login").contains(uri.getPath()))
+            if(currentBilibiliScan)parameters=Set.of("navhide","callback","from","qrcode_key");
+            else if(platform.equals("BILIBILI")&&"passport.bilibili.com".equals(uri.getHost())&&Set.of("/h5-app/passport/login/scan","/qrcode/h5/login").contains(uri.getPath()))
                 parameters=Set.of("qrcode_key","oauthKey","key","navhide","gourl","source","from","scanning","tab");
             else if(platform.equals("GOOGLE_DRIVE")&&next.equals("OPEN_URL")&&"accounts.google.com".equals(uri.getHost())&&Set.of("/o/oauth2/v2/auth","/o/oauth2/auth").contains(uri.getPath()))
                 parameters=Set.of("client_id","redirect_uri","response_type","scope","state","access_type","prompt","include_granted_scopes","code_challenge","code_challenge_method");
             else throw invalid();
+            Set<String> seen=new HashSet<>();
             if(uri.getRawQuery()!=null)for(String pair:uri.getRawQuery().split("&")) {
                 String[] parts=pair.split("=",2);String key=URLDecoder.decode(parts[0],StandardCharsets.UTF_8),content=parts.length==2?URLDecoder.decode(parts[1],StandardCharsets.UTF_8):"";
                 if(!parameters.contains(key)||content.chars().anyMatch(c->c<32||c==127))throw invalid();
+                if(bilibiliScan&&!seen.add(key))throw invalid();
+                if(currentBilibiliScan&&(key.equals("navhide")&&!content.equals("1")||key.equals("callback")&&!content.equals("close")||key.equals("from")&&!content.isEmpty()||key.equals("qrcode_key")&&content.isEmpty()))throw invalid();
                 if(key.equals("redirect_uri")) {URI redirect=URI.create(content);if(!"http".equals(redirect.getScheme())||!Set.of("127.0.0.1","localhost","[::1]").contains(Objects.toString(redirect.getHost(),""))||redirect.getUserInfo()!=null||redirect.getFragment()!=null)throw invalid();}
                 if(key.equals("gourl")&&!Set.of("https://www.bilibili.com","https://www.bilibili.com/").contains(content))throw invalid();
                 if(key.equals("response_type")&&!content.equals("code"))throw invalid();
             }
+            if(currentBilibiliScan&&!seen.equals(parameters))throw invalid();
             return value;
         } catch(RuntimeException e) {throw invalid();}
     }

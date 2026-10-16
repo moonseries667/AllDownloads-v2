@@ -30,6 +30,90 @@ func assertCookieUnchanged(t *testing.T, s *Session) {
 	}
 }
 
+func TestQRNewAccountRouteMatchesObservedGenerateResponse(t *testing.T) {
+	s, _ := newTestSession(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/x/passport-login/web/qrcode/generate" {
+			t.Error("QR creation followed the scan URL or changed its request")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		fmt.Fprint(w, `{"code":0,"data":{"url":"https://account.bilibili.com/h5/account-h5/auth/scan-web?navhide=1&callback=close&from=&qrcode_key=fixture-key","qrcode_key":"fixture-key"}}`)
+	})
+	view, err := s.BeginQR(context.Background())
+	if err != nil || view.State != "WAITING_SCAN" {
+		t.Fatalf("observed official route rejected: state=%s err=%v", view.State, err)
+	}
+	defer s.CancelQR(view.ID)
+	if view.URL != "https://account.bilibili.com/h5/account-h5/auth/scan-web?callback=close&from=&navhide=1&qrcode_key=fixture-key" {
+		t.Fatalf("QR content changed the official route: %s", view.URL)
+	}
+}
+
+func TestQRCanonicalRoutesDiscardUpstreamFields(t *testing.T) {
+	for _, route := range []struct{ name, source, expected string }{
+		{"legacy", "https://passport.bilibili.com/h5-app/passport/login/scan?navhide=1&qrcode_key=fixture-key&refresh_token=private-upstream", "https://passport.bilibili.com/h5-app/passport/login/scan?from=&navhide=1&qrcode_key=fixture-key"},
+		{"account", "https://account.bilibili.com/h5/account-h5/auth/scan-web?navhide=1&callback=close&from=&qrcode_key=fixture-key&refresh_token=private-upstream", "https://account.bilibili.com/h5/account-h5/auth/scan-web?callback=close&from=&navhide=1&qrcode_key=fixture-key"},
+	} {
+		t.Run(route.name, func(t *testing.T) {
+			s, _ := newTestSession(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/x/passport-login/web/qrcode/generate" {
+					t.Error("QR creation followed an upstream URL")
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"url": route.source, "qrcode_key": "fixture-key", "refresh_token": "private-upstream"}})
+			})
+			view, err := s.BeginQR(context.Background())
+			if err != nil || view.State != "WAITING_SCAN" {
+				t.Fatalf("official route rejected: state=%s err=%v", view.State, err)
+			}
+			defer s.CancelQR(view.ID)
+			if view.URL != route.expected || strings.Contains(view.URL, "private-upstream") {
+				t.Fatal("canonical QR included upstream fields or changed the approved route")
+			}
+		})
+	}
+}
+
+func TestQRRejectsAmbiguousOrUnapprovedScanRoutes(t *testing.T) {
+	const accountRoute = "https://account.bilibili.com/h5/account-h5/auth/scan-web"
+	const query = "?navhide=1&callback=close&from=&qrcode_key=fixture-key"
+	for _, test := range []struct{ name, source string }{
+		{"wrong callback", accountRoute + "?navhide=1&callback=open&from=&qrcode_key=fixture-key"},
+		{"missing callback", accountRoute + "?navhide=1&from=&qrcode_key=fixture-key"},
+		{"duplicate callback", accountRoute + query + "&callback=close"},
+		{"duplicate key", accountRoute + query + "&qrcode_key=fixture-key"},
+		{"duplicate navhide", accountRoute + query + "&navhide=1"},
+		{"duplicate extra parameter", accountRoute + query + "&extra=a&extra=b"},
+		{"mismatched key", accountRoute + "?navhide=1&callback=close&from=&qrcode_key=wrong-key"},
+		{"missing key", accountRoute + "?navhide=1&callback=close&from="},
+		{"userinfo", "https://user@account.bilibili.com/h5/account-h5/auth/scan-web" + query},
+		{"fragment", accountRoute + query + "#section"},
+		{"empty fragment", accountRoute + query + "#"},
+		{"explicit default port", "https://account.bilibili.com:443/h5/account-h5/auth/scan-web" + query},
+		{"extra port", "https://account.bilibili.com:8443/h5/account-h5/auth/scan-web" + query},
+		{"unapproved host", "https://account.bilibili.com.evil.invalid/h5/account-h5/auth/scan-web" + query},
+		{"wrong account path", "https://account.bilibili.com/h5-app/passport/login/scan" + query},
+		{"wrong passport path", "https://passport.bilibili.com/h5/account-h5/auth/scan-web" + query},
+		{"encoded path", "https://account.bilibili.com/h5/account-h5/auth/%73can-web" + query},
+		{"plain HTTP", "http://account.bilibili.com/h5/account-h5/auth/scan-web" + query},
+		{"malformed query", accountRoute + query + "&extra=%ZZ"},
+		{"legacy wrong callback", "https://passport.bilibili.com/h5-app/passport/login/scan?qrcode_key=fixture-key&callback=open"},
+		{"legacy duplicate key", "https://passport.bilibili.com/h5-app/passport/login/scan?qrcode_key=fixture-key&qrcode_key=fixture-key"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			s, _ := newTestSession(t, func(w http.ResponseWriter, r *http.Request) {
+				json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"url": test.source, "qrcode_key": "fixture-key"}})
+			})
+			view, err := s.BeginQR(context.Background())
+			wantFault(t, err, "PLATFORM_RESPONSE_UNKNOWN")
+			if view.State != "FAILED" || view.URL != "" {
+				t.Fatal("unapproved or ambiguous route became public QR content")
+			}
+		})
+	}
+}
+
 func TestQRWaitConfirmSaveAndCheck(t *testing.T) {
 	var code atomic.Int32
 	var polls atomic.Int32

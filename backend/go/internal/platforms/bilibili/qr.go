@@ -84,24 +84,52 @@ func (s *Session) BeginQR(ctx context.Context) (QRLogin, error) {
 			err = apiCode(*result.Code)
 		}
 	}
-	if err == nil && !validScanURL(result.Data.URL, result.Data.Key) {
-		err = fault("PLATFORM_RESPONSE_UNKNOWN")
+	scan := ""
+	if err == nil {
+		var valid bool
+		scan, valid = canonicalScanURL(result.Data.URL, result.Data.Key)
+		if !valid {
+			err = fault("PLATFORM_RESPONSE_UNKNOWN")
+		}
 	}
 	if err != nil {
 		f.view.State, f.view.ReasonCode = "FAILED", "LOGIN_UNAVAILABLE"
 		cancel()
 		return f.view, err
 	}
-	// Return only the official scan path and known QR parameters. Upstream
-	// callback/extra query fields cannot accidentally become public credentials.
-	scan := url.URL{Scheme: "https", Host: "passport.bilibili.com", Path: "/h5-app/passport/login/scan", RawQuery: url.Values{"navhide": {"1"}, "from": {""}, "qrcode_key": {result.Data.Key}}.Encode()}
-	f.key, f.view.URL, f.view.State = result.Data.Key, scan.String(), "WAITING_SCAN"
+	f.key, f.view.URL, f.view.State = result.Data.Key, scan, "WAITING_SCAN"
 	return f.view, nil
 }
 
-func validScanURL(raw, key string) bool {
+func canonicalScanURL(raw, key string) (string, bool) {
 	u, err := url.Parse(raw)
-	return err == nil && key != "" && len(key) <= 256 && !strings.ContainsAny(key, "\r\n") && u.Scheme == "https" && u.Host == "passport.bilibili.com" && u.User == nil && u.Fragment == "" && u.Path == "/h5-app/passport/login/scan" && u.Query().Get("qrcode_key") == key
+	if err != nil || key == "" || len(key) > 256 || strings.ContainsAny(key, "\r\n") || u.Scheme != "https" || u.User != nil || strings.Contains(raw, "#") || u.RawPath != "" {
+		return "", false
+	}
+	query, err := url.ParseQuery(u.RawQuery)
+	if err != nil || query.Get("qrcode_key") != key {
+		return "", false
+	}
+	for _, values := range query {
+		if len(values) != 1 {
+			return "", false
+		}
+	}
+	if callback, exists := query["callback"]; exists && callback[0] != "close" {
+		return "", false
+	}
+	parameters := url.Values{"navhide": {"1"}, "from": {""}, "qrcode_key": {key}}
+	switch {
+	case u.Host == "passport.bilibili.com" && u.Path == "/h5-app/passport/login/scan":
+	case u.Host == "account.bilibili.com" && u.Path == "/h5/account-h5/auth/scan-web" && query.Get("callback") == "close":
+		parameters.Set("callback", "close")
+	default:
+		return "", false
+	}
+	// Rebuild the approved route rather than copying an upstream callback or
+	// other query fields into the public QR content. The URL is never fetched.
+	scan := url.URL{Scheme: "https", Host: u.Host, Path: u.Path, RawQuery: parameters.Encode()}
+	return scan.String(), true
 }
 
 // PollQR returns only login state. Set-Cookie is accepted only after the user
