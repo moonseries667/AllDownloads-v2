@@ -1,0 +1,52 @@
+import { expect, test } from "@playwright/test";
+test.beforeEach(async ({ page }) => { await page.goto("/tests/hosts/archive-settings.html"); });
+test("Drive navigation retains real names, parent/root and distinct same-name identities", async ({ page }) => {
+  await page.getByRole("button", { name: "Goole Drive上传目录", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "选择 Google Drive 上传目录", exact: true });
+  await dialog.getByRole("button", { name: "课程", exact: true }).click();
+  await expect(dialog).toContainText("此文件夹内没有子文件夹");
+  await dialog.getByRole("button", { name: "使用此文件夹" }).click();
+  await expect(page.getByTestId("drive-id")).toHaveText("drive-courses-a");
+  await page.getByRole("button", { name: "Goole Drive上传目录", exact: true }).click();
+  await dialog.getByRole("button", { name: "我的云端硬盘", exact: true }).click();
+  await dialog.getByRole("button", { name: "加载更多文件夹" }).click();
+  await dialog.getByRole("button", { name: "学习", exact: true }).click();
+  await dialog.getByRole("button", { name: "课程", exact: true }).click();
+  await dialog.getByRole("button", { name: "使用此文件夹" }).click();
+  await expect(page.getByTestId("drive-id")).toHaveText("drive-courses-b");
+  await expect(page.getByRole("button", { name: "Goole Drive上传目录", exact: true })).toContainText("我的云端硬盘/学习/课程");
+});
+test("permission error and missing directory never substitute a selectable root", async ({ page }) => {
+  const choose = page.getByRole("button", { name: "Goole Drive上传目录", exact: true });
+  await page.getByLabel("Drive场景").selectOption("denied"); await choose.click();
+  const dialog = page.getByRole("dialog", { name: "选择 Google Drive 上传目录", exact: true });
+  await expect(dialog.getByRole("alert")).toContainText("权限不足");
+  await expect(dialog.getByRole("button", { name: "使用此文件夹" })).toBeDisabled();
+  await dialog.getByRole("button", { name: "取消", exact: true }).click();
+  await page.getByLabel("Drive场景").selectOption("gone"); await choose.click();
+  await expect(dialog.getByRole("alert")).toContainText("已失效");
+  await expect(dialog.getByRole("button", { name: "使用此文件夹" })).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("drive-id")).toHaveText("drive-archive");
+});
+test("cancellation discards late folder reads and short desktop keeps controls visible", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 576 });
+  await page.getByLabel("Drive场景").selectOption("slow");
+  await page.getByRole("button", { name: "Goole Drive上传目录", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "选择 Google Drive 上传目录", exact: true });
+  await expect(dialog.getByRole("button", { name: "取消", exact: true })).toBeInViewport();
+  await dialog.getByRole("button", { name: "取消", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByTestId("drive-id")).toHaveText("drive-archive");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+test("pending Java folder snapshot is polled without selecting or submitting settings", async ({ page }) => {
+  await page.getByLabel("Drive场景").selectOption("fetching");
+  await page.getByRole("button", { name: "Goole Drive上传目录", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "选择 Google Drive 上传目录", exact: true });
+  await expect(dialog.getByRole("button", { name: "使用此文件夹" })).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "课程", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "使用此文件夹" })).toBeEnabled();
+  await dialog.getByRole("button", { name: "取消", exact: true }).click();
+  await expect(page.getByTestId("drive-id")).toHaveText("drive-archive");
+});
