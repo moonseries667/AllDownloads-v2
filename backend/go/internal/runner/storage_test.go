@@ -72,6 +72,12 @@ func (n uploadNoNetworkTransport) RoundTrip(*http.Request) (*http.Response, erro
 	return nil, errors.New("unexpected I/O")
 }
 
+type uploadProxyFailureTransport struct{}
+
+func (uploadProxyFailureTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("synthetic proxy unavailable")
+}
+
 func TestUploadAuthenticationPreflightReportsNoWriteEffects(t *testing.T) {
 	root := t.TempDir()
 	state, err := executor.OpenState(filepath.Join(root, "state"))
@@ -108,5 +114,15 @@ func TestUploadAuthenticationPreflightReportsNoWriteEffects(t *testing.T) {
 	names, err := state.Names("upload-")
 	if err != nil || len(names) != 0 {
 		t.Fatalf("authentication failure created an upload intent: %v, %v", names, err)
+	}
+	worker.Drives = map[string]*drive.Client{"drive-main": {AccountID: "drive-main", Token: func() string { return "synthetic-token" }, HTTP: &http.Client{Transport: uploadProxyFailureTransport{}}}}
+	_, _, err = worker.Handle(context.Background(), op)
+	var proxyProof interface{ RunnerFailure() (string, *ResultError) }
+	if !errors.As(err, &proxyProof) {
+		t.Fatalf("read-only proxy failure lost its no-effects proof: %v", err)
+	}
+	_, detail := proxyProof.RunnerFailure()
+	if detail.Code != "NETWORK_ERROR" || len(detail.CompletedEffects) != 0 || len(detail.PendingEffects) != 0 {
+		t.Fatalf("proxy preflight was misclassified: %#v", detail)
 	}
 }

@@ -17,14 +17,25 @@
   },
   "telegram": {
     "executable": "D:/Code/Other/AllDownloads-v2/tools/tdl-0.20.4/tdl.exe",
+    "proxyURL": "http://127.0.0.1:40000",
     "accounts": {}
   },
   "quarkAccounts": {},
   "driveAccounts": {
     "drive-main": {
-      "tokenFile": "D:/Code/Other/AllDownloads-v2/runtime/auth/drive.session",
-      "clientFile": "D:/Code/Other/AllDownloads-v2/runtime/auth/google-desktop-client.json",
-      "rootId": "root"
+      "rootId": "root",
+      "proxyURL": "http://127.0.0.1:40000",
+      "rclone": {
+        "executable": "D:/Code/Other/AllDownloads-v2/tools/rclone-1.74.4/rclone.exe",
+        "configFile": "C:/Users/WIN/AppData/Roaming/rclone/rclone.conf",
+        "remote": "gdrive",
+        "bindingFile": "D:/Code/Other/AllDownloads-v2/runtime/auth/drive-binding.json"
+      }
     }
+  },
+  "driveMount": {
+    "enabled": true,
+    "accountId": "drive-main",
+    "cacheDir": "D:/Code/Other/AllDownloads-v2/runtime/cache/gdrive"
   }
 }

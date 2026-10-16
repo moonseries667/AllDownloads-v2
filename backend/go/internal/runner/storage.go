@@ -25,6 +25,7 @@ type StorageWorker struct {
 	Picker      DirectoryPicker
 	PickerReady func() bool
 	Drives      map[string]*drive.Client
+	LocalFacts  func() map[string]any
 }
 
 func (w *StorageWorker) SupportsOperation(op Operation) bool {
@@ -65,7 +66,13 @@ func (w *StorageWorker) RegistrationFacts() map[string]any {
 	if !available {
 		reason = pointer("NATIVE_PICKER_UNAVAILABLE")
 	}
-	return map[string]any{"directoryPicker": map[string]any{"available": available, "reasonCode": reason, "hostId": w.HostID}}
+	facts := map[string]any{"directoryPicker": map[string]any{"available": available, "reasonCode": reason, "hostId": w.HostID}}
+	if w.LocalFacts != nil {
+		for key, value := range w.LocalFacts() {
+			facts[key] = value
+		}
+	}
+	return facts
 }
 func (w *StorageWorker) client(account string, op Operation) (*drive.Client, error) {
 	c := w.Drives[account]
@@ -167,20 +174,17 @@ func (w *StorageWorker) archive(ctx context.Context, op Operation, verify bool) 
 	c, err := w.client(p.ArchiveTarget.AccountID, op)
 	if err != nil {
 		if !verify && media.Classify(err, "DRIVE").Code == "AUTH_REQUIRED" {
-			return nil, nil, &uploadPreflightAuthFailure{code: "AUTH_REQUIRED"}
+			return nil, nil, &uploadPreflightFailure{code: "AUTH_REQUIRED"}
 		}
 		return nil, nil, err
 	}
 	if !verify {
 		// This stage is read-only and precedes every upload write. Its precise
-		// no-effects authentication failure lets the user log in and retry the
+		// no-effects preflight failure lets the user fix access and retry the
 		// same intent; later failures still require remote reconciliation.
 		if err := c.Check(ctx); err != nil {
 			code := media.Classify(err, "DRIVE").Code
-			if code == "AUTH_REQUIRED" || code == "ACCOUNT_NOT_CONFIGURED" {
-				return nil, nil, &uploadPreflightAuthFailure{code: code}
-			}
-			return nil, nil, err
+			return nil, nil, &uploadPreflightFailure{code: code}
 		}
 	}
 	root, err := w.Roots.canonicalRoot(op.Destination.RootPath)
@@ -203,11 +207,11 @@ func (w *StorageWorker) archive(ctx context.Context, op Operation, verify bool) 
 	return result, files, err
 }
 
-type uploadPreflightAuthFailure struct{ code string }
+type uploadPreflightFailure struct{ code string }
 
-func (f *uploadPreflightAuthFailure) Error() string { return "DRIVE: " + f.code }
-func (f *uploadPreflightAuthFailure) RunnerFailure() (string, *ResultError) {
-	return "NEEDS_ACTION", &ResultError{Code: f.code, Message: "上传尚未开始，请完成账号登录后重试", CompletedEffects: []string{}, PendingEffects: []string{}}
+func (f *uploadPreflightFailure) Error() string { return "DRIVE: " + f.code }
+func (f *uploadPreflightFailure) RunnerFailure() (string, *ResultError) {
+	return "NEEDS_ACTION", &ResultError{Code: f.code, Message: "上传尚未开始，请检查账号、代理和目录后重试", CompletedEffects: []string{}, PendingEffects: []string{}}
 }
 func (w *StorageWorker) Recover(op Operation) (any, []File, bool, error) {
 	if op.OperationType == "UPLOAD_ARTIFACT" {

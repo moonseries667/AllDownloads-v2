@@ -122,7 +122,9 @@ func TestMountRejectsOccupiedDriveMissingWinFspAndProxy(t *testing.T) {
 
 func TestMountStartupWithoutDriveDoesNotSucceed(t *testing.T) {
 	m, p, _ := mountFixture(t)
-	m.config.StartupTimeout = 20 * time.Millisecond
+	// Keep the production minimum: the budget also covers identity/binding
+	// preflight, so 20 ms could expire before this test's fake process starts.
+	m.config.StartupTimeout = time.Second
 	m.start = func(context.Context, string, []string, []string) (MountProcess, error) { return p, nil }
 	if err := m.Start(context.Background()); !isCode(err, "MOUNT_START_TIMEOUT") {
 		t.Fatal(err)

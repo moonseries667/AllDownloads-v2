@@ -168,7 +168,7 @@ func authError(id, account, platform string, err error) (runner.AuthSession, err
 		code = "AUTH_SESSION_NOT_FOUND"
 	}
 	switch code {
-	case "AUTH_CLIENT_REQUIRED", "AUTH_CONFIG_INVALID", "AUTH_SCOPE_REQUIRED", "AUTH_SESSION_NOT_FOUND", "AUTH_REQUIRED", "ACCOUNT_IDENTITY_CHANGED", "AUTH_STORE_INVALID", "AUTH_STORE_UNAVAILABLE":
+	case "AUTH_CLIENT_REQUIRED", "AUTH_CONFIG_INVALID", "AUTH_SCOPE_REQUIRED", "AUTH_SESSION_NOT_FOUND", "AUTH_REQUIRED", "ACCOUNT_IDENTITY_CHANGED", "AUTH_STORE_INVALID", "AUTH_STORE_UNAVAILABLE", "AUTH_MANAGED_EXTERNALLY":
 		return authSetup(id, account, platform, code), nil
 	default:
 		return runner.AuthSession{}, err

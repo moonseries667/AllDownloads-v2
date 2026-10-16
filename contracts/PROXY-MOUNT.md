@@ -6,7 +6,7 @@
 
 ## 私有运行配置
 
-`telegram.proxyURL` 作用于 QR 登录、Self 身份辅助程序、收藏导出和下载。`driveAccounts.drive-main.proxyURL` 作用于原生 Google HTTP、身份核对、rclone 认证与挂载；两者均为上述准确地址。完整无凭据结构见 [发布模板](../scripts/release/templates/runner.example.json)。
+`telegram.proxyURL` 作用于 QR 登录、Self 身份辅助程序、收藏导出和下载。`driveAccounts.drive-main.proxyURL` 作用于原生 Google HTTP、身份核对、rclone 认证与挂载；两者均为上述准确地址。提供方在 `scripts/release/templates/runner.example.json` 实现这一无凭据结构。
 
 Drive 的 `rclone` 节包含 `executable,configFile,remote,bindingFile`；remote 固定 `gdrive`，可执行工具锁定 rclone 1.74.4。`bindingFile` 是新 v2 身份元数据，不含 access/refresh token 或 client secret。首次只读核对实际身份、客户端及 remote 根，后续变化不得替换旧上传意图。原 DPAPI OAuth 是另一个显式认证源，不能与 rclone 混用或自动互相降级。
 

@@ -2,11 +2,11 @@
 
 本模块在 Carbon 开发和隔离验证，正式运行目标仍为 Y7000P。Java 唯一决定选择、路径、任务、重试和归档；Go 取得平台事实并执行冻结计划，浏览器不调用 Go。当前共同契约已通过 PR #29 合入主线 `0b34a82`，保留第一部分 `d508c7a` 的兼容语义；协议版本和 payload schemaVersion 均为 1。
 
-正式命令已装配单账号 Bilibili、Telegram `tdl 0.20.4`、夸克原生 HTTP 与 Drive 持久 OAuth，复用同一发布、收据、租约及取消循环。完整 Windows 包、同源前端及启停方式见 [Y7000P 发布说明](../../docs/Y7000P.md)。生产适配器已用本地协议替身验证，真实账号与 Y7000P 验收尚未进行。
+正式命令已装配单账号 Bilibili、Telegram `tdl 0.20.4`、夸克原生 HTTP、Drive 同源授权和受管 G 盘挂载，复用同一发布、收据、租约及取消循环。完整 Windows 包、同源前端及启停方式见 [Y7000P 发布说明](../../docs/Y7000P.md)。生产适配器已用本地协议替身验证，真实账号与 Y7000P 验收尚未进行。
 
 ## 正式启动与新会话配置
 
-Bilibili 读取和下载使用同一个 `bilibili-main` 会话；首次由用户在账号页扫码，后续登录必须匹配已绑定身份，失效不匿名降级。Drive 使用新 Desktop OAuth client 和私有 `tokenFile`，自动刷新认证；详细接入见 [Bilibili](internal/platforms/bilibili/README.md)、[Drive](internal/drive/README.md)。Telegram/夸克首次设置通过 [session-setup](cmd/session-setup/README.md) 在 Y7000P 交互终端完成，再重启并主动检查账号。普通 GET 和启动不触发登录或收藏扫描。当前没有资源管理器 Drive 挂载能力。
+Bilibili 读取和下载使用同一个 `bilibili-main` 会话；首次由用户在账号页扫码，后续登录必须匹配已绑定身份，失效不匿名降级。Drive 按用户明确指定的既有 rclone 配置共用 `gdrive` 授权，原 DPAPI OAuth 作为另一显式模式保留；详细接入见 [Bilibili](internal/platforms/bilibili/README.md)、[Drive 挂载](internal/drive/MOUNT.md)。tdl 和 Drive 固定走用户指定的 WARP 40000 代理，故障不直连退化。Telegram/夸克首次设置通过 [session-setup](cmd/session-setup/README.md) 在 Y7000P 交互终端完成，再重启并主动检查账号。普通 GET 和启动不触发登录或收藏扫描。
 
 复制 [runner.example.json](runner.example.json) 到不入库的 `runner.local.json`，按实际运行主机修改绝对路径。Java 的 `alldownloads.runner-token-file` 与 Go `tokenFile` 指向同一个私有内部认证文件；也可只配置 `tokenEnv`，两者不能同时配置。token、Cookie、账号会话都不放到参数、日志或 Git。
 
@@ -159,7 +159,7 @@ Java 本地组合测试可增加 `fixtureCatalog`，指向临时 JSON 文件。�
 
 原生请求结构参考 [yt-dlp Bilibili 提取器](https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/bilibili.py)，字幕证据参考 [字幕 API 参数追溯](https://github.com/gcnyin/bilibili-subtitle-api)。本轮仅读取公开开发资料，没有请求实际 Bilibili 账号/内容。接口变化、WBI、账号权限、付费/地区限制、收藏夹/合集大规模扫描和实际 XML 弹幕仍需获准后在 Y7000P 实测。
 
-电影各版本按平台真实单元返回，不伪造 P；依据实际 DASH audio 的 language/language_doc 等字段按语言保留最高可用音轨，形成 LANGUAGE 单元并保留共享视频身份，字段依据见 [BBDown Rust 平台解析器](https://github.com/Joey-Project/BBDown-rust/blob/master/crates/bbdown/src/client.rs)。未提供语言的音轨不猜标签。额外 `dubbing_info` 结构遇到时报告 ALTERNATE_AUDIO_METADATA_UNSUPPORTED。非 DASH/DRM/未知媒体结构不伪造可下载轨道。各平台新会话装载已接入；云盘挂载仍未实现，真实账号与云端结果未验收。
+电影各版本按平台真实单元返回，不伪造 P；依据实际 DASH audio 的 language/language_doc 等字段按语言保留最高可用音轨，形成 LANGUAGE 单元并保留共享视频身份，字段依据见 [BBDown Rust 平台解析器](https://github.com/Joey-Project/BBDown-rust/blob/master/crates/bbdown/src/client.rs)。未提供语言的音轨不猜标签。额外 `dubbing_info` 结构遇到时报告 ALTERNATE_AUDIO_METADATA_UNSUPPORTED。非 DASH/DRM/未知媒体结构不伪造可下载轨道。各平台会话及 G 盘组件已接入；真实账号、Explorer、云端结果与长期运行仍待 Y7000P 验收。
 
 ## 正式入口的隔离跨进程复现
 
