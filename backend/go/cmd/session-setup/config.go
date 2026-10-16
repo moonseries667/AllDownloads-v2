@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/netpolicy"
 	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/platforms/telegram"
 )
 
@@ -107,6 +108,7 @@ func (cfg *localConfig) quarkAccount() (quarkSettings, error) {
 func (cfg *localConfig) telegramAccount() (*telegram.TDL, telegram.TDLAccount, error) {
 	settings := struct {
 		Executable string                         `json:"executable"`
+		ProxyURL   string                         `json:"proxyURL"`
 		Accounts   map[string]telegram.TDLAccount `json:"accounts"`
 	}{}
 	if raw := cfg.fields["telegram"]; len(raw) != 0 && json.Unmarshal(raw, &settings) != nil {
@@ -114,6 +116,9 @@ func (cfg *localConfig) telegramAccount() (*telegram.TDL, telegram.TDLAccount, e
 	}
 	if !filepath.IsAbs(settings.Executable) {
 		return nil, telegram.TDLAccount{}, errors.New("configure the absolute path of the packaged tdl 0.20.4 executable first")
+	}
+	if _, err := netpolicy.Environment(settings.ProxyURL); err != nil {
+		return nil, telegram.TDLAccount{}, errors.New("invalid Telegram local HTTP proxy configuration")
 	}
 	a := settings.Accounts["telegram-main"]
 	if a.Namespace == "" {
@@ -134,7 +139,7 @@ func (cfg *localConfig) telegramAccount() (*telegram.TDL, telegram.TDLAccount, e
 	if strings.Contains(a.StorageDir, ",") || noLinks(cfg.stateDir) != nil {
 		return nil, a, errors.New("invalid new Telegram runtime path")
 	}
-	tdl := &telegram.TDL{Executable: settings.Executable, WorkDir: filepath.Join(cfg.stateDir, "telegram-work"), Accounts: map[string]telegram.TDLAccount{"telegram-main": a}}
+	tdl := &telegram.TDL{Executable: settings.Executable, ProxyURL: settings.ProxyURL, WorkDir: filepath.Join(cfg.stateDir, "telegram-work"), Accounts: map[string]telegram.TDLAccount{"telegram-main": a}}
 	return tdl, a, nil
 }
 

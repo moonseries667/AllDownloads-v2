@@ -26,7 +26,9 @@ $setup = Join-Path $root "app/releases/$version/session-setup.exe"
 & $setup --config (Join-Path $root 'runtime/config/runner.local.json') --platform quark
 ```
 
-Telegram：只运行指定 tdl 的 `--ns alldownloads-v2 --storage type=bolt,path=<新目录> login --type qr`。在终端扫码，必要时在该终端输入两步验证密码。stdout、stderr、stdin 直接连用户终端，不捕获登录输出、不解析本地化成功提示。授权后通过独立 Self 请求读取当前用户，原子更新 `telegram.accounts.telegram-main.peerId`，作为 Saved Messages 绑定身份。已绑定时仅检查原身份，不能通过重新设置换号。
+Telegram：正式配置的 `telegram.proxyURL` 为 Y7000P 已有 WARP HTTP 代理 `http://127.0.0.1:40000`。CLI 从同一配置读取它；只运行指定 tdl 的 `--proxy http://127.0.0.1:40000 --ns alldownloads-v2 --storage type=bolt,path=<新目录> login --type qr`。在终端扫码，必要时在该终端输入两步验证密码。stdout、stderr、stdin 直接连用户终端，不捕获登录输出、不解析本地化成功提示。授权后通过独立 Self 请求读取当前用户，原子更新 `telegram.accounts.telegram-main.peerId`，作为 Saved Messages 绑定身份。已绑定时仅检查原身份，不能通过重新设置换号。
+
+同一个显式代理用于所有 tdl 命令，包括 Self、收藏导出与附件下载。地址仅接受无 userinfo 的本地 HTTP 代理；配置无效或代理连接失败均返回错误，不改用直连。tdl 本地扩展协议中的代理必须与子进程的 `TDL_PROXY` 一致，Self 的 gotd 连接通过同一 HTTP CONNECT 代理建立。`HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 和空 `NO_PROXY` 只传给 Telegram 子进程，父进程及 B 站、夸克环境不变；不会启动或修改 WARP。新会话绑定保留 `telegram.proxyURL` 与其他未知配置字段。
 
 夸克：用户在 Y7000P 的新浏览器中亲自登录官方站点，再从该新会话复制 Cookie，粘贴到隐藏输入提示。程序只访问 `https://pan.quark.cn/account/info` 核对 UID，先原子保存绑定，再原子保存 `cookieFile`。程序不读取浏览器资料，不读取未绑定的既有 Cookie。绑定后更新 Cookie 必须仍为同一 UID。首次保存若中断，保留已验证 UID，重新运行可继续保存该账号 Cookie。
 
@@ -63,9 +65,10 @@ tdl 0.20.4 没有公开的纯身份 CLI 命令。`chat export` 即使指定零�
 - [tdl QR 登录与 Self](https://github.com/iyear/tdl/blob/v0.20.4/app/login/qr.go)
 - [tdl 本地扩展协议](https://github.com/iyear/tdl/blob/v0.20.4/cmd/extension.go)、[内部传递方式](https://github.com/iyear/tdl/blob/v0.20.4/pkg/extensions/manager.go)
 - [tdl 扩展数据结构](https://github.com/iyear/tdl/blob/v0.20.4/extension/extension.go)
+- [tdl 显式代理接线](https://github.com/iyear/tdl/blob/v0.20.4/core/tclient/tclient.go)、[HTTP CONNECT 支持](https://github.com/iyear/tdl/blob/v0.20.4/core/util/netutil/netutil.go)
 - [tdl 导出会访问历史](https://github.com/iyear/tdl/blob/v0.20.4/app/chat/export.go)
 - [gotd Self 实现](https://github.com/gotd/td/blob/v0.140.0/telegram/self.go)
 
 ## 验证边界
 
-本地测试使用独立临时配置、合成 Cookie、loopback HTTP 替身及受控 tdl 命令替身，覆盖首次绑定、错号拒绝、配置并发变化、路径边界、锁、字段保留和无历史访问的命令契约。Windows 控制台隐藏输入、真实扫码、平台身份、远端 ACL 与持续运行必须在 Y7000P 由用户交互验收；构建和替身通过不代表这些已验证。
+本地测试使用独立临时配置、合成 Cookie、loopback HTTP 替身及受控 tdl 命令替身，覆盖首次绑定、错号拒绝、配置并发变化、路径边界、锁、字段保留和无历史访问的命令契约。代理回归覆盖所有命令传递、父环境不变、userinfo 拒绝、Self 的 CONNECT 隧道和失败不直连。Windows 控制台隐藏输入、真实扫码、平台身份、远端 WARP、ACL 与持续运行必须在 Y7000P 由用户交互验收；构建和替身通过不代表这些已验证。

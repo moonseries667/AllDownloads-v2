@@ -32,6 +32,7 @@ type TDLAccount struct {
 }
 type TDL struct {
 	Executable string
+	ProxyURL   string
 	State      *executor.State
 	WorkDir    string
 	Accounts   map[string]TDLAccount
@@ -55,6 +56,10 @@ type scanSnapshot struct {
 
 func telHash(v string) string { h := sha256.Sum256([]byte(v)); return hex.EncodeToString(h[:]) }
 func (t *TDL) command(ctx context.Context, args ...string) ([]byte, error) {
+	args, proxyErr := t.proxyArgs(args)
+	if proxyErr != nil {
+		return nil, proxyErr
+	}
 	timeout := t.Timeout
 	if timeout <= 0 {
 		timeout = 30 * time.Minute
