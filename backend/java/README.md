@@ -47,6 +47,12 @@ Java 将流程上限固定为十分钟，Go 可以缩短；GET 不排操作也�
 
 Drive 明确报告 AUTH_CLIENT_REQUIRED 或 AUTH_SESSION_NOT_FOUND 时，公共流程显示 NEEDS_ACTION/LOCAL_SETUP 和中文配置原因；配置后可主动 POLL 或检查账号。内部 AccountFact/AuthSessionFact 可省略 Java 管理的 revision/taskId，空 expiresAt 使用 Java 的有界截止时间。跨 origin 取消支持 DELETE 预检及 If-Match，并向前端暴露 ETag；HTTP 测试捕获保存为 `target/accounts-captures.json` 供冻结 schema 核验。
 
+## 上传核对与恢复
+
+上传进入 NEEDS_ACTION 后，通过已有 `POST /tasks/{id}/actions {action:"RECONCILE"}` 与 If-Match 请求只读 VERIFY_ARCHIVE。Java 从原操作复制 accountRef、destination、storageRevision 及完整 upload payload；核对不创建新上传身份。完整结果经原 `uploadResult` 校验后确认原任务并解决对应问题；只有 safeToResume 才重排原 operationId，保留 PAUSE/CANCEL。其他观察继续 NEEDS_ACTION，核对结束或失败后可重新申请。旧核对结果绑定其申请时的原上传 attempt/fencing token，不能覆盖后来继续执行的上传。
+
+来源/媒体元数据、账号检查、目录读取与校验等明确只读操作在 NEEDS_ACTION 支持用户显式 RETRY。上传失败不自动重发；只有 AUTH_REQUIRED/ACCOUNT_NOT_CONFIGURED 且该次回报明确含两个空 effects 数组，才开放显式 RETRY。RESULT_UNKNOWN、网络失败、缺失或非空 effects 继续先核对，不触发重新下载。`ArchiveRecoveryTest` 验证固定计划、取消/暂停、重复观察、跨重启、旧结果、事务回滚和上述重试边界；它使用合成 Go 事实，不代表真实 Drive 核对已验收。
+
 ## 构建与测试
 
 锁定 Spring Boot 3.5.16、sqlite-jdbc 3.53.4.0、Maven Wrapper 3.3.4、Maven 3.9.16、Surefire 3.5.6。使用 Java 21，在本模块运行：

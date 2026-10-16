@@ -160,7 +160,7 @@ public final class AuthService {
         if(state.equals("CANCELLED"))return "授权流程已取消";
         if(state.equals("EXPIRED"))return "授权流程已过期，请重新开始";
         if(next.equals("LOCAL_SETUP")&&"AUTH_CLIENT_REQUIRED".equals(reason))return "Y7000P 尚未配置新的 Google Desktop OAuth client，请在受控本地入口完成配置后主动检查；Google 官方授权须由用户亲自完成";
-        if(next.equals("LOCAL_SETUP")&&"AUTH_SESSION_NOT_FOUND".equals(reason))return "Y7000P 未找到本次 Google 授权会话，请在受控本地入口配置新会话后主动检查，或取消本流程后重新开始";
+        if(next.equals("LOCAL_SETUP")&&"AUTH_SESSION_NOT_FOUND".equals(reason))return "Y7000P 未找到本次授权会话，请在受控本地入口配置新会话后主动检查，或取消本流程后重新开始";
         return switch(next) {case "SCAN_QR"->"请使用官方应用扫描二维码";case "OPEN_URL"->"请在 Y7000P 亲自打开官方授权页完成授权";case "LOCAL_SETUP"->"请在 Y7000P 的受控本地入口配置新会话或 Desktop OAuth client，然后主动检查";case "WAIT"->"等待授权完成，请主动查询进度";default->"授权流程未完成（"+reason+"），请取消后重新开始，或在 Y7000P 检查本地配置";};
     }
     private static void fields(JsonNode node,Set<String> allowed) {
