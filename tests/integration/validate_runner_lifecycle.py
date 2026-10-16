@@ -22,7 +22,7 @@ def main():
     Draft202012Validator.check_schema(runner)
     Draft202012Validator(fixture).validate(load("fixture.examples.json"))
     registry=Registry()
-    for name in ("runner.schema.json","feedback2.schema.json","management.schema.json","fixture.schema.json","accounts.schema.json"):
+    for name in ("runner.schema.json","feedback2.schema.json","management.schema.json","fixture.schema.json","accounts.schema.json","archive-recovery.schema.json"):
         document=load(name);resource=Resource.from_contents(document)
         for uri in {(CONTRACTS/name).as_uri(),document.get("$id"),urljoin(runner["$id"],name)}:
             if uri: registry=registry.with_resource(uri,resource)
@@ -34,6 +34,13 @@ def main():
         validator.validate(value)
         rejected=dict(value,cookie="must-never-appear")
         assert not validator.is_valid(rejected), "Private credentials must not enter account contracts"
+    archive=load("archive-recovery.schema.json")
+    Draft202012Validator.check_schema(archive)
+    archive_validator=Draft202012Validator({"$id":archive["$id"],"$defs":archive["$defs"],"$ref":"#/$defs/Result"},registry=registry)
+    incomplete={"originalOperationId":"upload-original","complete":False,"safeToResume":False,"archive":None,"reasonCode":"ARCHIVE_NOT_CONFIRMED"}
+    archive_validator.validate(incomplete)
+    assert not archive_validator.is_valid(dict(incomplete,complete=True)), "A bare completion without the archive manifest must fail"
+    assert not archive_validator.is_valid(dict(incomplete,cookie="must-never-appear")), "No credentials in reconciliation results"
     def validate(ref,value):
         if ref.startswith("runner.schema.json#"):
             schema={"$id":runner["$id"],"$ref":ref.split("runner.schema.json",1)[1],"$defs":runner["$defs"]}

@@ -65,7 +65,58 @@
         "reasonCode",
         "revision"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "$ref": "#/$defs/AccountIdentity"
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "ACTIVE"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "lastCheckedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "reasonCode": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "AUTH_REQUIRED",
+                  "ERROR"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reasonCode": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
     },
     "AccountFact": {
       "type": "object",
@@ -128,7 +179,58 @@
         "lastCheckedAt",
         "reasonCode"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "$ref": "#/$defs/AccountIdentity"
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "ACTIVE"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "lastCheckedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "reasonCode": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "AUTH_REQUIRED",
+                  "ERROR"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reasonCode": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
     },
     "AuthSession": {
       "type": "object",
@@ -222,7 +324,12 @@
         "taskId",
         "reasonCode"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "$ref": "#/$defs/LogicalIdentity"
+        }
+      ]
     },
     "AuthSessionFact": {
       "type": "object",
@@ -314,7 +421,12 @@
         "expiresAt",
         "reasonCode"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "$ref": "#/$defs/LogicalIdentity"
+        }
+      ]
     },
     "CheckPayload": {
       "type": "object",
@@ -346,7 +458,12 @@
         "accountId",
         "platform"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "$ref": "#/$defs/LogicalIdentity"
+        }
+      ]
     },
     "AuthPayload": {
       "type": "object",
@@ -391,7 +508,12 @@
         "authSessionId",
         "action"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "$ref": "#/$defs/LogicalIdentity"
+        }
+      ]
     },
     "CheckResult": {
       "type": "object",
@@ -416,6 +538,126 @@
         "session"
       ],
       "additionalProperties": false
+    },
+    "AccountIdentity": {
+      "oneOf": [
+        {
+          "properties": {
+            "id": {
+              "const": "bilibili-main"
+            },
+            "platform": {
+              "const": "BILIBILI"
+            }
+          },
+          "required": [
+            "id",
+            "platform"
+          ]
+        },
+        {
+          "properties": {
+            "id": {
+              "const": "telegram-main"
+            },
+            "platform": {
+              "const": "TELEGRAM"
+            }
+          },
+          "required": [
+            "id",
+            "platform"
+          ]
+        },
+        {
+          "properties": {
+            "id": {
+              "const": "quark-main"
+            },
+            "platform": {
+              "const": "QUARK"
+            }
+          },
+          "required": [
+            "id",
+            "platform"
+          ]
+        },
+        {
+          "properties": {
+            "id": {
+              "const": "drive-main"
+            },
+            "platform": {
+              "const": "GOOGLE_DRIVE"
+            }
+          },
+          "required": [
+            "id",
+            "platform"
+          ]
+        }
+      ]
+    },
+    "LogicalIdentity": {
+      "oneOf": [
+        {
+          "properties": {
+            "accountId": {
+              "const": "bilibili-main"
+            },
+            "platform": {
+              "const": "BILIBILI"
+            }
+          },
+          "required": [
+            "accountId",
+            "platform"
+          ]
+        },
+        {
+          "properties": {
+            "accountId": {
+              "const": "telegram-main"
+            },
+            "platform": {
+              "const": "TELEGRAM"
+            }
+          },
+          "required": [
+            "accountId",
+            "platform"
+          ]
+        },
+        {
+          "properties": {
+            "accountId": {
+              "const": "quark-main"
+            },
+            "platform": {
+              "const": "QUARK"
+            }
+          },
+          "required": [
+            "accountId",
+            "platform"
+          ]
+        },
+        {
+          "properties": {
+            "accountId": {
+              "const": "drive-main"
+            },
+            "platform": {
+              "const": "GOOGLE_DRIVE"
+            }
+          },
+          "required": [
+            "accountId",
+            "platform"
+          ]
+        }
+      ]
     }
   }
 }
