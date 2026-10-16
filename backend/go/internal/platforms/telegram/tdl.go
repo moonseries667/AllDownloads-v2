@@ -64,14 +64,11 @@ func (t *TDL) command(ctx context.Context, args ...string) ([]byte, error) {
 	if t.Run != nil {
 		out, err = t.Run(ctx, t.Executable, timeout, args...)
 	} else {
-		toolHome := filepath.Join(t.WorkDir, "tool-home")
-		if !filepath.IsAbs(toolHome) {
-			return nil, p.NewFault("INVALID_INPUT", "CONFIG")
+		environment, environmentErr := t.toolEnvironment()
+		if environmentErr != nil {
+			return nil, environmentErr
 		}
-		if err := os.MkdirAll(toolHome, 0700); err != nil {
-			return nil, p.SafeFault(err, "CONFIG")
-		}
-		out, diag, err = media.RunControlledEnvironment(ctx, t.Executable, timeout, map[string]string{"USERPROFILE": toolHome, "TDL_DEBUG": "false"}, args...)
+		out, diag, err = media.RunControlledEnvironment(ctx, t.Executable, timeout, environment, args...)
 	}
 	if err != nil {
 		if ctx.Err() != nil {
@@ -81,6 +78,11 @@ func (t *TDL) command(ctx context.Context, args ...string) ([]byte, error) {
 			return nil, p.NewFault("NETWORK_TEMPORARY", "TELEGRAM")
 		}
 		text := string(diag) + string(out)
+		for _, code := range []string{"ACCOUNT_IDENTITY_CHANGED", "AUTH_REQUIRED", "NETWORK_TEMPORARY", "PROVIDER_CHANGED"} {
+			if strings.Contains(text, code+":") {
+				return nil, p.NewFault(code, "IDENTITY")
+			}
+		}
 		flood := regexp.MustCompile(`(?:FLOOD_WAIT_|FLOOD_PREMIUM_WAIT_)([0-9]+)`).FindStringSubmatch(text)
 		if len(flood) == 2 {
 			delay, _ := strconv.Atoi(flood[1])
@@ -107,7 +109,7 @@ func (t *TDL) Check(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if !strings.Contains(string(out), "Version: "+TDLVersion) && !strings.Contains(string(out), "Version: v"+TDLVersion) {
+	if !pinnedTDLVersion(out) {
 		return p.NewFault("TOOL_VERSION_MISMATCH", "CONFIG")
 	}
 	for id, a := range t.Accounts {
