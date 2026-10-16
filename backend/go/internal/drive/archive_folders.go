@@ -30,7 +30,7 @@ func folderAppKey(identity, parent, name string) string {
 	return digest([]byte(identity + "\x00folder\x00" + parent + "\x00" + name))
 }
 
-func (c *Client) resolveParent(ctx context.Context, state *executor.State, stateName string, record *uploadRecord, identity, parent, relative string, allowWrite bool) (string, error) {
+func (c *Client) resolveParent(ctx context.Context, state *executor.State, stateName string, record *uploadRecord, identity, parent, relative string, allowWrite bool, proof *archiveVerification) (string, error) {
 	if relative == "." {
 		return parent, nil
 	}
@@ -45,7 +45,17 @@ func (c *Client) resolveParent(ctx context.Context, state *executor.State, state
 			}
 			obj, err := c.get(ctx, mapping.ID)
 			if isCode(err, "TARGET_NOT_FOUND") {
-				if !allowWrite || !mapping.Created {
+				if !allowWrite {
+					proof.incomplete = true
+					if !mapping.Created {
+						proof.reservedOnly = false
+					}
+					// Keep following persisted IDs to inspect later objects;
+					// an early missing folder must not hide a later conflict.
+					parent = mapping.ID
+					continue
+				}
+				if !mapping.Created {
 					return "", fault("ARCHIVE_NOT_CONFIRMED")
 				}
 				if err = c.createFolder(ctx, mapping); err != nil {
