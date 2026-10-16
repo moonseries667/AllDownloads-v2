@@ -45,8 +45,12 @@ class FeedbackFlowTest {
         assertEquals("RECONCILE_REQUIRED",assertThrows(Failure.class,()->store.tx(()->app.feedback.retryIncomplete(object("accountId","tel-test")))).code);
     }
     @Test void explicitlyCompletingACancelledSavedDownloadRetainsOperationAndFrozenTarget(){
-        JsonNode op=savedAlbum();String task=text(op,"taskId");store.tx(()->app.queue.control(task,text(store.get("task",task),"revision"),"CANCEL"));store.tx(()->app.queue.result(text(op,"operationId"),report(op,"CANCELLED",object("files",List.of()),null),false));
-        store.tx(()->app.feedback.retryIncomplete(object("accountId","tel-test")));JsonNode retry=acquire("DOWNLOAD_MEDIA");assertEquals(op.path("operationId"),retry.path("operationId"));assertEquals(op.path("destination"),retry.path("destination"));success(retry,object("files",evidence(retry),"warnings",List.of()));
+        JsonNode op=savedAlbum();
+        // Finish the other frozen attachment first: acquisition order is stable
+        // by persisted queue identity, not by the media kind chosen by this test.
+        JsonNode sibling=acquire("DOWNLOAD_MEDIA");assertFalse(sibling.isNull());success(sibling,object("files",evidence(sibling),"warnings",List.of()));
+        String task=text(op,"taskId");store.tx(()->app.queue.control(task,text(store.get("task",task),"revision"),"CANCEL"));store.tx(()->app.queue.result(text(op,"operationId"),report(op,"CANCELLED",object("files",List.of()),null),false));
+        store.tx(()->app.feedback.retryIncomplete(object("accountId","tel-test")));JsonNode retry=acquire("DOWNLOAD_MEDIA");assertNotEquals(op.path("operationId"),retry.path("operationId"));assertNotEquals(task,text(retry,"taskId"));assertEquals("CANCELLED",text(store.tx(()->store.get("task",task)),"status"));assertEquals(op.path("destination"),retry.path("destination"));assertEquals(op.path("payload"),retry.path("payload"));success(retry,object("files",evidence(retry),"warnings",List.of()));
     }
     String seedShare(){store.tx(()->{app.feedback.quark.acceptTree((ObjectNode)examples.path("quarkRoot"));return null;});ObjectNode result=store.tx(()->app.feedback.addShares(examples.path("quarkSharedTarget")));return result.path("items").get(0).path("shareId").asText();}
     ObjectNode node(String share,String id,String version){return object("id",id,"shareId",share,"parentId",null,"externalId",id,"version",version,"name",id+".mp4","kind","FILE","relativePath","课程/"+id+".mp4","sizeBytes","7","modifiedAt",null,"availability","AVAILABLE","availabilityReason",null,"downloadSummary",object("state","NOT_REQUESTED"));}

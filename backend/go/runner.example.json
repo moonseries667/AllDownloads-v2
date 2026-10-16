@@ -1,0 +1,29 @@
+{
+  "runnerId": "runner-y7000p",
+  "controlUrl": "http://127.0.0.1:8080",
+  "tokenFile": "C:/AllDownloads-v2/runtime/auth/runner.token",
+  "stateDir": "C:/AllDownloads-v2/runtime/runner",
+  "allowedRoots": ["D:/Downloads"],
+  "roots": {"download-root": "D:/Downloads"},
+  "ffmpeg": "C:/AllDownloads-v2/tools/ffmpeg.exe",
+  "ffprobe": "C:/AllDownloads-v2/tools/ffprobe.exe",
+  "telegram": {
+    "executable": "C:/AllDownloads-v2/tools/tdl.exe",
+    "accounts": {
+      "telegram-main": {
+        "namespace": "alldownloads-v2",
+        "storageDir": "C:/AllDownloads-v2/runtime/auth/telegram",
+        "peerId": "REPLACE_WITH_NEW_SESSION_USER_ID"
+      }
+    }
+  },
+  "quarkAccounts": {
+    "quark-main": {
+      "cookieFile": "C:/AllDownloads-v2/runtime/auth/quark-cookie.local",
+      "expectedUserId": "REPLACE_WITH_NEW_SESSION_QUARK_UID"
+    }
+  },
+  "driveAccounts": {
+    "drive-main": {"tokenEnv": "ALLDOWNLOADS_DRIVE_ACCESS_TOKEN", "rootId": "root"}
+  }
+}

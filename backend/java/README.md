@@ -1,5 +1,7 @@
 # Java 公共业务与持久调度
 
+当前共同契约已通过 PR #29 合入主线 `0b34a82`。协调分支基于第三部分 `2c22e01`，再合入第一部分 Java `66979ac`、第二部分 Java `03107df`，三轮 Go 成果均在其祖先中；复用已有公共 HTTP、SQLite、租约与管理模型，补齐正式客户端所需追更及核对接缝。
+
 第三部分契约为 [FEEDBACK-PART3.md](../../contracts/FEEDBACK-PART3.md)。`DownloadManagement` 在既有业务事务中维护提交批次、下载项目、可取消子项及唯一上传记录；`StorageSettings` 实现原生目录请求、Drive 目录分页、validate/save 和冻结目标。公开 `/download-projects` 用于管理，`/download-orders` 保留提交批次；归档页面只查询 `/archives`。
 
 开工核验：B13 在前序仅有批次/执行任务，缺少管理实例；B14 已有任务级持久意图，缺少消费者与子项范围；B15 已有单操作完成后的上传入队，但不是项目完整性判断；B16 只有批次目录验证，无原生选择和全局保存；B17 仅有语义，无目录模型/实现。第三部分复用原 HTTP、SQLite、租约及输出占用，新增管理领域与控制路由，未另建 Runner。
@@ -74,9 +76,11 @@ java -jar target/alldownloads-backend-0.1.0-SNAPSHOT.jar --spring.config.additio
 
 ## 实质限制
 
-Java 公共业务已覆盖三部分反馈；Carbon 上验证使用合成平台事实或真实本地文件与回环替身。Go 默认命令仍未装配 Telegram/夸克真实会话客户端；Drive 账号与授权须在后续真实运行环境配置，选择能力不代表已经登录。上传保留相对层级要求目标下相应目录已存在且唯一，缺失/重名返回明确错误，本轮不创建云端目录。
+Java 公共业务覆盖三部分反馈及 [正式客户端增量](../../contracts/PLATFORM-CLIENTS.md)。Go 正式命令已装配 Telegram/夸克客户端；Java 统一管理已启用的收藏监控、每小时夸克追更、手动刷新合并、固定目标及未知转存的只读核对。全部配置和账号授权仍由正式运行环境建立，选择能力不代表已经登录。Drive 上传已支持持久预留 ID 后创建必要相对目录，重名不唯一仍明确失败；目录选择与只读 Verify 不创建目录。
 
 未执行原生 Windows 对话框的点击/视觉验收、真实 Bilibili/Telegram/夸克/Drive 账号及业务媒体、Y7000P 部署、电源断电或七天运行；本地跨进程通过不能替代这些结果。
+
+正式客户端的跨进程入口见 [Go 复现步骤](../go/README.md#正式入口的隔离跨进程复现)。`PlatformClientFlowTest` 补充夸克一小时追更、关闭监控、活动请求合并、未知结果只读核对、原 operation 安全恢复与取消意图、facts 序号/原确认重放。`DomainBehaviorTest` 保留云端合法冒号名称，并由 Java 统一转义本机相对路径。它们使用同类型 SQLite，不读取旧业务数据。
 
 ## 第三部分跨进程复现
 
@@ -94,6 +98,6 @@ python tests/integration/feedback3_chain.py --java '<Java21>/bin/java.exe' --run
 
 本轮实际结果为两项目、一取消部分、一已核验上传项目和两远端替身文件；取消 HTTP 在 8 MiB 流的约 128 KiB 处中断，兄弟文件保留，重启后下载/上传调用数量不增加。Go 全量 race/vet/build 已在该组合分支通过，设置了 `ALLDOWNLOADS_TEST_FFMPEG_DIR`，真实临时媒体测试未跳过。
 
-当前组合的 Maven verify 为 64 项全部通过；共享 schema、HTTP 捕获、仓库 8 项回归与结构检查通过。前端源码不在本后端分支，没有把前端 skipped 记为界面验收。
+第三部分交接时 Maven verify 为 64 项；当前协调组合的最终 verify 为 77 项全部通过（0 失败、0 错误、0 跳过）。共享 schema、HTTP 捕获通过。前端源码不在本后端分支，没有把前端 skipped 记为界面验收。
 
 Refs [#2](https://github.com/moonseries667/AllDownloads-v2/issues/2)、[#4](https://github.com/moonseries667/AllDownloads-v2/issues/4)、[#5](https://github.com/moonseries667/AllDownloads-v2/issues/5)。

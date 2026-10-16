@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -49,8 +50,21 @@ func (t *Tools) run(ctx context.Context, executable string, args ...string) ([]b
 // RunControlled runs a trusted project tool without a shell. Each invocation
 // owns its Windows Job Object; cancelling it cannot stop a sibling invocation.
 func RunControlled(ctx context.Context, executable string, timeout time.Duration, args ...string) (output []byte, resultErr error) {
+	output, _, resultErr = RunControlledDiagnostics(ctx, executable, timeout, args...)
+	return
+}
+
+// RunControlledDiagnostics keeps bounded tool diagnostics inside the adapter.
+// Callers must translate them to fixed error codes and never log raw output.
+func RunControlledDiagnostics(ctx context.Context, executable string, timeout time.Duration, args ...string) (output, diagnostic []byte, resultErr error) {
+	return RunControlledEnvironment(ctx, executable, timeout, nil, args...)
+}
+
+// RunControlledEnvironment scopes tool-specific directories/settings to this
+// child process. It never changes the runner's or operating system's profile.
+func RunControlledEnvironment(ctx context.Context, executable string, timeout time.Duration, environment map[string]string, args ...string) (output, diagnostic []byte, resultErr error) {
 	if !filepath.IsAbs(executable) {
-		return nil, Fail("TOOL_NOT_CONFIGURED", "TOOL", false)
+		return nil, nil, Fail("TOOL_NOT_CONFIGURED", "TOOL", false)
 	}
 	if timeout <= 0 {
 		timeout = 10 * time.Minute
@@ -58,6 +72,24 @@ func RunControlled(ctx context.Context, executable string, timeout time.Duration
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, executable, args...)
+	if len(environment) > 0 {
+		for _, item := range os.Environ() {
+			key, _, _ := strings.Cut(item, "=")
+			replace := false
+			for name := range environment {
+				if strings.EqualFold(key, name) {
+					replace = true
+					break
+				}
+			}
+			if !replace {
+				cmd.Env = append(cmd.Env, item)
+			}
+		}
+		for key, value := range environment {
+			cmd.Env = append(cmd.Env, key+"="+value)
+		}
+	}
 	prepareProcess(cmd)
 	cmd.WaitDelay = 2 * time.Second
 	out := &boundedBuffer{max: 1 << 20}
@@ -65,27 +97,27 @@ func RunControlled(ctx context.Context, executable string, timeout time.Duration
 	cmd.Stdout = out
 	cmd.Stderr = errout
 	if err := cmd.Start(); err != nil {
-		return nil, Fail("TOOL_START_FAILED", "TOOL", false)
+		return nil, nil, Fail("TOOL_START_FAILED", "TOOL", false)
 	}
 	closer, err := bindProcessTree(cmd.Process)
 	if err != nil {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
-		return nil, Fail("TOOL_PROCESS_CONTROL_FAILED", "TOOL", false)
+		return nil, nil, Fail("TOOL_PROCESS_CONTROL_FAILED", "TOOL", false)
 	}
 	defer func() { resultErr = errors.Join(resultErr, closer.Close()) }()
 	if err := resumeProcess(cmd.Process); err != nil {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
-		return nil, Fail("TOOL_PROCESS_CONTROL_FAILED", "TOOL", false)
+		return nil, nil, Fail("TOOL_PROCESS_CONTROL_FAILED", "TOOL", false)
 	}
 	if err := cmd.Wait(); err != nil {
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			return out.data, errout.data, ctx.Err()
 		}
-		return nil, Fail("TOOL_FAILED", "TOOL", false)
+		return out.data, errout.data, Fail("TOOL_FAILED", "TOOL", false)
 	}
-	return out.data, nil
+	return out.data, errout.data, nil
 }
 func (t *Tools) Check(ctx context.Context) error {
 	t.mu.Lock()

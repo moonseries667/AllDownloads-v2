@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://alldownloads.invalid/contracts/runner.schema.json",
-  "title": "Java-Go protocol v1, feedback parts one and two",
+  "title": "Java-Go protocol v1, feedback parts one through three",
   "oneOf": [
     {
       "$ref": "#/$defs/Operation"
@@ -11,6 +11,45 @@
     },
     {
       "$ref": "#/$defs/Register"
+    },
+    {
+      "$ref": "#/$defs/RegisterResponse"
+    },
+    {
+      "$ref": "#/$defs/AcquireRequest"
+    },
+    {
+      "$ref": "#/$defs/AcquireResponse"
+    },
+    {
+      "$ref": "#/$defs/HeartbeatRequest"
+    },
+    {
+      "$ref": "#/$defs/HeartbeatResponse"
+    },
+    {
+      "$ref": "#/$defs/FactsRequest"
+    },
+    {
+      "$ref": "#/$defs/FactsAck"
+    },
+    {
+      "$ref": "#/$defs/ResultError"
+    },
+    {
+      "$ref": "#/$defs/ResultAck"
+    },
+    {
+      "$ref": "#/$defs/SuccessEnvelope"
+    },
+    {
+      "$ref": "#/$defs/ErrorEnvelope"
+    },
+    {
+      "$ref": "#/$defs/QuarkTransferReconcilePayload"
+    },
+    {
+      "$ref": "#/$defs/QuarkTransferReconcileResult"
     }
   ],
   "$defs": {
@@ -1120,44 +1159,35 @@
           "const": 1
         },
         "operationId": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "taskId": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "attempt": {
           "type": "integer",
           "minimum": 1
         },
         "leaseId": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "runnerId": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "fencingToken": {
           "type": "string",
           "pattern": "^[1-9][0-9]*$"
         },
         "leaseExpiresAt": {
-          "type": "string"
+          "type": "string",
+          "format": "date-time"
         },
         "operationType": {
-          "type": "string",
-          "enum": [
-            "VALIDATE_TARGET",
-            "SYNC_BIL_SOURCE",
-            "FETCH_BIL_METADATA",
-            "DOWNLOAD_MEDIA",
-            "UPLOAD_ARTIFACT",
-            "VERIFY_ARCHIVE",
-            "SCAN_TEL_SAVED",
-            "LIST_QUARK_TREE",
-            "TRANSFER_QUARK_ITEMS",
-            "SELECT_LOCAL_DIRECTORY",
-            "LIST_DRIVE_FOLDERS",
-            "VALIDATE_DRIVE_TARGET"
-          ]
+          "$ref": "#/$defs/OperationType"
         },
         "platform": {
           "type": "string",
@@ -1171,13 +1201,16 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "minLength": 1
         },
         "resourceKey": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "storageRevision": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "destination": {
           "anyOf": [
@@ -1303,6 +1336,28 @@
             "properties": {
               "payload": {
                 "$ref": "feedback2.schema.json#/$defs/TransferPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operationType": {
+                "const": "RECONCILE_QUARK_TRANSFER"
+              }
+            },
+            "required": [
+              "operationType"
+            ]
+          },
+          "then": {
+            "properties": {
+              "platform": {
+                "const": "QUARK"
+              },
+              "payload": {
+                "$ref": "#/$defs/QuarkTransferReconcilePayload"
               }
             }
           }
@@ -1479,24 +1534,238 @@
       ],
       "additionalProperties": false
     },
+    "OperationType": {
+      "type": "string",
+      "enum": [
+        "VALIDATE_TARGET",
+        "SYNC_BIL_SOURCE",
+        "FETCH_BIL_METADATA",
+        "DOWNLOAD_MEDIA",
+        "UPLOAD_ARTIFACT",
+        "VERIFY_ARCHIVE",
+        "SCAN_TEL_SAVED",
+        "LIST_QUARK_TREE",
+        "TRANSFER_QUARK_ITEMS",
+        "RECONCILE_QUARK_TRANSFER",
+        "SELECT_LOCAL_DIRECTORY",
+        "LIST_DRIVE_FOLDERS",
+        "VALIDATE_DRIVE_TARGET"
+      ]
+    },
+    "ResultPayload": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/FileEvidence"
+              },
+              {
+                "$ref": "#/$defs/ArchivedFile"
+              }
+            ]
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "ArchivedFile": {
+      "type": "object",
+      "properties": {
+        "outputId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relativePath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sizeBytes": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "remoteId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "remoteName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "verified": {
+          "const": true
+        }
+      },
+      "required": [
+        "outputId",
+        "relativePath",
+        "sizeBytes",
+        "sha256",
+        "remoteId",
+        "remoteName",
+        "verified"
+      ],
+      "additionalProperties": false
+    },
+    "ResultError": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retryAfterSeconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "completedEffects": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "pendingEffects": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryAfterSeconds",
+        "completedEffects",
+        "pendingEffects"
+      ],
+      "additionalProperties": false
+    },
+    "QuarkTransferReconcilePayload": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "shareId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "minLength": 1
+        },
+        "targetFolderId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "targetFolderRevision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "originalOperationId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "shareId",
+        "url",
+        "targetFolderId",
+        "targetFolderRevision",
+        "originalOperationId"
+      ],
+      "additionalProperties": false
+    },
+    "QuarkTransferReconcileResult": {
+      "type": "object",
+      "properties": {
+        "shareId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "targetFolderId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "targetFolderRevision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CloudNode"
+          }
+        },
+        "complete": {
+          "type": "boolean",
+          "description": "True proves the full transferred tree is known. False may only authorize resuming the original operation when safeToResume is true and all prior writes have a determinate outcome."
+        },
+        "safeToResume": {
+          "type": "boolean",
+          "description": "When complete is false, true proves every issued write has a determinate result and all remaining steps were not sent. It never authorizes creating a new logical transfer operation."
+        }
+      },
+      "required": [
+        "shareId",
+        "targetFolderId",
+        "targetFolderRevision",
+        "nodes",
+        "complete"
+      ],
+      "additionalProperties": false
+    },
     "Result": {
       "type": "object",
       "properties": {
         "eventId": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "runnerId": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "leaseId": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "attempt": {
           "type": "integer",
           "minimum": 1
         },
         "fencingToken": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
         },
         "status": {
           "type": "string",
@@ -1510,18 +1779,27 @@
           ]
         },
         "result": {
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ResultPayload"
+            },
+            {
+              "$ref": "#/$defs/QuarkTransferReconcileResult"
+            }
+          ]
         },
         "error": {
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ResultError"
+            }
+          ]
         }
       },
       "required": [
@@ -1534,29 +1812,136 @@
         "result",
         "error"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "SUCCEEDED"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "result": {
+                "type": "object"
+              },
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "RETRYABLE_ERROR",
+                  "NEEDS_ACTION",
+                  "RESULT_UNKNOWN"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "$ref": "#/$defs/ResultError"
+              }
+            }
+          }
+        }
+      ]
     },
     "Register": {
       "type": "object",
       "properties": {
         "runnerId": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "protocolVersion": {
           "const": 1
         },
         "capabilities": {
           "type": "array",
+          "uniqueItems": true,
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/OperationType"
           }
         },
         "tools": {
           "type": "object",
-          "additionalProperties": true
+          "additionalProperties": {
+            "type": "string"
+          }
         },
         "facts": {
           "type": "object",
+          "properties": {
+            "mount": {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "type": "string"
+                },
+                "reasonCode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "observedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "state",
+                "reasonCode",
+                "observedAt"
+              ],
+              "additionalProperties": true
+            },
+            "accountState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "directoryPicker": {
+              "type": "object",
+              "properties": {
+                "available": {
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "hostId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "available",
+                "reasonCode",
+                "hostId"
+              ],
+              "additionalProperties": true
+            }
+          },
           "additionalProperties": true
         }
       },
@@ -1565,6 +1950,310 @@
         "protocolVersion",
         "capabilities",
         "tools"
+      ],
+      "additionalProperties": false
+    },
+    "RegisterResponse": {
+      "type": "object",
+      "properties": {
+        "runnerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "protocolVersion": {
+          "const": 1
+        },
+        "heartbeatSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "leaseSeconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "runnerId",
+        "protocolVersion",
+        "heartbeatSeconds",
+        "leaseSeconds"
+      ],
+      "additionalProperties": false
+    },
+    "AcquireRequest": {
+      "type": "object",
+      "properties": {
+        "runnerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/OperationType"
+          }
+        }
+      },
+      "required": [
+        "runnerId",
+        "capabilities"
+      ],
+      "additionalProperties": false
+    },
+    "AcquireResponse": {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/Operation"
+            }
+          ]
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "HeartbeatRequest": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "runnerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fencingToken": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "eventId",
+        "runnerId",
+        "operationId",
+        "attempt",
+        "fencingToken",
+        "sequence"
+      ],
+      "additionalProperties": false
+    },
+    "HeartbeatResponse": {
+      "type": "object",
+      "properties": {
+        "desiredAction": {
+          "type": "string",
+          "enum": [
+            "CONTINUE",
+            "PAUSE",
+            "CANCEL"
+          ]
+        },
+        "leaseExpiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "desiredAction",
+        "leaseExpiresAt"
+      ],
+      "additionalProperties": false
+    },
+    "FactsRequest": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "runnerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "leaseId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fencingToken": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "facts": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "eventId",
+        "runnerId",
+        "leaseId",
+        "attempt",
+        "fencingToken",
+        "sequence",
+        "facts"
+      ],
+      "additionalProperties": false
+    },
+    "FactsAck": {
+      "type": "object",
+      "properties": {
+        "ackId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "ackId",
+        "eventId"
+      ],
+      "additionalProperties": false
+    },
+    "ResultAck": {
+      "type": "object",
+      "properties": {
+        "ackId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "SUCCEEDED",
+            "PAUSED",
+            "CANCELLED",
+            "WAITING_RETRY",
+            "NEEDS_ACTION",
+            "FAILED"
+          ]
+        }
+      },
+      "required": [
+        "ackId",
+        "eventId",
+        "taskId",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "SuccessEnvelope": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RegisterResponse"
+            },
+            {
+              "$ref": "#/$defs/AcquireResponse"
+            },
+            {
+              "$ref": "#/$defs/HeartbeatResponse"
+            },
+            {
+              "$ref": "#/$defs/FactsAck"
+            },
+            {
+              "$ref": "#/$defs/ResultAck"
+            }
+          ]
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "data",
+        "requestId"
+      ],
+      "additionalProperties": false
+    },
+    "ErrorEnvelope": {
+      "type": "object",
+      "properties": {
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "action": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "details": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "retryable",
+            "action",
+            "details"
+          ],
+          "additionalProperties": false
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "error",
+        "requestId"
       ],
       "additionalProperties": false
     },

@@ -20,6 +20,7 @@ public final class BusinessApplication {
         this.store=store;queue=new OperationQueue(store);catalog=new CatalogService(store,queue);downloads=new DownloadService(store,catalog,queue);
         storageSettings=new StorageSettings(store,queue);management=new DownloadManagement(store,queue,storageSettings);downloads.management(management,storageSettings);
         feedback=new FeedbackService(store,queue,downloads);
+        queue.onReconcile(feedback::reconcile);
         queue.onReport(feedback::reported);
         queue.onCompletion(this::complete);
         queue.onOutcome(this::outcome);

@@ -200,7 +200,7 @@ def main():
         (work / "catalog.json").write_text(json.dumps(catalog), encoding="utf-8")
         (work / "runner.json").write_text(json.dumps({"runnerId": "integration-runner", "controlUrl": f"http://127.0.0.1:{proxy.server_port}",
                                                        "stateDir": str(work / "runner-state"), "allowedRoots": [str(work)], "roots": {"download-root": str(default)},
-                                                       "ffmpeg": str(args.ffmpeg), "ffprobe": str(args.ffprobe), "fixtureCatalog": str(work / "catalog.json")}), encoding="utf-8")
+                                                       "ffmpeg": str(args.ffmpeg), "ffprobe": str(args.ffprobe), "isolatedTestMode": True, "fixtureCatalog": str(work / "catalog.json")}), encoding="utf-8")
         start_java()
         once()  # Default local target validation.
         assert api("GET", "/settings")["defaultTarget"]["status"] == "VALID"

@@ -37,6 +37,9 @@ func (w *StorageWorker) SupportsOperation(op Operation) bool {
 	case "LIST_DRIVE_FOLDERS", "VALIDATE_DRIVE_TARGET", "UPLOAD_ARTIFACT":
 		return len(w.Drives) > 0
 	}
+	if adapter, ok := w.Next.(interface{ SupportsOperation(Operation) bool }); ok {
+		return adapter.SupportsOperation(op)
+	}
 	if adapter, ok := w.Next.(interface{ SupportsPlatform(string) bool }); ok {
 		return adapter.SupportsPlatform(op.Platform)
 	}

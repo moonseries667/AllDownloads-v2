@@ -121,4 +121,13 @@ class DomainBehaviorTest {
         ((ArrayNode)result.path("nodes")).add(json.createObjectNode().put("id","f").put("shareId",share).put("parentId","managed").put("externalId","f").put("version","1").put("name","音频.ogg").put("kind","FILE").put("relativePath","音频.ogg").put("availability","AVAILABLE").putNull("sizeBytes"));
         quark.acceptTree(result);assertTrue(quark.folder("quark-test","unrelated").path("selectable").asBoolean());assertEquals(1,quark.expand(Set.of("f"),null,null).size());assertEquals("Quark/12345678/音频.ogg",quark.expand(Set.of("f"),null,null).get(0).path("plannedRelativePath").asText());
     }
+    @Test void cloudColonNameAndRelativePathStayRawWhileLocalPathIsWindowsSafe() throws Exception {
+        root();ObjectNode request=((ObjectNode)examples.path("quarkSharedTarget")).deepCopy();((ArrayNode)request.path("entries")).remove(1);
+        String share=quark.addShares(request,this::enqueue).path("items").get(0).path("shareId").asText();
+        ObjectNode file=json.createObjectNode().put("id","colon-file").put("shareId",share).putNull("parentId").put("externalId","colon-file").put("version","v1").put("name","讲义:2026.mp4").put("kind","FILE").put("relativePath","课程/讲义:2026.mp4").put("sizeBytes","7").put("availability","AVAILABLE").putNull("availabilityReason");
+        quark.acceptNodes(share,json.createArrayNode().add(file),true);
+        JsonNode stored=quark.nodes(share).get(0);assertEquals("讲义:2026.mp4",stored.path("name").asText());assertEquals("课程/讲义:2026.mp4",stored.path("relativePath").asText());
+        JsonNode frozen=quark.expand(Set.of("colon-file"),null,null).get(0);assertEquals("Quark/12345678/课程/讲义:2026.mp4",frozen.path("plannedRelativePath").asText());
+        String local=quark.localPath(frozen);assertEquals("Quark/12345678/课程/讲义_2026.mp4",local);assertFalse(local.contains(":"));assertEquals(local,quark.localPath(frozen));
+    }
 }

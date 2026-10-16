@@ -35,6 +35,12 @@ func NewFault(code, stage string) *Fault {
 		f.Status, f.Message = "RETRYABLE_ERROR", "平台要求等待后重试"
 	case "AUTH_REQUIRED":
 		f.Message = "平台账号需要重新登录"
+	case "AUTH_OR_TOOL_REQUIRED":
+		f.Message = "Telegram 会话或受控工具不可用，请检查新会话与工具配置"
+	case "ACCOUNT_IDENTITY_CHANGED":
+		f.Message = "当前会话的平台账号与冻结的账号身份不一致"
+	case "TOOL_VERSION_MISMATCH":
+		f.Message = "平台工具版本与锁定版本不一致"
 	case "PERMISSION_DENIED":
 		f.Message = "账号没有访问或写入该对象的权限"
 	case "RESOURCE_DELETED":

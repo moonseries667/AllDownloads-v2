@@ -1,5 +1,7 @@
 # 交付验收
 
+正式客户端增量的隔离复现为 `tests/integration/platform_clients_process.py`：真实 Java SQLite 与正式 Go 主入口，平台使用回环 HTTP 和 tdl CLI 协议替身；覆盖 Telegram 首扫/增量/已启用监控/流取消、夸克未知转存只读核对/追更不下载、失败补齐、确认丢失重放及重启。Drive 必要相对目录的固定 ID 创建/丢应答/只读核对见 Go `drive/archive_folders_test.go`。这些证据不替代下述真实账号、Y7000P 或七天验收。
+
 第三部分补充验收：
 
 | 编号 | 场景 | 必须成立 |

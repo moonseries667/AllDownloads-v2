@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/executor"
 	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/media"
@@ -19,14 +20,26 @@ import (
 // Worker composes with the shared first-part handler. Provider implementations
 // are injected only after session/operation support has actually been set up.
 type Worker struct {
-	Base     *runner.Handler
-	Saved    telegram.SavedClient
-	Telegram telegram.DownloadClient
-	Tree     quark.Client
-	Quark    quark.DownloadClient
+	Base      *runner.Handler
+	Saved     telegram.SavedClient
+	Telegram  telegram.DownloadClient
+	Tree      quark.Client
+	Quark     quark.DownloadClient
+	Transfers *quark.Transfers
 }
 
 var _ runner.Worker = (*Worker)(nil)
+
+func (w *Worker) SupportsOperation(op runner.Operation) bool {
+	switch op.Platform {
+	case "TELEGRAM":
+		return op.OperationType == "SCAN_TEL_SAVED" && w.Saved != nil || op.OperationType == "DOWNLOAD_MEDIA" && w.Telegram != nil
+	case "QUARK":
+		return op.OperationType == "LIST_QUARK_TREE" && w.Tree != nil || op.OperationType == "DOWNLOAD_MEDIA" && w.Quark != nil || (op.OperationType == "TRANSFER_QUARK_ITEMS" || op.OperationType == "RECONCILE_QUARK_TRANSFER") && w.Transfers != nil
+	default:
+		return op.Platform == "BILIBILI" && w.Base != nil
+	}
+}
 
 func (w *Worker) SupportsPlatform(platform string) bool {
 	switch platform {
@@ -61,6 +74,10 @@ func (w *Worker) Capabilities() []string {
 	}
 	if w.Tree != nil {
 		set["LIST_QUARK_TREE"] = true
+	}
+	if w.Transfers != nil {
+		set["TRANSFER_QUARK_ITEMS"] = true
+		set["RECONCILE_QUARK_TRANSFER"] = true
 	}
 	if w.Base != nil && (w.Quark != nil || (w.Telegram != nil && w.Base.Tools != nil)) {
 		set["DOWNLOAD_MEDIA"] = true
@@ -139,7 +156,25 @@ func (w *Worker) Handle(ctx context.Context, op runner.Operation) (value any, fi
 		if json.Unmarshal(op.Payload, &req) != nil {
 			return nil, nil, p.NewFault("INVALID_INPUT", "LIST")
 		}
-		value, err := quark.List(ctx, w.Tree, req)
+		client := w.Tree
+		if req.ShareID != nil {
+			if scoped, ok := client.(interface {
+				ForShare(string, string) (quark.Client, error)
+			}); ok {
+				client, err = scoped.ForShare(req.AccountID, *req.ShareID)
+				if err != nil {
+					return nil, nil, err
+				}
+			}
+		}
+		value, err := quark.List(ctx, client, req)
+		return value, nil, err
+	case (op.OperationType == "TRANSFER_QUARK_ITEMS" || op.OperationType == "RECONCILE_QUARK_TRANSFER") && op.Platform == "QUARK":
+		var req quark.TransferRequest
+		if json.Unmarshal(op.Payload, &req) != nil || op.AccountRef == nil || w.Transfers == nil {
+			return nil, nil, p.NewFault("INVALID_INPUT", "TRANSFER")
+		}
+		value, err := w.Transfers.Transfer(ctx, op.OperationID, *op.AccountRef, req, op.OperationType == "RECONCILE_QUARK_TRANSFER")
 		return value, nil, err
 	case op.OperationType == "DOWNLOAD_MEDIA" && op.Platform == "TELEGRAM":
 		var req telegram.DownloadRequest
@@ -176,6 +211,19 @@ func (w *Worker) Handle(ctx context.Context, op runner.Operation) (value any, fi
 // Recover uses shared durable intents/receipts, including files published before
 // the final result was saved. It never calls a platform or starts a new download.
 func (w *Worker) Recover(op runner.Operation) (any, []runner.File, bool, error) {
+	if op.OperationType == "TRANSFER_QUARK_ITEMS" && w.Transfers != nil && op.AccountRef != nil {
+		var req quark.TransferRequest
+		if json.Unmarshal(op.Payload, &req) != nil {
+			return nil, nil, false, p.NewFault("INVALID_INPUT", "RECOVER")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		result, err := w.Transfers.Transfer(ctx, op.OperationID, *op.AccountRef, req, true)
+		if err != nil {
+			return nil, nil, false, nil
+		}
+		return result, nil, result.Complete, nil
+	}
 	if op.Platform == "BILIBILI" && w.Base != nil {
 		return w.Base.Recover(op)
 	}

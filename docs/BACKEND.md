@@ -1,5 +1,7 @@
 # 后端职责与稳定性要求
 
+正式 Telegram/夸克会话绑定、转存/追更、只读核对和上传相对目录补齐已接入同一 Go/Java 入口，冻结语义见 [平台客户端增量](../contracts/PLATFORM-CLIENTS.md)。本地协议替身与真实账号验收分别记录，缺认证返回明确待配置/登录状态。
+
 第三部分下载实例、取消、上传资格和目录设置的接口以 [第三部分冻结契约](../contracts/FEEDBACK-PART3.md) 为准。`DownloadManagement` 复用 `BusinessStore` 与 `OperationQueue`，不增加业务数据库或 Runner；`StorageSettings` 保存目录选择、验证与设置快照。所有结果、项目文件事实与唯一上传任务在同一事务中提交。运行取消只改变持久意图，失联继续待核对，完整性始终基于原项目 outputs。
 
 ## 1 技术与职责决策

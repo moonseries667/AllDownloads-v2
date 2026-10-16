@@ -53,12 +53,13 @@ type uploadRecord struct {
 	Identity  string
 	RemoteIDs map[string]string
 	Parents   map[string]string
+	Folders   map[string]folderRecord
 }
 
 // Archive never enumerates local directories or creates a business operation.
-// It only transfers the immutable list and verifies each reserved remote ID.
-// A lost response is reconciled by GET before another write; IDs are persisted
-// before upload so a retry cannot create a second same-named object.
+// It creates only the remote directories implied by the immutable file list,
+// transfers those files, and verifies each reserved remote ID. Lost responses
+// are reconciled against persisted IDs before another write.
 func (c *Client) Archive(ctx context.Context, state *executor.State, operationID, root string, req ArchiveRequest) (ArchiveResult, error) {
 	return c.archive(ctx, state, operationID, root, req, true)
 }
@@ -103,6 +104,9 @@ func (c *Client) archive(ctx context.Context, state *executor.State, operationID
 	if record.Identity != identity || record.RemoteIDs == nil || record.Parents == nil {
 		return result, fault("ARCHIVE_MANIFEST_CHANGED")
 	}
+	if record.Folders == nil {
+		record.Folders = map[string]folderRecord{}
+	}
 	if allowWrite {
 		if err := state.Write(name, record); err != nil {
 			return result, err
@@ -112,7 +116,7 @@ func (c *Client) archive(ctx context.Context, state *executor.State, operationID
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
-		parent, err := c.resolveParent(ctx, req.ArchiveTarget.FolderID, path.Dir(f.RelativePath))
+		parent, err := c.resolveParent(ctx, state, name, &record, identity, req.ArchiveTarget.FolderID, path.Dir(f.RelativePath), allowWrite)
 		if err != nil {
 			return result, err
 		}
@@ -192,35 +196,6 @@ func verifyObject(o Object, f ArtifactFile, parent, key, root string) error {
 	return nil
 }
 
-// This part adds selection, not cloud-folder management. Preserve the relative
-// tree only when its directories already exist; missing or ambiguous names
-// require user action, never a guessed root or a cloud mkdir side effect.
-func (c *Client) resolveParent(ctx context.Context, parent, relative string) (string, error) {
-	if relative == "." {
-		return parent, nil
-	}
-	for _, name := range strings.Split(relative, "/") {
-		objects, next, err := c.listObjects(ctx, parent, "", 2, name)
-		if err != nil {
-			return "", err
-		}
-		if len(objects) == 0 {
-			return "", fault("ARCHIVE_DIRECTORY_MISSING")
-		}
-		if len(objects) != 1 || next != "" {
-			return "", fault("ARCHIVE_DIRECTORY_AMBIGUOUS")
-		}
-		obj := objects[0]
-		if checkFolder(obj) != nil || obj.Name != name || len(obj.Parents) != 1 || obj.Parents[0] != parent {
-			return "", fault("PROVIDER_CHANGED")
-		}
-		if !obj.Capabilities.CanAdd || !obj.Capabilities.CanList {
-			return "", fault("TARGET_PERMISSION_DENIED")
-		}
-		parent = obj.ID
-	}
-	return parent, nil
-}
 func (c *Client) reserveID(ctx context.Context) (string, error) {
 	base, err := c.base()
 	if err != nil {

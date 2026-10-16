@@ -62,6 +62,16 @@ public final class FeedbackService {
         ObjectNode page=CatalogService.page(list(result.path("items")),query,PathPlanner.digest(canonical(result.path("items"))));result.set("items",page.path("items"));result.set("nextCursor",page.path("nextCursor"));return result;
     }
     public ObjectNode addShares(JsonNode request) throws SQLException {if(!request.isObject())throw Failure.bad("INVALID_INPUT","request required");return quark.addShares((ObjectNode)request,this::enqueue);}
+    public void reconcile(JsonNode original) throws SQLException {
+        ObjectNode payload=((ObjectNode)original.path("payload")).deepCopy();payload.put("originalOperationId",text(original,"operationId"));
+        String task=enqueue("RECONCILE_QUARK_TRANSFER","QUARK",text(original,"accountRef"),"quark-reconcile:"+text(original,"operationId"),payload);
+        if(Set.of("NEEDS_ACTION","PAUSED").contains(text(store.get("task",task),"status")))queue.requeueReadOnlyReconciliation(task);
+    }
+    public ObjectNode refreshShare(String shareId) throws SQLException {
+        ObjectNode share=quark.share(shareId);String[] row=store.row("SELECT body FROM operations WHERE task_id=?",text(share,"taskId"));if(row==null)throw Failure.conflict("RESULT_UNKNOWN");
+        ObjectNode original=(ObjectNode)parse(row[0]);ObjectNode payload=((ObjectNode)original.path("payload")).deepCopy();payload.remove("originalOperationId");
+        String task=enqueue("TRANSFER_QUARK_ITEMS","QUARK",text(share,"accountId"),shareId,payload);quark.scheduled(shareId,task,text(store.get("task",task),"status"));return object("taskId",task);
+    }
     public ObjectNode refreshTree(String shareId) throws SQLException {ObjectNode share=quark.share(shareId);String account=text(share,"accountId");String task=enqueue("LIST_QUARK_TREE","QUARK",account,"quark-share-tree:"+shareId,object("schemaVersion",1,"accountId",account,"parentId",null,"shareId",shareId));return object("taskId",task);}
     public ObjectNode messages(Map<String,String> query) throws SQLException {
         List<JsonNode> values=list(telegram.messages(query.get("accountId")));String q=query.getOrDefault("q","").toLowerCase(Locale.ROOT);if(!q.isEmpty())values.removeIf(n->!text(n,"text").toLowerCase(Locale.ROOT).contains(q));
@@ -73,16 +83,26 @@ public final class FeedbackService {
         if(type.equals("SCAN_TEL_SAVED")) {if(!text(op.path("payload"),"accountId").equals(required(result,"accountId")))throw Failure.conflict("VERIFICATION_FAILED");telegram.acceptPage(task,text(op,"operationId")+":"+op.path("attempt").asInt(),(ObjectNode)result,this::enqueue);return true;}
         if(type.equals("LIST_QUARK_TREE")) {if(!text(op.path("payload"),"accountId").equals(required(result,"accountId"))||!op.path("payload").path("parentId").equals(result.path("parentId")))throw Failure.conflict("VERIFICATION_FAILED");ObjectNode tree=((ObjectNode)result).deepCopy();if(op.path("payload").hasNonNull("shareId"))tree.set("shareId",op.path("payload").path("shareId"));quark.acceptTree(tree);return true;}
         if(type.equals("TRANSFER_QUARK_ITEMS")) {if(!text(op.path("payload"),"shareId").equals(required(result,"shareId")))throw Failure.conflict("VERIFICATION_FAILED");quark.transferResult((ObjectNode)result);refreshTree(text(result,"shareId"));return true;}
+        if(type.equals("RECONCILE_QUARK_TRANSFER")) {
+            String originalId=required(op.path("payload"),"originalOperationId");String[] original=store.row("SELECT body FROM operations WHERE id=?",originalId);if(original==null)throw Failure.conflict("VERIFICATION_FAILED");
+            JsonNode proof=parse(original[0]);ObjectNode expected=((ObjectNode)op.path("payload")).deepCopy();expected.remove("originalOperationId");
+            if(!proof.path("payload").equals(expected)||!proof.path("accountRef").equals(op.path("accountRef"))||!text(expected,"shareId").equals(required(result,"shareId")))throw Failure.conflict("VERIFICATION_FAILED");
+            boolean complete=result.path("complete").asBoolean(),safeToResume=result.path("safeToResume").asBoolean();
+            if(complete){quark.transferResult((ObjectNode)result);refreshTree(text(result,"shareId"));}
+            else if(safeToResume)refreshTree(text(result,"shareId"));
+            queue.confirmedTransfer(originalId,complete,safeToResume);return true;
+        }
         if(type.equals("DOWNLOAD_MEDIA")&&platform.equals("TELEGRAM")) {telegram.downloadFacts(task,result.path("files"),true);downloads.downloadResult(op,result);return true;}
         return false;
     }
     public void reported(JsonNode op,JsonNode request,String status) throws SQLException {
         String task=text(op,"taskId");
         if(text(op,"operationType").equals("SCAN_TEL_SAVED")&&Set.of("FAILED","CANCELLED","NEEDS_ACTION").contains(status))telegram.scanStopped(task);
+        if(text(op,"operationType").equals("TRANSFER_QUARK_ITEMS")&&!status.equals("SUCCEEDED"))quark.transferStopped(text(op.path("payload"),"shareId"),status,request.path("error").path("code").asText("RESULT_UNKNOWN"));
         if(text(op,"operationType").equals("DOWNLOAD_MEDIA")&&text(op,"platform").equals("TELEGRAM")&&!status.equals("SUCCEEDED")) {
             JsonNode files=request.path("result").path("files");telegram.downloadFacts(task,files.isArray()?files:array(List.of()),false);
             if(!text(request,"status").equals("RESULT_UNKNOWN")&&!text(request.path("error"),"code").equals("RESULT_UNKNOWN")&&!Set.of("CANCELLED","PAUSED").contains(status))store.put("knownDownloadFailure",task,object("eventId",request.path("eventId"),"code",request.path("error").path("code")));
         }
     }
-    public void tick() {store.tx(()->{for(String account:telegram.dueAccounts())try{savedSync(object("accountId",account));}catch(Failure e){issues.record(null,account,e.code,"WARNING");}return null;});}
+    public void tick() {store.tx(()->{for(String account:telegram.dueAccounts())try{savedSync(object("accountId",account));}catch(Failure e){issues.record(null,account,e.code,"WARNING");}for(String share:quark.dueShares())try{refreshShare(share);}catch(Failure e){issues.record(null,share,e.code,"WARNING");}return null;});}
 }

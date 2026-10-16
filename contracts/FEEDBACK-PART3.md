@@ -61,4 +61,4 @@ LIST_DRIVE_FOLDERS payload：`{schemaVersion:1,accountId,parentId:null|string,cu
 
 VALIDATE_DRIVE_TARGET payload：`{schemaVersion:1,validationId,accountId,folderId,revision}`；成功 `{validationId,target:DriveTarget,writable:true}`。Go 根据实际身份、当前父链、权限复核，revision 变化返回 TARGET_CHANGED，删除 TARGET_NOT_FOUND，权限 TARGET_PERMISSION_DENIED，认证 AUTH_REQUIRED，分页 INVALID_CURSOR。合法目录与上传核验是不同事实。
 
-显示名称按用户要求为“Goole Drive上传目录”；内部 provider/API 仍为 Google Drive。此轮不创建、删除、移动或重命名云端目录，不登录真实账号。
+显示名称按用户要求为“Goole Drive上传目录”；内部 provider/API 仍为 Google Drive。目录选择及设置校验不创建、删除、移动或重命名云端目录；上传所需中间目录的持久身份与恢复见 [平台客户端增量](PLATFORM-CLIENTS.md)。真实账号授权单独进行。

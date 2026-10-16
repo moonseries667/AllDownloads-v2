@@ -1,0 +1,347 @@
+{
+  "schemaByExample": {
+    "registerRequest": "runner.schema.json#/$defs/Register",
+    "registerResponse": "runner.schema.json#/$defs/SuccessEnvelope",
+    "acquireRequest": "runner.schema.json#/$defs/AcquireRequest",
+    "acquireEmptyResponse": "runner.schema.json#/$defs/SuccessEnvelope",
+    "acquireOperationResponse": "runner.schema.json#/$defs/SuccessEnvelope",
+    "transferReconcileOperationResponse": "runner.schema.json#/$defs/SuccessEnvelope",
+    "heartbeatRequest": "runner.schema.json#/$defs/HeartbeatRequest",
+    "heartbeatResponse": "runner.schema.json#/$defs/SuccessEnvelope",
+    "factsRequest": "runner.schema.json#/$defs/FactsRequest",
+    "factsResponse": "runner.schema.json#/$defs/SuccessEnvelope",
+    "resultSucceededRequest": "runner.schema.json#/$defs/Result",
+    "resultSucceededResponse": "runner.schema.json#/$defs/SuccessEnvelope",
+    "resultUnknownRequest": "runner.schema.json#/$defs/Result",
+    "resultUnknownResponse": "runner.schema.json#/$defs/SuccessEnvelope",
+    "sameEventReplayRequest": "runner.schema.json#/$defs/Result",
+    "sameEventReplayResponse": "runner.schema.json#/$defs/SuccessEnvelope",
+    "transferReconcileResultRequest": "runner.schema.json#/$defs/Result",
+    "transferReconcileResultResponse": "runner.schema.json#/$defs/SuccessEnvelope",
+    "staleLeaseError": "runner.schema.json#/$defs/ErrorEnvelope"
+  },
+  "registerRequest": {
+    "summary": "Runner advertises only capabilities it has assembled",
+    "value": {
+      "runnerId": "runner-local-01",
+      "protocolVersion": 1,
+      "capabilities": [
+        "DOWNLOAD_MEDIA",
+        "LIST_QUARK_TREE",
+        "TRANSFER_QUARK_ITEMS",
+        "RECONCILE_QUARK_TRANSFER",
+        "SELECT_LOCAL_DIRECTORY",
+        "LIST_DRIVE_FOLDERS",
+        "VALIDATE_DRIVE_TARGET"
+      ],
+      "tools": {
+        "ffmpeg": "9.0.2",
+        "ffprobe": "9.0.2"
+      },
+      "facts": {
+        "mount": {
+          "state": "UNSUPPORTED",
+          "reasonCode": "MOUNT_PROBE_UNSUPPORTED",
+          "observedAt": "2026-10-16T03:00:00Z"
+        },
+        "accountState": "UNKNOWN",
+        "directoryPicker": {
+          "available": true,
+          "reasonCode": null,
+          "hostId": "host-local-01"
+        }
+      }
+    }
+  },
+  "registerResponse": {
+    "summary": "Successful registration envelope",
+    "value": {
+      "data": {
+        "runnerId": "runner-local-01",
+        "protocolVersion": 1,
+        "heartbeatSeconds": 15,
+        "leaseSeconds": 90
+      },
+      "requestId": "req-register-01"
+    }
+  },
+  "acquireRequest": {
+    "summary": "Acquire using the registered capability set",
+    "value": {
+      "runnerId": "runner-local-01",
+      "capabilities": [
+        "DOWNLOAD_MEDIA",
+        "RECONCILE_QUARK_TRANSFER"
+      ]
+    }
+  },
+  "acquireEmptyResponse": {
+    "summary": "Idle queue is represented by HTTP 200 and operation null",
+    "value": {
+      "data": {
+        "operation": null
+      },
+      "requestId": "req-acquire-empty-01"
+    }
+  },
+  "acquireOperationResponse": {
+    "summary": "Leased operation with stable identity and current fencing token",
+    "value": {
+      "data": {
+        "operation": {
+          "protocolVersion": 1,
+          "operationId": "op-fetch-metadata-01",
+          "taskId": "task-fetch-metadata-01",
+          "attempt": 1,
+          "leaseId": "lease-01",
+          "runnerId": "runner-local-01",
+          "fencingToken": "1",
+          "leaseExpiresAt": "2026-10-16T03:01:30Z",
+          "operationType": "FETCH_BIL_METADATA",
+          "platform": "BILIBILI",
+          "accountRef": null,
+          "resourceKey": "bilibili:BV1Synthetic",
+          "storageRevision": "1",
+          "destination": null,
+          "payload": {
+            "schemaVersion": 1,
+            "externalId": "BV1Synthetic",
+            "externalIdType": "BVID"
+          }
+        }
+      },
+      "requestId": "req-acquire-operation-01"
+    }
+  },
+  "transferReconcileOperationResponse": {
+    "summary": "Read-only transfer reconciliation operation returned through normal acquisition",
+    "value": {
+      "data": {
+        "operation": {
+          "protocolVersion": 1,
+          "operationId": "op-quark-reconcile-01",
+          "taskId": "task-quark-reconcile-01",
+          "attempt": 1,
+          "leaseId": "lease-reconcile-01",
+          "runnerId": "runner-local-01",
+          "fencingToken": "2",
+          "leaseExpiresAt": "2026-10-16T03:02:00Z",
+          "operationType": "RECONCILE_QUARK_TRANSFER",
+          "platform": "QUARK",
+          "accountRef": "quark-account-ref-01",
+          "resourceKey": "quark-share:synthetic-share-01",
+          "storageRevision": "1",
+          "destination": null,
+          "payload": {
+            "schemaVersion": 1,
+            "shareId": "managed-share-01",
+            "url": "https://pan.quark.cn/s/SyntheticShare01",
+            "targetFolderId": "folder-synthetic-01",
+            "targetFolderRevision": "folder-revision-01",
+            "originalOperationId": "op-quark-transfer-original-01"
+          }
+        }
+      },
+      "requestId": "req-acquire-reconcile-01"
+    }
+  },
+  "heartbeatRequest": {
+    "summary": "Heartbeat sequence is monotonic within this lease",
+    "value": {
+      "eventId": "heartbeat-lease-01-2",
+      "runnerId": "runner-local-01",
+      "operationId": "op-fetch-metadata-01",
+      "attempt": 1,
+      "fencingToken": "1",
+      "sequence": 2
+    }
+  },
+  "heartbeatResponse": {
+    "summary": "Current control intent and expiry",
+    "value": {
+      "data": {
+        "desiredAction": "CONTINUE",
+        "leaseExpiresAt": "2026-10-16T03:01:45Z"
+      },
+      "requestId": "req-heartbeat-01"
+    }
+  },
+  "factsRequest": {
+    "summary": "Ordered fact delivery does not finalize the task",
+    "value": {
+      "eventId": "facts-op-fetch-metadata-01-1",
+      "runnerId": "runner-local-01",
+      "leaseId": "lease-01",
+      "attempt": 1,
+      "fencingToken": "1",
+      "sequence": 1,
+      "facts": {
+        "stage": "METADATA_PAGE",
+        "page": 1,
+        "complete": false
+      }
+    }
+  },
+  "factsResponse": {
+    "summary": "Durable fact acknowledgement",
+    "value": {
+      "data": {
+        "ackId": "ack-facts-01",
+        "eventId": "facts-op-fetch-metadata-01-1"
+      },
+      "requestId": "req-facts-01"
+    }
+  },
+  "resultSucceededRequest": {
+    "summary": "Success is backed by one verified file fact",
+    "value": {
+      "eventId": "result-op-download-01",
+      "runnerId": "runner-local-01",
+      "leaseId": "lease-download-01",
+      "attempt": 1,
+      "fencingToken": "1",
+      "status": "SUCCEEDED",
+      "result": {
+        "files": [
+          {
+            "outputId": "output-synthetic-01",
+            "relativePath": "Bilibili/隔离验证/media.mp4",
+            "sizeBytes": "1234",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "mediaKinds": [
+              "VIDEO",
+              "AUDIO"
+            ],
+            "durationSeconds": 12,
+            "verified": true
+          }
+        ],
+        "warnings": []
+      },
+      "error": null
+    }
+  },
+  "resultSucceededResponse": {
+    "summary": "Persisted success acknowledgement",
+    "value": {
+      "data": {
+        "ackId": "ack-result-success-01",
+        "eventId": "result-op-download-01",
+        "taskId": "task-download-01",
+        "status": "SUCCEEDED"
+      },
+      "requestId": "req-result-success-01"
+    }
+  },
+  "resultUnknownRequest": {
+    "summary": "Uncertain external effect is held for reconciliation",
+    "value": {
+      "eventId": "result-op-quark-transfer-01",
+      "runnerId": "runner-local-01",
+      "leaseId": "lease-transfer-01",
+      "attempt": 1,
+      "fencingToken": "1",
+      "status": "RESULT_UNKNOWN",
+      "result": null,
+      "error": {
+        "code": "RESULT_UNKNOWN",
+        "message": "转存结果需要核对。",
+        "retryAfterSeconds": null,
+        "completedEffects": [],
+        "pendingEffects": [
+          "Quark transfer result"
+        ]
+      }
+    }
+  },
+  "resultUnknownResponse": {
+    "summary": "The uncertain operation remains actionable",
+    "value": {
+      "data": {
+        "ackId": "ack-result-unknown-01",
+        "eventId": "result-op-quark-transfer-01",
+        "taskId": "task-quark-transfer-01",
+        "status": "NEEDS_ACTION"
+      },
+      "requestId": "req-result-unknown-01"
+    }
+  },
+  "sameEventReplayRequest": {
+    "summary": "Same event body replayed on reconcile",
+    "value": {
+      "eventId": "result-op-quark-transfer-01",
+      "runnerId": "runner-local-01",
+      "leaseId": "lease-transfer-01",
+      "attempt": 1,
+      "fencingToken": "1",
+      "status": "RESULT_UNKNOWN",
+      "result": null,
+      "error": {
+        "code": "RESULT_UNKNOWN",
+        "message": "转存结果需要核对。",
+        "retryAfterSeconds": null,
+        "completedEffects": [],
+        "pendingEffects": [
+          "Quark transfer result"
+        ]
+      }
+    }
+  },
+  "sameEventReplayResponse": {
+    "summary": "Identical event returns the original stored ack",
+    "value": {
+      "data": {
+        "ackId": "ack-result-unknown-01",
+        "eventId": "result-op-quark-transfer-01",
+        "taskId": "task-quark-transfer-01",
+        "status": "NEEDS_ACTION"
+      },
+      "requestId": "req-result-unknown-replay-01"
+    }
+  },
+  "transferReconcileResultRequest": {
+    "summary": "Read-only check proves the remaining transfer request was never sent",
+    "value": {
+      "eventId": "result-op-quark-reconcile-01",
+      "runnerId": "runner-local-01",
+      "leaseId": "lease-reconcile-01",
+      "attempt": 1,
+      "fencingToken": "2",
+      "status": "SUCCEEDED",
+      "result": {
+        "shareId": "managed-share-01",
+        "targetFolderId": "folder-synthetic-01",
+        "targetFolderRevision": "folder-revision-01",
+        "nodes": [],
+        "complete": false,
+        "safeToResume": true
+      },
+      "error": null
+    }
+  },
+  "transferReconcileResultResponse": {
+    "summary": "Reconciliation result is acknowledged; Java can resume the original operation identity",
+    "value": {
+      "data": {
+        "ackId": "ack-quark-reconcile-01",
+        "eventId": "result-op-quark-reconcile-01",
+        "taskId": "task-quark-reconcile-01",
+        "status": "SUCCEEDED"
+      },
+      "requestId": "req-quark-reconcile-01"
+    }
+  },
+  "staleLeaseError": {
+    "summary": "Stale fencing proof is rejected without changing the task",
+    "value": {
+      "error": {
+        "code": "STALE_LEASE",
+        "message": "租约已失效，请先核对执行状态。",
+        "retryable": false,
+        "action": "REFRESH",
+        "details": {}
+      },
+      "requestId": "req-stale-lease-01"
+    }
+  }
+}

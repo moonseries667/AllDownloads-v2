@@ -321,10 +321,10 @@ func TestArchiveRequiresActualRemoteEvidenceAndRetainsLocalFiles(t *testing.T) {
 	}
 }
 
-func TestArchiveRejectsNoneIncompleteTemporaryAndUnknownRemoteDirectory(t *testing.T) {
+func TestArchiveRejectsInvalidManifestAndVerifyCannotCreateMissingDirectories(t *testing.T) {
 	f, c := newFakeDrive(t)
 	state, root, req := archiveFixture(t, c)
-	for _, mode := range []string{"NONE", "unverified", "work", "missing-directory", "ambiguous-directory"} {
+	for _, mode := range []string{"NONE", "unverified", "work", "unconfirmed-directory", "ambiguous-directory"} {
 		copyReq := req
 		copyReq.Files = append([]ArtifactFile{}, req.Files...)
 		switch mode {
@@ -344,7 +344,14 @@ func TestArchiveRejectsNoneIncompleteTemporaryAndUnknownRemoteDirectory(t *testi
 			_ = os.WriteFile(filepath.Join(root, dir, "media.bin"), data, 0600)
 			copyReq.Files[0].RelativePath = dir + "/media.bin"
 		}
-		if got, err := c.Archive(context.Background(), state, mode, root, copyReq); err == nil || got.Verified {
+		var got ArchiveResult
+		var err error
+		if mode == "unconfirmed-directory" {
+			got, err = c.Verify(context.Background(), state, mode, root, copyReq)
+		} else {
+			got, err = c.Archive(context.Background(), state, mode, root, copyReq)
+		}
+		if err == nil || got.Verified {
 			t.Fatal(mode, got)
 		}
 	}
