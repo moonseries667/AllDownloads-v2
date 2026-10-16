@@ -10,22 +10,37 @@
 go build -trimpath -o bin/session-setup.exe ./cmd/session-setup
 ```
 
-以下命令由用户在 Y7000P 本地桌面终端运行，路径以正式部署时生成的 runner 配置为准。先停止 runner，避免它持有旧配置或正在使用会话。命令行只包含配置路径和平台名，不接受 Cookie、密码、验证码或 token 参数。
+以下命令由用户在 Y7000P 本地桌面终端运行。正式部署根为 `D:\Code\Other\AllDownloads-v2`，配置为 `runtime/config/runner.local.json`；从 `app/current.json` 的 `version` 读取当前发布目录。先停止本版本进程，避免它持有旧配置或正在使用会话。命令行只包含配置路径和平台名，不接受 Cookie、密码、验证码或 token 参数。
 
 ```powershell
-& 'D:\Code\Other\AllDownloads-v2\bin\session-setup.exe' --config 'D:\Code\Other\AllDownloads-v2\runtime\runner.json' --platform telegram
-& 'D:\Code\Other\AllDownloads-v2\bin\session-setup.exe' --config 'D:\Code\Other\AllDownloads-v2\runtime\runner.json' --platform quark
+$root = 'D:\Code\Other\AllDownloads-v2'
+$version = (Get-Content -LiteralPath (Join-Path $root 'app/current.json') -Raw | ConvertFrom-Json).version
+$setup = Join-Path $root "app/releases/$version/session-setup.exe"
+& (Join-Path $root 'scripts/release/Stop-AllDownloads.ps1') -Root $root
+```
+
+确认停止成功后，按需设置对应平台；以下命令沿用上面的变量：
+
+```powershell
+& $setup --config (Join-Path $root 'runtime/config/runner.local.json') --platform telegram
+& $setup --config (Join-Path $root 'runtime/config/runner.local.json') --platform quark
 ```
 
 Telegram：只运行指定 tdl 的 `--ns alldownloads-v2 --storage type=bolt,path=<新目录> login --type qr`。在终端扫码，必要时在该终端输入两步验证密码。stdout、stderr、stdin 直接连用户终端，不捕获登录输出、不解析本地化成功提示。授权后通过独立 Self 请求读取当前用户，原子更新 `telegram.accounts.telegram-main.peerId`，作为 Saved Messages 绑定身份。已绑定时仅检查原身份，不能通过重新设置换号。
 
 夸克：用户在 Y7000P 的新浏览器中亲自登录官方站点，再从该新会话复制 Cookie，粘贴到隐藏输入提示。程序只访问 `https://pan.quark.cn/account/info` 核对 UID，先原子保存绑定，再原子保存 `cookieFile`。程序不读取浏览器资料，不读取未绑定的既有 Cookie。绑定后更新 Cookie 必须仍为同一 UID。首次保存若中断，保留已验证 UID，重新运行可继续保存该账号 Cookie。
 
-完成后启动 runner，再由用户在网页账号页发起检查。CLI 也提供只核对绑定身份的命令：
+确认所需平台的 setup 成功后，使用正式启动脚本读取新配置：
 
 ```powershell
-& 'D:\Code\Other\AllDownloads-v2\bin\session-setup.exe' --config 'D:\Code\Other\AllDownloads-v2\runtime\runner.json' --platform telegram --check
-& 'D:\Code\Other\AllDownloads-v2\bin\session-setup.exe' --config 'D:\Code\Other\AllDownloads-v2\runtime\runner.json' --platform quark --check
+& (Join-Path $root 'scripts/release/Start-AllDownloads.ps1') -Root $root
+```
+
+再由用户在网页账号页发起检查。CLI 也提供只核对绑定身份的命令，沿用上面的变量：
+
+```powershell
+& $setup --config (Join-Path $root 'runtime/config/runner.local.json') --platform telegram --check
+& $setup --config (Join-Path $root 'runtime/config/runner.local.json') --platform quark --check
 ```
 
 缺失账号条目时，以 `stateDir` 的同级 `auth` 创建新路径；例如 `runtime/runner` 对应 `runtime/auth/telegram` 和 `runtime/auth/quark-cookie.local`。已有明确配置必须仍在这一新私有目录内。Telegram executable 必须明确配置为绝对路径。已有模板中的 `REPLACE_WITH_NEW_SESSION_USER_ID` 和 `REPLACE_WITH_NEW_SESSION_QUARK_UID` 视为首次未绑定。未知配置字段保留，不能覆盖不同身份。配置、会话和运行目录应由部署流程预先授予运行用户私有 ACL；Go 的 `0600` 不替代 Windows ACL。
