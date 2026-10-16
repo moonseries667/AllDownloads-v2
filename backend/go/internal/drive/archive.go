@@ -59,12 +59,13 @@ type uploadRecord struct {
 
 type archiveAuthKey struct{}
 
-// archiveVerification is evidence collected by the read-only path. A missing
-// object is resumable only when its exact ID was persisted before the write.
+// archiveVerification is evidence collected by the read-only path. Existing
+// IDs are reconciled; future items without a persisted ID were never sent,
+// because Archive always persists the reservation before issuing a write.
 type archiveVerification struct {
-	planExists   bool
-	reservedOnly bool
-	incomplete   bool
+	planExists bool
+	resumable  bool
+	incomplete bool
 }
 
 // Archive never enumerates local directories or creates a business operation.
@@ -82,7 +83,7 @@ func (c *Client) Verify(ctx context.Context, state *executor.State, operationID,
 }
 
 func (c *Client) verifyArchive(ctx context.Context, state *executor.State, operationID, root string, req ArchiveRequest) (ArchiveResult, archiveVerification, error) {
-	proof := archiveVerification{reservedOnly: true}
+	proof := archiveVerification{resumable: true}
 	result, err := c.archive(ctx, state, operationID, root, req, false, &proof)
 	return result, proof, err
 }
@@ -160,7 +161,12 @@ func (c *Client) archive(ctx context.Context, state *executor.State, operationID
 		if err != nil {
 			if proof != nil && isCode(err, "ARCHIVE_NOT_CONFIRMED") {
 				proof.incomplete = true
-				proof.reservedOnly = false
+				// An unmapped future directory is safe only if this file has
+				// not been allocated either. Otherwise its known remote ID
+				// cannot be checked against the frozen parent chain.
+				if record.RemoteIDs[f.OutputID] != "" || record.Parents[f.OutputID] != "" {
+					proof.resumable = false
+				}
 				continue
 			}
 			return result, err
@@ -172,7 +178,12 @@ func (c *Client) archive(ctx context.Context, state *executor.State, operationID
 		if remoteID == "" {
 			if !allowWrite {
 				proof.incomplete = true
-				proof.reservedOnly = false
+				// With no ID and no parent mapping, the write-ahead invariant
+				// proves this future file was never sent. A partial mapping
+				// is inconsistent and cannot establish that fact.
+				if record.Parents[f.OutputID] != "" {
+					proof.resumable = false
+				}
 				continue
 			}
 			remoteID, err = c.reserveID(ctx)
