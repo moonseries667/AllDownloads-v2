@@ -27,6 +27,9 @@ type fakeDrive struct {
 	pending                    map[string]Object
 	writes, puts, reserved     int
 	loseResponse, emptySuccess bool
+	principal                  string
+	aboutReads                 int
+	rejectAuthPut              bool
 }
 
 func folderObject(id, name, parent string) Object {
@@ -51,6 +54,13 @@ func newFakeDrive(t *testing.T) (*fakeDrive, *Client) {
 		}
 		respond := func(v any) { w.Header().Set("Content-Type", "application/json"); _ = json.NewEncoder(w).Encode(v) }
 		switch {
+		case r.URL.Path == "/drive/v3/about":
+			f.aboutReads++
+			principal := f.principal
+			if principal == "" {
+				principal = "principal-a"
+			}
+			respond(map[string]any{"user": map[string]any{"permissionId": principal}})
 		case r.URL.Path == "/drive/v3/files/generateIds":
 			if r.Method != "GET" {
 				t.Error("ID reservation method")
@@ -130,6 +140,11 @@ func newFakeDrive(t *testing.T) (*fakeDrive, *Client) {
 			o.MD5 = hex.EncodeToString(sum[:])
 			if !f.emptySuccess {
 				f.objects[id] = o
+			}
+			if f.rejectAuthPut {
+				f.rejectAuthPut = false
+				w.WriteHeader(401)
+				return
 			}
 			if f.loseResponse {
 				f.loseResponse = false
