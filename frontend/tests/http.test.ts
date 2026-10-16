@@ -94,6 +94,24 @@ describe("Java HTTP transport", () => {
     );
     await expect(
       createHttpTransport().request("GET", "/tasks"),
-    ).rejects.toThrow("Failed to fetch");
+    ).rejects.toMatchObject({ code: "NETWORK_ERROR", retryable: true });
+  });
+  it("reports a bounded timeout and never returns demo data", async () => {
+    vi.stubGlobal("fetch", vi.fn((_url, options) => new Promise((_resolve, reject) => {
+      options.signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+    })));
+    await expect(createHttpTransport("/api/v1/", 5).request("GET", "/overview"))
+      .rejects.toMatchObject({ code: "REQUEST_TIMEOUT", retryable: true });
+  });
+  it("rejects an HTML proxy response with a usable configuration error", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("<!DOCTYPE html><title>App</title>")));
+    await expect(createHttpTransport().request("GET", "/overview"))
+      .rejects.toMatchObject({ code: "INVALID_RESPONSE", message: expect.stringContaining("代理") });
+  });
+  it("normalizes the API base without changing resource identifiers", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { items: [] } })));
+    vi.stubGlobal("fetch", fetchMock);
+    await createHttpTransport("/api/v1/").request("GET", "/tasks?cursor=opaque%2Fid");
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/tasks?cursor=opaque%2Fid");
   });
 });

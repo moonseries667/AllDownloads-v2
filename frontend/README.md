@@ -1,8 +1,44 @@
 # AllDownloads 前端工作台
 
-Issue [#3](https://github.com/moonseries667/AllDownloads-v2/issues/3) 的桌面纯前端实现，提供八个业务路由、隔离演示数据和统一 API 客户端。开发与本轮验证位于 Carbon；未部署到 Y7000P，未访问真实账号或平台。
+Issue [#3](https://github.com/moonseries667/AllDownloads-v2/issues/3) 的桌面工作台，八个业务路由统一调用 Java 公共 `/api/v1`。默认开发和发布构建均使用真实 HTTP 模式；演示必须显式选择。开发与隔离联调位于 Carbon，正式运行由协调者在 Y7000P 部署；本分支不访问真实平台账号或媒体。
 
-## 前三部分整合验收（2026-10-16）
+## 真实 Java 模式与发布构建
+
+在本工作树的 `frontend` 目录使用 Node.js 24：
+
+```powershell
+npm ci
+npm test
+npm run build
+```
+
+`dist` 为发布目录，浏览器通过相对 `/api/v1` 调用同机 Java。部署服务器需将 `/api` 交给 Java，其余业务路由回退到 `index.html`。不要向前端配置内部 runner token、账号 Cookie 或 Carbon 路径。生产构建不打包演示 transport 与种子数据；接口失败保留明确错误，不切换为演示或制造账号、任务和完成状态。普通 `build` 遇到 `VITE_API_MODE=demo` 会失败，防止误发演示产物。
+
+开发/临时预览可复制 `.env.example` 为不入库的 `.env.local`，启用 `DEV_JAVA_PROXY=http://127.0.0.1:8080`。Java 的 `alldownloads.allowed-origins` 需包含前端的准确 origin（开发默认 `http://127.0.0.1:5173`）；不使用通配符。执行 `npm run dev`；临时验证发布包可使用 `npm run preview`。Vite preview 用于验证构建，正式部署使用协调者确定的静态托管方式。
+
+当前消费基线为 `9e8234c`，账号增量依据协调者冻结的 `contracts/ACCOUNTS.md`。Bilibili 只用 `bilibili-main`；Telegram、夸克、Drive 分别为 `telegram-main`、`quark-main`、`drive-main`。账号普通读取不主动检查平台，检查只发 `CHECK_ACCOUNT`。登录使用服务端 AuthSession：本地生成官方二维码、由用户打开官方授权页、明确显示 LOCAL_SETUP、有限读取/轮询、带 revision 取消。页面不接收密码、验证码、Cookie 或 OAuth code/token，不持久化授权 URL。
+
+真实 Java 当前没有全局 `/search` 和移除来源接口，因此搜索框提供携带关键词进入平台筛选，移除来源明确禁用。旧版 Java 缺少 `/accounts` 时设置页显示接口缺失，不能显示假账号；账号功能需要包含冻结账号实现的新版 Java。总览只使用已提供的运行与 Bilibili 摘要，任务与问题由完整分页事实计算；任务空进度和持久问题的扁平结构已按实际响应处理。
+
+## 隔离 Java 浏览器联调
+
+先准备构建好的 Java jar 与 Java 21，在 `frontend` 目录设置实际绝对路径后执行：
+
+```powershell
+$env:ALLDOWNLOADS_TEST_JAVA='<Java21>/bin/java.exe'
+$env:ALLDOWNLOADS_TEST_JAVA_JAR='<已构建后端>/target/alldownloads-backend-0.1.0-SNAPSHOT.jar'
+npm run test:java
+```
+
+测试启动真实 Java、全新 SQLite 和真实模式发布包，浏览器入口为独立的 `127.0.0.1:5193`；进程结束后自动关闭。独立数据和 Java 日志保存在被忽略的 `node_modules/.cache/java-browser-*`，从不读取既有会话或内部 token。截图与响应附件保存在被忽略的 `test-results`。覆盖八个空库页面、来源逐条结果/别名/置顶持久化、空进度任务/取消、无目录时拒绝预览、原生选择不可用和真实 Java 停止后的错误展示。另有明确标为 `contract stub` 的登录组件用例验证本地二维码与取消请求，它不代表平台授权已成功。无 Go/真实账号时不能把这些验证当成媒体下载、云端归档或 Y7000P 验收。
+
+包含账号增量的 Java jar 使用同样的环境变量执行 `npm run test:java:accounts`。该独立场景验证四个固定逻辑账号的真实响应、普通读取不排检查、主动检查返回持久 taskId，以及等待执行中的登录会话和带版本取消。旧 jar 的 404 会明确失败，不会用替身满足这项验收。
+
+本轮 Carbon 验证：102 项单元/适配测试、类型检查、发布构建、仓库结构检查通过；35 项历史 demo 浏览器场景通过。真实 Java 基础场景 5 项通过，其中 4 项使用实际 Java HTTP/SQLite，1 项明确为登录组件契约替身。账号独立场景待含账号增量的新 Java jar；成功媒体下载、设置保存、真实授权、Y7000P 和长期运行均未据此宣称通过。
+
+显式演示入口为 `npm run dev:demo`；`npm run build:demo` 仅生成演示验收包。`npm run test:e2e` 的历史工作台场景使用明确的 demo mode，与上述真实 Java 浏览器测试分别记录。
+
+## 前三部分历史演示验收（2026-10-16）
 
 本轮独立验收分支为 feat/frontend/3-final-acceptance，新入口为 [前三部分整合页面](http://127.0.0.1:5190/)。5190 服务使用本验收工作树的生产构建；5173 是旧开发入口，不能代表本次整合版本。
 
@@ -31,7 +67,7 @@ npm ci
 npm run dev
 ```
 
-打开 [本机工作台](http://127.0.0.1:5173/)。服务只监听 127.0.0.1。演示数据保存在浏览器 localStorage 的 alldownloads.demo.feedback2.v3 键，刷新页面可保留模拟订单；设置页可恢复默认示例。浏览器内不会执行真实下载、转存、扫描、上传或磁盘清理。
+打开 [本机工作台](http://127.0.0.1:5173/)。服务只监听 127.0.0.1，默认连接 Java；未配置代理或 Java 不可用时显示错误。显式 `npm run dev:demo` 才使用 localStorage 的 alldownloads.demo.feedback2.v3 演示键，保留模拟订单与验收场景；演示不会执行真实业务。
 
 ```powershell
 npm test
@@ -107,12 +143,12 @@ B 站来源：https://www.bilibili.com/video/BV1demoExample
 
 ## 客户端与契约边界
 
-- 页面只通过 src/api/client.ts 调用接口。默认浏览器内 demo transport；HTTP transport 使用 /api/v1，响应按 {data,requestId} / {error,requestId} 读取。
+- 页面只通过 src/api/client.ts 调用接口。默认 HTTP transport 使用 /api/v1，响应按 {data,requestId} / {error,requestId} 读取；只有显式 demo mode 才加载演示数据。
 - 演示状态不会靠计时器自动变成成功。创建、预览和提交可立即返回替身结果；执行任务保持排队/示例状态，控制动作先记录意图。
 - POST 发送 Idempotency-Key；更新来源、分享和任务动作提交 If-Match；真实兼容性仍需 Java 联调。
 - 依据 [HTTP 语义契约](../contracts/HTTP-API.md)、[第一部分](../contracts/FEEDBACK-PART1.md)、[第二部分](../contracts/FEEDBACK-PART2.md)、[第三部分](../contracts/FEEDBACK-PART3.md) 冻结契约及 [产品规则](../docs/PRODUCT.md) 实现业务边界。媒体、目录、下载项目、上传队列和设置消费对应冻结模型；真实登录步骤与 Java/Go 进程联调仍需对应环境验收。
 - 消费者字段问题已提交 [契约 #2](https://github.com/moonseries667/AllDownloads-v2/issues/2#issuecomment-6190960402)。不修改共同 contracts；生成式类型与真实接口接入在契约合入后跟进 [联调 #5](https://github.com/moonseries667/AllDownloads-v2/issues/5)。
-- .env.example 给出隔离 Java 开发代理方式。切换 HTTP 模式仅连接明确配置的隔离实例，当前尚未验证真实后端；不访问 Go 或平台服务。
+- .env.example 给出隔离 Java 开发代理方式。真实 Java 联调和历史 demo 验收分别运行；浏览器不访问 Go 或平台业务接口。
 - mock 支持种子场景与主要错误分支，不是平台执行器，不提供真实恢复、速度或云端验证证据。
 
 ## 第一部分反馈的复现方式

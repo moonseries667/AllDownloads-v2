@@ -51,7 +51,7 @@ const detailId = ref<string | null>(null),
   editingSource = ref<RecordData | null>(null);
 const sourceSaving = ref(false), sourceError = ref(""), sourceFeedback = ref("");
 const platformSummary = ref<RecordData | null>(null), summaryError = ref("");
-const summaryLabels: Record<string, string> = { ACTIVE: "可用", READY: "可用", AUTH_REQUIRED: "需要登录", NOT_CONFIGURED: "未配置", UNKNOWN: "待确认", RUNNING: "刷新中", QUEUED: "等待刷新", IDLE: "暂无刷新任务", NEEDS_ACTION: "需要处理", FAILED: "刷新失败" };
+const summaryLabels: Record<string, string> = { ACTIVE: "可用", READY: "可用", AUTH_REQUIRED: "需要登录", NOT_CONFIGURED: "未配置", UNKNOWN: "待确认", ERROR: "账号异常", REFRESHING: "刷新中", RUNNING: "刷新中", QUEUED: "等待刷新", IDLE: "暂无刷新任务", NEEDS_ACTION: "需要处理", FAILED: "刷新失败" };
 async function loadSummary() {
   try { platformSummary.value = (await api.get("/overview")).bilibili || null; summaryError.value = ""; }
   catch (e) { platformSummary.value = null; summaryError.value = (e as Error).message; }
@@ -240,12 +240,16 @@ function unitCount(c: RecordData) {
 async function addSources() {
   adding.value = true;
   try {
-    const input = links.value.split(/\s+/).filter(Boolean);
+    const input = [...new Set(links.value.split(/\s+/).filter(Boolean))];
     if (!input.length) throw new Error("请输入至少一条来源链接");
-    addResult.value = (
+    const result = (
       await api.post("/bilibili/sources", { links: input })
     ).items;
-    notifySuccess("来源解析请求已受理，仅收录信息。");
+    // Java returns one result per distinct submitted link, in input order.
+    addResult.value = result.map((item: RecordData, index: number) => ({ ...item, url: input[index] }));
+    const accepted = addResult.value.filter(item => !item.error).length;
+    if (accepted) notifySuccess("已受理 " + accepted + " 条来源解析请求，仅收录信息。");
+    if (accepted !== result.length) notifyError(new Error("部分链接未能识别，请查看逐条结果。"));
   } catch (e) {
     notifyError(e);
   } finally {
@@ -264,7 +268,7 @@ async function refresh() {
 }
 function editSource(s: RecordData) {
   editingSource.value = s;
-  alias.value = s.alias;
+  alias.value = s.alias ?? "";
   pinned.value = s.pinned;
   sourceOpen.value = true;
   sourceError.value = "";
@@ -308,6 +312,7 @@ async function saveSource() {
   }
 }
 async function removeSource() {
+  if (!isDemo) return;
   try {
     await ElMessageBox.confirm(
       "仅移除来源关系，保留已下载资料、未结束任务及其他来源引用。",
@@ -571,8 +576,9 @@ async function removeSource() {
       <p v-if="sourceFeedback" class="text-primary" role="status">{{ sourceFeedback }}</p>
       <p v-if="sourceError" class="text-danger" role="alert">{{ sourceError }}</p>
       <p class="muted">置顶立即保存，别名点击保存后生效。</p>
+      <p v-if="!isDemo" class="muted">当前 Java 版本尚未提供移除来源接口。</p>
       <template #footer><div class="source-dialog-actions">
-        <el-button type="danger" plain :disabled="sourceSaving" @click="removeSource"
+        <el-button type="danger" plain :disabled="sourceSaving || !isDemo" @click="removeSource"
           >移除来源</el-button
         ><el-button :disabled="sourceSaving" @click="sourceOpen = false">取消</el-button
         ><el-button type="primary" :loading="sourceSaving" @click="saveSource">保存</el-button></div></template

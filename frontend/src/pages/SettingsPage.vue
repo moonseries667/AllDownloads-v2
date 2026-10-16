@@ -25,9 +25,11 @@ import NativeDirectoryField from "../components/NativeDirectoryField.vue";
 import DriveFolderPicker from "../components/DriveFolderPicker.vue";
 import { archiveSettingsApi, errorMessage, type StorageSettings, type SettingsValidation } from "../api/archive-settings";
 import { serviceLabels, mountLabels } from "../components/runtimePresentation";
+import { accountsApi, type Account, type AccountPlatform } from "../api/accounts";
+import AccountLoginDialog from "../components/AccountLoginDialog.vue";
 const settings = ref<any>({}),
   form = ref<any>({}),
-  accounts = ref<any[]>([]),
+  accounts = ref<Account[]>([]),
   health = ref<any>({}),
   validation = ref<SettingsValidation | null>(null),
   saving = ref(false),
@@ -35,8 +37,10 @@ const settings = ref<any>({}),
   switching = ref(false),
   auth = ref<any>(null),
   authOpen = ref(false);
+const authPlatform = ref<AccountPlatform | null>(null), checkingAccount = ref("");
 const validating = ref(false), nativeSelecting = ref(false), draftRevision = ref(""), driveAccountId = ref("");
 const storageError = ref(""), versionConflict = ref(false);
+const accountError = ref(""), settingsError = ref("");
 const driveAccounts = computed(() => accounts.value.filter(account => account.platform === "GOOGLE_DRIVE"));
 const pickerUnavailable = computed(() => isDemo ? "演示模式不打开系统窗口。" : "运行主机尚未提供可用的原生目录选择能力，请确认使用同机浏览器与可交互桌面。");
 function setDraft(value: StorageSettings) {
@@ -111,18 +115,20 @@ async function load() {
   try {
     const [s, a, h] = await Promise.allSettled([
       api.get("/settings"),
-      api.get("/accounts"),
+      accountsApi.list(),
       api.get("/health"),
     ]);
     if (s.status === "fulfilled") {
       settings.value = s.value;
+      settingsError.value = "";
       if (!Object.keys(form.value).length) setDraft(s.value);
-    } else notifyError(s.reason);
+    } else { settingsError.value = s.reason.message; notifyError(s.reason); }
     if (a.status === "fulfilled") {
       accounts.value = a.value.items;
+      accountError.value = "";
       if (!driveAccountId.value && driveAccounts.value.length === 1) driveAccountId.value = driveAccounts.value[0].id;
     }
-    else notifyError(a.reason);
+    else { accountError.value = a.reason?.code === "NOT_FOUND" ? "当前 Java 版本尚未提供账号状态接口，登录状态无法读取。" : a.reason.message; notifyError(a.reason); }
     if (h.status === "fulfilled") health.value = h.value;
     else { health.value = {}; notifyError(h.reason); }
     if (isDemo) scenario.value = (await api.get("/__demo/status")).scenario;
@@ -177,14 +183,17 @@ async function changeScenario(value: string) {
   }
 }
 async function check(id: string) {
+  if (checkingAccount.value) return;
+  checkingAccount.value = id;
   try {
-    await api.post("/accounts/" + id + "/check");
-    notifySuccess("已读取账号示例状态；未连接真实平台。");
+    await accountsApi.check(id);
+    notifySuccess(isDemo ? "已读取账号示例状态；未连接真实平台。" : "账号检查已受理，状态以执行程序返回的事实为准。");
   } catch (e) {
     notifyError(e);
-  }
+  } finally { checkingAccount.value = ""; }
 }
-async function login(platform: string) {
+async function login(platform: AccountPlatform) {
+  if (!isDemo) { authPlatform.value = platform; authOpen.value = true; return; }
   try {
     auth.value = await api.post("/auth-sessions", { platform });
     authOpen.value = true;
@@ -225,6 +234,7 @@ watch(form, () => (validation.value = null), { deep: true });
             <h2><FolderOpen :size="21" />存储位置</h2>
             <span class="muted">目录版本 {{ settings.storageRevision }}</span>
           </div>
+          <div v-if="settingsError" class="mb16" role="alert"><p class="text-danger">存储设置读取失败：{{ settingsError }}</p><el-button @click="load">重新读取</el-button></div>
           <el-form label-position="top">
             <el-form-item label="统一本机下载根目录">
               <NativeDirectoryField :model-value="form.downloadRoot || ''" :select-directory="selectDirectory" :disabled="saving || validating || !form.defaultTarget" @busy="nativeSelecting = $event" />
@@ -266,6 +276,9 @@ watch(form, () => (validation.value = null), { deep: true });
             <h2><Cloud :size="21" />平台账号</h2>
             <span class="muted">不展示或保存已有凭据</span>
           </div>
+          <div v-if="accountError" role="alert"><p class="text-danger">{{ accountError }}</p><el-button @click="load">重新读取账号</el-button></div>
+          <p v-else-if="!accounts.length" class="muted">尚无可读取的平台账号。</p>
+            <p v-if="!isDemo" class="muted">Bilibili 只使用一个主账号读取与下载。检查仅核对身份与读权限，不扫描或下载。</p>
           <div
             v-for="account in accounts"
             :key="account.id"
@@ -293,6 +306,8 @@ watch(form, () => (validation.value = null), { deep: true });
             </div>
             <StatusBadge :state="account.state" /><el-button
               link
+              :loading="checkingAccount === account.id"
+              :disabled="!!checkingAccount"
               @click="check(account.id)"
               >检查</el-button
             ><el-button type="primary" plain @click="login(account.platform)">{{
@@ -352,6 +367,7 @@ watch(form, () => (validation.value = null), { deep: true });
       </aside>
     </div>
     <el-dialog
+      v-if="isDemo"
       v-model="authOpen"
       title="账号登录流程"
       width="530px"
@@ -376,5 +392,6 @@ watch(form, () => (validation.value = null), { deep: true });
         ><el-button @click="cancelLogin">取消登录流程</el-button></template
       ></el-dialog
     >
+    <AccountLoginDialog v-else v-model="authOpen" :platform="authPlatform" @changed="load" />
   </div>
 </template>

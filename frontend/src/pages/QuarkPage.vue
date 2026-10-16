@@ -18,7 +18,9 @@ import {
   RefreshCw,
   Search,
 } from "lucide-vue-next";
-import { api, dataRevision, notifyError, notifySuccess } from "../api/client";
+import { api, dataRevision, isDemo, notifyError, notifySuccess } from "../api/client";
+import { readAllPages } from "../api/pages";
+import { accountIds } from "../api/accounts";
 import DownloadPreview from "../components/DownloadPreview.vue";
 import QuarkFolderPicker from "../components/QuarkFolderPicker.vue";
 import type { QuarkTarget } from "../api/quark-folders";
@@ -70,11 +72,11 @@ type ShareResult = {
   error?: string | { message?: string };
 };
 
-const ACCOUNT_ID = "q-main";
+const ACCOUNT_ID = isDemo ? "q-main" : accountIds.QUARK;
 const shares = ref<Share[]>([]);
 const settings = ref<Record<string, any> | null>(null);
 const nodesByShare = ref<Record<string, CloudNode[]>>({});
-const selectedShareId = ref<string | null>("q1");
+const selectedShareId = ref<string | null>(null);
 const currentParentId = ref<string | null>(null);
 const selectedNodeIds = ref<Set<string>>(new Set());
 const searchText = ref("");
@@ -380,7 +382,7 @@ async function load() {
   pageLoading.value = true;
   loadError.value = "";
   const results = await Promise.allSettled([
-    api.get<{ items: Share[] }>("/quark/shares"),
+    readAllPages<Share>("/quark/shares"),
     api.get<Record<string, any>>("/settings"),
   ]);
   if (sequence !== loadSequence.value) return;
@@ -388,7 +390,7 @@ async function load() {
   const shareResult = results[0];
   const settingsResult = results[1];
   if (shareResult.status === "fulfilled") {
-    shares.value = shareResult.value.items ?? [];
+    shares.value = shareResult.value;
     if (!shares.value.some((share) => share.id === selectedShareId.value)) {
       selectedShareId.value = shares.value[0]?.id ?? null;
       currentParentId.value = null;

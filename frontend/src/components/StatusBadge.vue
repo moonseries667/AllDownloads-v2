@@ -22,6 +22,7 @@ const labels: Record<string, string> = {
   REMOVED: "已移出来源",
   UNAVAILABLE: "不可用",
   UNKNOWN: "未知",
+  ERROR: "异常",
   MISSING: "无本机文件",
   CLEANED: "本机已清理",
   ACTIVE: "已连接",

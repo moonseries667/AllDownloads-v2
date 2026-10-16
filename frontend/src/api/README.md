@@ -6,6 +6,8 @@
 node frontend/src/api/generate-feedback-contract.mjs d508c7a
 ```
 
+当前默认传输为真实 Java HTTP，只有 `--mode demo` 显式启用替身。公共路径为相对 `/api/v1`，失败不回退演示。`accounts.ts` 消费协调者冻结的 `contracts/ACCOUNTS.md`，普通 GET 不产生检查或授权步骤；检查/登录使用精确固定账号和公共 API，取消携带登录 revision。`AccountLoginDialog.vue` 只读取官方 URL/二维码内容，在浏览器本地生成二维码，不向第三方二维码服务发请求，也不接收或保存凭据。
+
 `bilibiliApi` 提供详情、列表、来源读取与置顶更新；排序使用 `TITLE_ASC / TITLE_DESC / PUBLISHED_DESC / PUBLISHED_ASC`，日期为上海时区的 `yyyy-MM-dd`。详情和列表的作者是 `author: {id,name} | null`，内容类型是 `kind: SINGLE / MULTIPART / SERIES / MOVIE`；不要继续读演示旧字段 `type` 或把 `author` 当字符串。`overview.runtime` 与 `overview.bilibili` 按同一冻结契约提供。演示运行状态为 UNKNOWN，不代表实际服务或挂载正常。
 
 宿主页接入 `BilibiliDetail.vue`：传 `v-model` 和 `content-id: string | null`，组件自行读取详情。`saved` 事件携带 `{contentId, contentVersion, mediaIds}`，`close` 表示抽屉关闭；保存不会预览或提交下载。共享 `mediaSelectionSession` 按稳定内容 ID 保存会话选择，详情关闭未保存时丢弃草稿。空数组是明确空选择，不恢复全选。
