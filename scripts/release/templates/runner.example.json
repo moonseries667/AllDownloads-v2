@@ -1,0 +1,26 @@
+{
+  "runnerId": "runner-y7000p",
+  "controlUrl": "http://127.0.0.1:8080",
+  "tokenFile": "<ROOT>/runtime/auth/runner.token",
+  "stateDir": "<ROOT>/runtime/runner",
+  "allowedRoots": ["<ROOT>/downloads"],
+  "roots": {"download-root": "<ROOT>/downloads"},
+  "ffmpeg": "<ROOT>/tools/ffmpeg-9.0.2/ffmpeg.exe",
+  "ffprobe": "<ROOT>/tools/ffmpeg-9.0.2/ffprobe.exe",
+  "bilibili": {
+    "cookieFile": "<ROOT>/runtime/auth/bilibili.session",
+    "expectedUserId": ""
+  },
+  "telegram": {
+    "executable": "<ROOT>/tools/tdl-0.20.4/tdl.exe",
+    "accounts": {}
+  },
+  "quarkAccounts": {},
+  "driveAccounts": {
+    "drive-main": {
+      "rootId": "root",
+      "tokenFile": "<ROOT>/runtime/auth/drive.session",
+      "clientFile": "<ROOT>/runtime/auth/google-desktop-client.json"
+    }
+  }
+}
