@@ -144,7 +144,7 @@ public final class OperationQueue {
         if(text(op,"operationType").equals("UPLOAD_ARTIFACT")) {
             store.update("DELETE FROM objects WHERE kind='knownUploadFailure' AND id=?",text(op,"taskId"));
             JsonNode error=request.path("error");
-            if(Set.of("NEEDS_ACTION","RETRYABLE_ERROR").contains(text(request,"status"))&&Set.of("AUTH_REQUIRED","ACCOUNT_NOT_CONFIGURED").contains(text(error,"code"))
+            if(Set.of("NEEDS_ACTION","RETRYABLE_ERROR").contains(text(request,"status"))&&knownUploadFailureCode(text(error,"code"))
                 &&error.path("completedEffects").isArray()&&error.path("completedEffects").isEmpty()&&error.path("pendingEffects").isArray()&&error.path("pendingEffects").isEmpty())
                 store.put("knownUploadFailure",text(op,"taskId"),object("eventId",event,"code",text(error,"code")));
         }
@@ -213,7 +213,13 @@ public final class OperationQueue {
     }
     private boolean knownUploadFailure(JsonNode task) throws SQLException {
         ObjectNode proof=store.optional("knownUploadFailure",text(task,"id"));
-        return proof!=null&&Set.of("AUTH_REQUIRED","ACCOUNT_NOT_CONFIGURED").contains(text(task.path("error"),"code"))&&text(proof,"code").equals(text(task.path("error"),"code"));
+        return proof!=null&&knownUploadFailureCode(text(proof,"code"))&&text(proof,"code").equals(text(task.path("error"),"code"));
+    }
+    private static boolean knownUploadFailureCode(String code) {
+        // The runner uses explicit empty effects only for a failed read-only pre-upload check.
+        // Unknown/interrupted execution cannot establish that proof, even with empty arrays.
+        String category=code.toUpperCase(Locale.ROOT);
+        return !code.isBlank()&&!category.contains("UNKNOWN")&&!category.contains("INTERRUPT")&&!category.contains("UNCONFIRMED")&&!category.equals("CONTROL_PERSIST_FAILED");
     }
     public void confirmedArchive(String operationId,boolean complete,boolean safeToResume,String reason) throws SQLException {
         String[] row=store.row("SELECT task_id,type,status FROM operations WHERE id=?",operationId);

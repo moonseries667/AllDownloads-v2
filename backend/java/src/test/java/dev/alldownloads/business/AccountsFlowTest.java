@@ -113,9 +113,12 @@ class AccountsFlowTest {
         assertEquals("ACTIVE",text(store.tx(()->app.auth.account("bilibili-main")),"state"));
     }
     @Test void driveSetupFailuresArePublicLocalSetupAndOptionalJavaFieldsAndNullExpiryAreAccepted() {
-        for(String code:List.of("AUTH_CLIENT_REQUIRED","AUTH_SESSION_NOT_FOUND")) {
+        for(String code:List.of("AUTH_CLIENT_REQUIRED","AUTH_SESSION_NOT_FOUND","AUTH_MANAGED_EXTERNALLY")) {
             ObjectNode first=begin("GOOGLE_DRIVE");JsonNode operation=acquire("AUTH_STEP");ObjectNode failure=request(operation,null);failure.put("status","NEEDS_ACTION");failure.set("error",object("code",code,"message","must not be published","completedEffects",List.of(),"pendingEffects",List.of()));
-            store.tx(()->app.queue.result(text(operation,"operationId"),failure,false));ObjectNode setup=session(first);assertEquals("NEEDS_ACTION",text(setup,"state"));assertEquals("LOCAL_SETUP",text(setup,"nextAction"));assertEquals(code,text(setup,"reasonCode"));assertTrue(text(setup,"message").contains("Y7000P"));assertTrue(text(setup,"message").contains(code.equals("AUTH_CLIENT_REQUIRED")?"Desktop OAuth client":"未找到本次"));assertEquals(text(first,"authSessionId"),text(begin("GOOGLE_DRIVE"),"authSessionId"));
+            store.tx(()->app.queue.result(text(operation,"operationId"),failure,false));ObjectNode setup=session(first);assertEquals("NEEDS_ACTION",text(setup,"state"));assertEquals("LOCAL_SETUP",text(setup,"nextAction"));assertEquals(code,text(setup,"reasonCode"));assertTrue(text(setup,"message").contains("Y7000P"));
+            if(code.equals("AUTH_MANAGED_EXTERNALLY")) {assertEquals("Google Drive 由指定 rclone 配置管理，请在 Y7000P 完成该 remote 授权后主动检查",text(setup,"message"));assertFalse(text(setup,"message").contains("Desktop OAuth"));}
+            else assertTrue(text(setup,"message").contains(code.equals("AUTH_CLIENT_REQUIRED")?"Desktop OAuth client":"未找到本次"));
+            assertEquals(text(first,"authSessionId"),text(begin("GOOGLE_DRIVE"),"authSessionId"));
             store.tx(()->app.auth.poll(text(first,"authSessionId"),object("action","POLL")));JsonNode poll=acquire("AUTH_STEP");ObjectNode fact=facts(setup,"NEEDS_ACTION","NONE",null,code);((ObjectNode)fact.path("session")).putNull("expiresAt");complete(poll,fact);assertEquals("LOCAL_SETUP",text(session(first),"nextAction"));
             ObjectNode current=session(first);store.tx(()->app.auth.cancel(text(first,"authSessionId"),text(current,"revision")));JsonNode cancel=acquire("AUTH_STEP");complete(cancel,facts(current,"CANCELLED","NONE",null,null));
         }
