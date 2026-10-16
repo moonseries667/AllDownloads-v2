@@ -7,10 +7,20 @@
   "roots": {"download-root": "<ROOT>/downloads"},
   "ffmpeg": "<ROOT>/tools/ffmpeg-9.0.2/ffmpeg.exe",
   "ffprobe": "<ROOT>/tools/ffmpeg-9.0.2/ffprobe.exe",
+  "bilibili": {
+    "cookieFile": "<ROOT>/runtime/auth/bilibili.session",
+    "expectedUserId": ""
+  },
   "telegram": {
     "executable": "<ROOT>/tools/tdl-0.20.4/tdl.exe",
     "accounts": {}
   },
   "quarkAccounts": {},
-  "driveAccounts": {}
+  "driveAccounts": {
+    "drive-main": {
+      "rootId": "root",
+      "tokenFile": "<ROOT>/runtime/auth/drive.session",
+      "clientFile": "<ROOT>/runtime/auth/google-desktop-client.json"
+    }
+  }
 }

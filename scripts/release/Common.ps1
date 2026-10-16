@@ -121,8 +121,10 @@ function Initialize-Runtime([string] $Root, [int] $Port = 8080, [string] $JavaEx
             tokenFile = (Join-Path $Root 'runtime/auth/runner.token'); stateDir = (Join-Path $Root 'runtime/runner')
             allowedRoots = @((Join-Path $Root 'downloads')); roots = @{ 'download-root' = (Join-Path $Root 'downloads') }
             ffmpeg = (Join-Path $Root 'tools/ffmpeg-9.0.2/ffmpeg.exe'); ffprobe = (Join-Path $Root 'tools/ffmpeg-9.0.2/ffprobe.exe')
+            bilibili = @{ cookieFile = (Join-Path $Root 'runtime/auth/bilibili.session'); expectedUserId = '' }
             telegram = @{ executable = (Join-Path $Root 'tools/tdl-0.20.4/tdl.exe'); accounts = @{} }
-            quarkAccounts = @{}; driveAccounts = @{}
+            quarkAccounts = @{}
+            driveAccounts = @{ 'drive-main' = @{ rootId = 'root'; tokenFile = (Join-Path $Root 'runtime/auth/drive.session'); clientFile = (Join-Path $Root 'runtime/auth/google-desktop-client.json') } }
         }
         Write-NewText $runnerPath ($configuration | ConvertTo-Json -Depth 10)
     }

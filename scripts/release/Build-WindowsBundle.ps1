@@ -32,9 +32,9 @@ foreach ($path in @($ffmpeg, $ffprobe, $TdlExecutable)) { Assert-PlainTree $path
 [void](Get-ToolVersion $ffmpeg ffmpeg)
 [void](Get-ToolVersion $ffprobe ffprobe)
 [void](Get-ToolVersion $TdlExecutable tdl)
-$commit = (& git -C $repository rev-parse HEAD | Out-String).Trim()
+$commit = (& git -c "safe.directory=$repository" -C $repository rev-parse HEAD | Out-String).Trim()
 if ($LASTEXITCODE -ne 0) { throw 'Build from a Git checkout with an identifiable source commit.' }
-$dirty = & git -C $repository status --porcelain -- backend/java backend/go frontend
+$dirty = & git -c "safe.directory=$repository" -C $repository status --porcelain -- backend/java backend/go frontend
 if ($LASTEXITCODE -ne 0 -or $dirty) { throw 'Commit module source changes before producing a release.' }
 if (-not $UsePrebuilt) {
     if (-not (Test-Path -LiteralPath (Join-Path $repository 'backend/go/cmd/session-setup') -PathType Container)) { throw 'Integrate cmd/session-setup before building the deployable release.' }

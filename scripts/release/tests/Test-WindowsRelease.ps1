@@ -102,14 +102,22 @@ try {
         $runner = Read-JsonFile (Join-Path $root 'runtime/config/runner.local.json')
         Assert-True ($runner.allowedRoots[0] -eq (Join-Path $root 'downloads')) 'download root'
         Assert-True (@($runner.telegram.accounts.PSObject.Properties).Count -eq 0) 'no Telegram login'
+        Assert-True ($runner.bilibili.cookieFile -eq (Join-Path $root 'runtime/auth/bilibili.session') -and $runner.bilibili.expectedUserId -eq '') 'one new Bilibili session path; first UID may be empty'
+        $drive = $runner.driveAccounts.'drive-main'
+        Assert-True ($drive.rootId -eq 'root' -and $drive.tokenFile -eq (Join-Path $root 'runtime/auth/drive.session') -and $drive.clientFile -eq (Join-Path $root 'runtime/auth/google-desktop-client.json')) 'new Drive login paths'
+        Assert-True (-not ($drive.PSObject.Properties.Name -contains 'tokenEnv')) 'file authentication does not also set tokenEnv'
+        foreach ($path in @($runner.bilibili.cookieFile, $drive.tokenFile, $drive.clientFile)) { Assert-True (-not (Test-Path -LiteralPath $path)) 'no platform credential or client file created by default' }
         Assert-True ((Get-Item -LiteralPath (Join-Path $root 'runtime/auth/runner.token')).Length -ge 32) 'new token exists (contents not read)'
     }
     Test-Case 'private config and internal token survive initialization' {
         $settingsPath = Join-Path $root 'runtime/config/deployment.local.json'
         $before = Get-Content -LiteralPath $settingsPath -Raw
+        $runnerPath = Join-Path $root 'runtime/config/runner.local.json'
+        $runnerBefore = Get-Content -LiteralPath $runnerPath -Raw
         $tokenTime = (Get-Item -LiteralPath (Join-Path $root 'runtime/auth/runner.token')).LastWriteTimeUtc
         [void](Initialize-Runtime $root 9090 'does-not-exist.exe')
         Assert-True ($before -eq (Get-Content -LiteralPath $settingsPath -Raw)) 'existing config kept'
+        Assert-True ($runnerBefore -eq (Get-Content -LiteralPath $runnerPath -Raw)) 'existing runner config kept'
         Assert-True ($tokenTime -eq (Get-Item -LiteralPath (Join-Path $root 'runtime/auth/runner.token')).LastWriteTimeUtc) 'token not rewritten'
     }
     Test-Case 'lifecycle lock prevents simultaneous mutations' {
