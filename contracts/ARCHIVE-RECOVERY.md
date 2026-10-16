@@ -8,4 +8,4 @@ Go 以原 originalOperationId 调用 Drive 只读核对，成功 result 为 `{or
 
 Java 完整核验后把事实交给原上传处理器，并确认原任务；safeToResume=true 只重排原 operationId，保留 PAUSE/CANCEL 意图。其余保持原 NEEDS_ACTION。只读核对任务完成或失败后，用户可以再次核对；不能永久复用一个不可领取的终态核对任务。
 
-明确的只读 operation（来源/媒体元数据、账号检查、目录读取与校验）在 NEEDS_ACTION 可由用户显式 RETRY 原意图。UPLOAD_ARTIFACT 的 AUTH_REQUIRED/ACCOUNT_NOT_CONFIGURED 仅在该次回报没有 completedEffects/pendingEffects 时允许 RETRY；任何未知远程写入继续先 RECONCILE。下载继续沿用已冻结的已知失败恢复规则，认证成功本身不重排业务任务。
+明确的只读 operation（来源/媒体元数据、账号检查、目录读取与校验）在 NEEDS_ACTION 可由用户显式 RETRY 原意图。UPLOAD_ARTIFACT 在任何目录或媒体写入前的只读身份、代理、根目录检查失败，可以返回该次 completedEffects/pendingEffects 均为显式空数组的未开始证明；仅在 NEEDS_ACTION/RETRYABLE_ERROR 且非未知、中断、未确认停止类错误时允许用户显式 RETRY，保留原 code/event 和 operationId。effects 缺失、null、非空或执行状态未知仍先 RECONCILE。下载继续沿用已冻结的已知失败恢复规则，认证或代理恢复本身不重排业务任务。
