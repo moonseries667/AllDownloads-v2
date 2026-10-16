@@ -35,6 +35,16 @@ Java 21 独占产品 SQLite、公共 HTTP、媒体选择和路径计划；Go 独
 
 第一/二部分的契约与行为由其提交接续，第三部分没有重建公共 HTTP、租约或平台扫描系统。
 
+## 账号与授权流程
+
+`GET /api/v1/accounts` 返回固定 `bilibili-main`、`telegram-main`、`quark-main`、`drive-main` 的持久状态，初始为 UNKNOWN。只有用户主动 `POST /accounts/{id}/check` 才排 `CHECK_ACCOUNT`；Go 的实际检查结果才能写 ACTIVE。B 站来源同步、资料读取和媒体下载未指定账号时均绑定 `bilibili-main`。
+
+授权步骤为带 Idempotency-Key 的 `POST /api/v1/auth-sessions {platform}`、只读 `GET /auth-sessions/{id}`、带新幂等键的 `POST /auth-sessions/{id}/steps {action:"POLL"}`。每个平台复用同一未结束流程；每次已经完成的 BEGIN/POLL 后，新的用户 POLL 创建不同 AUTH_STEP operation。`DELETE /auth-sessions/{id}` 必须提交 GET 的 ETag 作为 If-Match，立即保存 CANCELLED 并排 CANCEL，迟到成功不能复活。取消不会清除已保存账号或取消媒体任务。
+
+Java 将流程上限固定为十分钟，Go 可以缩短；GET 不排操作也不写状态，五秒维护事务和启动恢复持久处理过期及清理。Java 重启沿用同一流程与操作；失联操作保留队列的 RESULT_UNKNOWN 核对语义，超过流程截止时间无法接受迟到成功。失败结果显示 NEEDS_ACTION/NONE 与明确原因，须取消后重新开始；LOCAL_SETUP 流程可在 Y7000P 配置后主动检查或 POLL。Telegram、夸克首次配置和缺少 Desktop OAuth client 的 Drive 依赖 Go 返回 LOCAL_SETUP，Java 不接收任何密码、验证码、Cookie 或 token。授权完成不会自动检查账号、扫描内容或重放未知上传。
+
+`AccountsFlowTest` 与 `AccountsHttpTest` 使用隔离 SQLite、合成 Go 结果和真实回环 HTTP 验证四账号、幂等、官方 URL、版本取消、旧结果、过期、重启及单账号引用；不访问真实平台。Java 只保存允许的公共字段及自行生成的安全提示，授权结果去重仅保存摘要，避免把原始平台提示存入事件表。
+
 ## 构建与测试
 
 锁定 Spring Boot 3.5.16、sqlite-jdbc 3.53.4.0、Maven Wrapper 3.3.4、Maven 3.9.16、Surefire 3.5.6。使用 Java 21，在本模块运行：

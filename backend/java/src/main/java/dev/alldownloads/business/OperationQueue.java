@@ -30,12 +30,13 @@ public final class OperationQueue {
         if(prior!=null)return prior[0];
         String taskId=id(),operationId=id();
         ObjectNode task=object("id",taskId,"platform",platform,"kind",kind(type),"status","QUEUED","phase",type,"progress",null,"desiredAction","CONTINUE","allowedActions",List.of("PAUSE","CANCEL"),"error",null,"nextRetryAt",null,"createdAt",store.now(),"updatedAt",store.now(),"revision","1");
-        ObjectNode op=object("protocolVersion",1,"operationId",operationId,"taskId",taskId,"operationType",type,"platform",platform,"accountRef",payload.path("accountId").isTextual()?text(payload,"accountId"):null,"resourceKey",key,"storageRevision",storageRevision,"destination",destination,"payload",payload);
+        String accountRef=payload.path("accountId").isTextual()?text(payload,"accountId"):platform.equals("BILIBILI")&&Set.of("SYNC_BIL_SOURCE","FETCH_BIL_METADATA","DOWNLOAD_MEDIA").contains(type)?"bilibili-main":null;
+        ObjectNode op=object("protocolVersion",1,"operationId",operationId,"taskId",taskId,"operationType",type,"platform",platform,"accountRef",accountRef,"resourceKey",key,"storageRevision",storageRevision,"destination",destination,"payload",payload);
         store.put("task",taskId,task);
         store.update("INSERT INTO operations(id,task_id,type,resource_key,body,status,created) VALUES(?,?,?,?,?,'QUEUED',?)",operationId,taskId,type,key,op.toString(),store.millis());
         return taskId;
     }
-    private String kind(String type) { return switch(type) { case "DOWNLOAD_MEDIA"->"DOWNLOAD";case "UPLOAD_ARTIFACT"->"UPLOAD";case "VERIFY_ARCHIVE"->"VERIFY";case "TRANSFER_QUARK_ITEMS","RECONCILE_QUARK_TRANSFER"->"TRANSFER_SYNC";default->"INFO_SYNC"; }; }
+    private String kind(String type) { return switch(type) { case "CHECK_ACCOUNT","AUTH_STEP"->"AUTH";case "DOWNLOAD_MEDIA"->"DOWNLOAD";case "UPLOAD_ARTIFACT"->"UPLOAD";case "VERIFY_ARCHIVE"->"VERIFY";case "TRANSFER_QUARK_ITEMS","RECONCILE_QUARK_TRANSFER"->"TRANSFER_SYNC";default->"INFO_SYNC"; }; }
     public ObjectNode register(JsonNode request) throws SQLException {
         String runner=required(request,"runnerId");if(request.path("protocolVersion").asInt()!=1)throw Failure.conflict("PROTOCOL_MISMATCH");
         List<String> capabilities=strings(request.path("capabilities"));
@@ -68,9 +69,18 @@ public final class OperationQueue {
     }
     private ObjectNode prior(String event,String route,JsonNode body) throws SQLException {
         String[] r=store.row("SELECT body,ack FROM events WHERE id=?",event);if(r==null)return null;
-        if(!r[0].equals(route+":"+canonical(body)))throw Failure.conflict("EVENT_CONFLICT");return (ObjectNode)parse(r[1]);
+        if(!r[0].equals(eventBody(route,body)))throw Failure.conflict("EVENT_CONFLICT");return (ObjectNode)parse(r[1]);
     }
-    private ObjectNode ack(String event,String route,JsonNode body,ObjectNode ack) throws SQLException { store.update("INSERT INTO events VALUES(?,?,?)",event,route+":"+canonical(body),ack.toString());return ack; }
+    private String eventBody(String route,JsonNode body) throws SQLException {
+        String canonical=canonical(body);
+        if(route.startsWith("result:")) {
+            String[] operation=store.row("SELECT type FROM operations WHERE id=?",route.substring("result:".length()));
+            // Keep idempotency proof, not raw authorization responses or provider messages.
+            if(operation!=null&&Set.of("CHECK_ACCOUNT","AUTH_STEP").contains(operation[0]))return route+":sha256:"+PathPlanner.digest(canonical);
+        }
+        return route+":"+canonical;
+    }
+    private ObjectNode ack(String event,String route,JsonNode body,ObjectNode ack) throws SQLException { store.update("INSERT INTO events VALUES(?,?,?)",event,eventBody(route,body),ack.toString());return ack; }
     public ObjectNode heartbeat(String leaseId,JsonNode request) throws SQLException {
         String event=required(request,"eventId"),operationId=required(request,"operationId"),route="heartbeat:"+leaseId;ObjectNode old=prior(event,route,request);if(old!=null)return old;
         ObjectNode op=proof(operationId,object("runnerId",request.path("runnerId"),"leaseId",leaseId,"attempt",request.path("attempt"),"fencingToken",request.path("fencingToken")),false);
@@ -81,7 +91,9 @@ public final class OperationQueue {
     }
     public ObjectNode facts(String operationId,JsonNode request) throws SQLException {
         String event=required(request,"eventId"),route="facts:"+operationId;ObjectNode old=prior(event,route,request);if(old!=null)return old;
-        proof(operationId,request,false);if(!request.path("facts").isObject())throw Failure.bad("INVALID_INPUT","facts required");
+        ObjectNode operation=proof(operationId,request,false);
+        if(Set.of("CHECK_ACCOUNT","AUTH_STEP").contains(text(operation,"operationType")))throw Failure.conflict("ACTION_NOT_ALLOWED");
+        if(!request.path("facts").isObject())throw Failure.bad("INVALID_INPUT","facts required");
         JsonNode sequence=request.path("sequence");if(!sequence.isIntegralNumber()||!sequence.canConvertToLong()||sequence.asLong()<0)throw Failure.bad("INVALID_INPUT","non-negative sequence required");
         ObjectNode last=store.optional("factsSequence",operationId);if(last!=null&&sequence.asLong()<=last.path("sequence").asLong())throw Failure.conflict("FACTS_OUT_OF_ORDER");
         store.put("factsSequence",operationId,object("sequence",sequence,"eventId",event));
