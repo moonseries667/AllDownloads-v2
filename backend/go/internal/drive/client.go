@@ -76,6 +76,7 @@ type Client struct {
 	// BaseURL is a private loopback-only fixture seam. Empty uses Google.
 	BaseURL string
 	auth    *googleAuth
+	rclone  *rcloneAuth
 }
 
 func fault(code string) error  { return media.Fail(code, "DRIVE", false) }
@@ -97,12 +98,12 @@ func (c *Client) base() (string, error) {
 	return strings.TrimSuffix(c.BaseURL, "/"), nil
 }
 func (c *Client) request(ctx context.Context, method, address string, body io.Reader, headers http.Header) (*http.Response, error) {
-	if c.AccountID == "" || (c.Token == nil && c.auth == nil) {
+	if c.AccountID == "" || (c.Token == nil && !c.persistentAuth()) {
 		return nil, fault("AUTH_REQUIRED")
 	}
 	token := ""
-	if c.auth != nil {
-		stored, err := c.auth.credentials(ctx, c)
+	if c.persistentAuth() {
+		stored, err := c.credentials(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -156,8 +157,8 @@ func (c *Client) request(ctx context.Context, method, address string, body io.Re
 		// Never replay writes here: an upload may already have taken effect.
 		// Expire this exact token so the next attempt refreshes before the
 		// archive reconciles its stable remote IDs.
-		if c.auth != nil {
-			if err := c.auth.invalidate(token); err != nil {
+		if c.persistentAuth() {
+			if err := c.invalidate(token); err != nil {
 				return nil, err
 			}
 		}
@@ -216,6 +217,15 @@ func checkFolder(obj Object) error {
 }
 func (c *Client) root(ctx context.Context) (Object, error) {
 	id := c.RootID
+	if c.rclone != nil {
+		stored, err := c.credentials(ctx)
+		if err != nil {
+			return Object{}, err
+		}
+		if id == "" || id == "root" {
+			id = stored.SourceRootID
+		}
+	}
 	if id == "" {
 		id = "root"
 	}
