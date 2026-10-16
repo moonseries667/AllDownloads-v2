@@ -39,6 +39,7 @@ type googleAuth struct {
 }
 
 type storedAuth struct {
+	SourceRootID string    `json:"-"`
 	Version      int       `json:"version"`
 	AccountID    string    `json:"accountId"`
 	PrincipalID  string    `json:"principalId"`
@@ -60,6 +61,11 @@ func NewGoogle(config GoogleConfig) (*Client, error) {
 // Check performs read-only identity, root and permission checks. It never starts
 // login, creates a folder or uploads media.
 func (c *Client) Check(ctx context.Context) error {
+	if c.rclone != nil {
+		c.rclone.mu.Lock()
+		c.rclone.until = time.Time{}
+		c.rclone.mu.Unlock()
+	}
 	obj, err := c.root(ctx)
 	if err != nil {
 		return err

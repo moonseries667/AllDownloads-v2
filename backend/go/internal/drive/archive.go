@@ -94,8 +94,8 @@ func (c *Client) archive(ctx context.Context, state *executor.State, operationID
 		return result, fault("INVALID_ARCHIVE_MANIFEST")
 	}
 	binding := ""
-	if c.auth != nil {
-		stored, err := c.auth.credentials(ctx, c)
+	if c.persistentAuth() {
+		stored, err := c.credentials(ctx)
 		if err != nil {
 			return result, err
 		}

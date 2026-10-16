@@ -1,5 +1,7 @@
 # Drive 持久认证与恢复
 
+用户在 2026-10-17 已明确授权 Google 使用 Y7000P 指定 rclone.conf 的 `gdrive`，共同认证源、G 盘挂载与准确组件配置见 [MOUNT.md](MOUNT.md)。以下新 Desktop OAuth/DPAPI 流程保留为另一显式模式，不是 rclone 模式的前置要求或自动回退；两种模式不混用。
+
 本包负责 Google Drive I/O 和 v2 私有认证。Carbon 仅运行临时文件、本地 HTTP 和 Windows DPAPI 测试；真实 Google 授权、目录选择、上传和恢复验收在 Y7000P 进行。没有读取旧会话或浏览器凭据，没有使用付费服务或上传业务媒体。
 
 ## 接入接口

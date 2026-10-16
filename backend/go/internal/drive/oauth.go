@@ -76,6 +76,9 @@ func randomOAuth() (string, error) {
 }
 
 func (c *Client) StartOAuth(ctx context.Context) (OAuthSession, error) {
+	if c.rclone != nil {
+		return OAuthSession{}, fault("AUTH_MANAGED_EXTERNALLY")
+	}
 	if err := ctx.Err(); err != nil {
 		return OAuthSession{}, err
 	}
