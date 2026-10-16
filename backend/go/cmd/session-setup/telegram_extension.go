@@ -11,7 +11,9 @@ import (
 
 	"github.com/gotd/td/session"
 	gotd "github.com/gotd/td/telegram"
+	"github.com/gotd/td/telegram/dcs"
 	"github.com/gotd/td/tgerr"
+	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/netpolicy"
 	p "github.com/moonseries667/AllDownloads-v2/backend/go/internal/platforms"
 	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/platforms/telegram"
 )
@@ -41,17 +43,27 @@ func runIdentityExtension(ctx context.Context, output io.Writer) error {
 		return p.NewFault("AUTH_REQUIRED", "IDENTITY")
 	}
 	var env extensionEnvironment
-	if json.Unmarshal(raw, &env) != nil || env.Name != telegram.IdentityExtension || env.Namespace != "alldownloads-v2" || env.AppID <= 0 || env.AppHash == "" || len(env.Session) == 0 || env.Debug || env.Proxy != "" {
+	if json.Unmarshal(raw, &env) != nil || env.Name != telegram.IdentityExtension || env.Namespace != "alldownloads-v2" || env.AppID <= 0 || env.AppHash == "" || len(env.Session) == 0 || env.Debug {
 		return p.NewFault("AUTH_REQUIRED", "IDENTITY")
 	}
 	defer clear(env.Session)
+	// tdl forwards its typed --proxy into the private extension protocol. An
+	// absent or changed value must not bypass the explicit child policy.
+	if env.Proxy != os.Getenv("TDL_PROXY") {
+		return p.NewFault("INVALID_INPUT", "CONFIG")
+	}
+	options, err := identityClientOptions(env.Proxy)
+	if err != nil {
+		return err
+	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	storage := &session.StorageMemory{}
 	if storage.StoreSession(ctx, env.Session) != nil {
 		return p.NewFault("AUTH_REQUIRED", "IDENTITY")
 	}
-	client := gotd.NewClient(env.AppID, env.AppHash, gotd.Options{SessionStorage: storage, NoUpdates: true})
+	options.SessionStorage = storage
+	client := gotd.NewClient(env.AppID, env.AppHash, options)
 	var selfID string
 	err = client.Run(ctx, func(ctx context.Context) error {
 		self, err := client.Self(ctx)
@@ -80,4 +92,12 @@ func runIdentityExtension(ctx context.Context, output io.Writer) error {
 	return json.NewEncoder(output).Encode(struct {
 		SelfID string `json:"selfId"`
 	}{selfID})
+}
+
+func identityClientOptions(proxyURL string) (gotd.Options, error) {
+	dial, err := netpolicy.DialContext(proxyURL)
+	if err != nil {
+		return gotd.Options{}, p.NewFault("INVALID_INPUT", "CONFIG")
+	}
+	return gotd.Options{NoUpdates: true, Resolver: dcs.Plain(dcs.PlainOptions{Dial: dial})}, nil
 }

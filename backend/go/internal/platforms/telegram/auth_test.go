@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,23 +22,26 @@ func init() {
 		return
 	}
 	_ = json.NewEncoder(os.Stdout).Encode(struct {
-		Args                []string
-		Profile, Home, Temp string
-		Debug, Extension    string
-	}{os.Args[1:], os.Getenv("USERPROFILE"), os.Getenv("HOME"), os.Getenv("TEMP"), os.Getenv("TDL_DEBUG"), os.Getenv("TDL_EXTENSION")})
+		Args                                            []string
+		Profile, Home, Temp                             string
+		Debug, Extension                                string
+		Proxy, HTTPProxy, HTTPSProxy, AllProxy, NoProxy string
+	}{os.Args[1:], os.Getenv("USERPROFILE"), os.Getenv("HOME"), os.Getenv("TEMP"), os.Getenv("TDL_DEBUG"), os.Getenv("TDL_EXTENSION"), os.Getenv("TDL_PROXY"), os.Getenv("HTTP_PROXY"), os.Getenv("HTTPS_PROXY"), os.Getenv("ALL_PROXY"), os.Getenv("NO_PROXY")})
 	os.Exit(0)
 }
 
 func TestQRLoginUsesNewExplicitStorageAndDirectTerminalStreams(t *testing.T) {
 	t.Setenv("ALLDOWNLOADS_TEST_QR_CHILD", "yes")
 	t.Setenv("TDL_DEBUG", "true")
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:1")
+	t.Setenv("NO_PROXY", "*")
 	root := t.TempDir()
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
 	storage := filepath.Join(root, "auth", "telegram")
-	tdl := &TDL{Executable: executable, WorkDir: filepath.Join(root, "work"), Accounts: map[string]TDLAccount{"telegram-main": {Namespace: "alldownloads-v2", StorageDir: storage}}}
+	tdl := &TDL{Executable: executable, ProxyURL: "http://127.0.0.1:40000", WorkDir: filepath.Join(root, "work"), Accounts: map[string]TDLAccount{"telegram-main": {Namespace: "alldownloads-v2", StorageDir: storage}}}
 	tdl.Run = func(_ context.Context, _ string, _ time.Duration, _ ...string) ([]byte, error) {
 		return []byte("Version: 0.20.4"), nil
 	}
@@ -46,8 +50,9 @@ func TestQRLoginUsesNewExplicitStorageAndDirectTerminalStreams(t *testing.T) {
 		t.Fatal(err)
 	}
 	var actual struct {
-		Args                                  []string
-		Profile, Home, Temp, Debug, Extension string
+		Args                                            []string
+		Profile, Home, Temp, Debug, Extension           string
+		Proxy, HTTPProxy, HTTPSProxy, AllProxy, NoProxy string
 	}
 	if json.Unmarshal(output.Bytes(), &actual) != nil {
 		t.Fatalf("synthetic child output was not streamed: %q", output.String())
@@ -59,6 +64,12 @@ func TestQRLoginUsesNewExplicitStorageAndDirectTerminalStreams(t *testing.T) {
 	if actual.Profile != home || actual.Home != home || actual.Temp != filepath.Join(home, "tmp") || actual.Debug != "false" || actual.Extension != "" || diagnostic.Len() != 0 {
 		t.Fatalf("wrong isolated child environment: %+v", actual)
 	}
+	if argValue(actual.Args, "--proxy") != tdl.ProxyURL || actual.Proxy != tdl.ProxyURL || actual.HTTPProxy != tdl.ProxyURL || actual.HTTPSProxy != tdl.ProxyURL || actual.AllProxy != tdl.ProxyURL || actual.NoProxy == "*" {
+		t.Fatal("QR child did not receive the explicit proxy")
+	}
+	if os.Getenv("HTTP_PROXY") != "http://127.0.0.1:1" || os.Getenv("NO_PROXY") != "*" {
+		t.Fatal("child policy changed the parent environment")
+	}
 }
 
 func TestExplicitCheckCallsOnlyVersionAndSelfExtension(t *testing.T) {
@@ -67,7 +78,7 @@ func TestExplicitCheckCallsOnlyVersionAndSelfExtension(t *testing.T) {
 	if err := os.Mkdir(storage, 0700); err != nil {
 		t.Fatal(err)
 	}
-	tdl := &TDL{Executable: filepath.Join(root, "tdl.exe"), WorkDir: filepath.Join(root, "new-work"), Accounts: map[string]TDLAccount{
+	tdl := &TDL{Executable: filepath.Join(root, "tdl.exe"), ProxyURL: "http://127.0.0.1:40000", WorkDir: filepath.Join(root, "new-work"), Accounts: map[string]TDLAccount{
 		"telegram-main": {Namespace: "alldownloads-v2", StorageDir: storage, PeerID: "9007199254740993"},
 	}}
 	calls := 0
@@ -75,6 +86,9 @@ func TestExplicitCheckCallsOnlyVersionAndSelfExtension(t *testing.T) {
 		calls++
 		if argValue(args, "--ns") != "alldownloads-v2" || argValue(args, "--storage") != "type=bolt,path="+storage {
 			t.Fatalf("missing isolated session flags: %v", args)
+		}
+		if argValue(args, "--proxy") != tdl.ProxyURL {
+			t.Fatal("Self or version command omitted the configured proxy")
 		}
 		switch args[len(args)-1] {
 		case "version":
@@ -108,6 +122,65 @@ func TestExplicitCheckCallsOnlyVersionAndSelfExtension(t *testing.T) {
 	}
 	if _, err := tdl.CurrentIdentity(context.Background(), "telegram-main"); err != nil || calls != 2 {
 		t.Fatalf("setup could not identify first owner: %v", err)
+	}
+}
+
+func TestExportAndDownloadKeepExplicitProxyOnEveryInvocation(t *testing.T) {
+	document := tdlMessage(70, "media.bin", 0, `{"Document":{"ID":701,"Size":5,"MimeType":"application/octet-stream","Attributes":[{"FileName":"media.bin"}]}}`)
+	tdl, stub, _ := newTDLTest(t, []tdlTestMessage{document})
+	tdl.ProxyURL = "http://127.0.0.1:40000"
+	stub.downloadBytes = []byte("12345")
+	calls := 0
+	tdl.Run = func(ctx context.Context, executable string, timeout time.Duration, args ...string) ([]byte, error) {
+		calls++
+		if len(args) < 3 || args[0] != "--proxy" || args[1] != tdl.ProxyURL {
+			t.Fatal("platform command omitted its configured proxy")
+		}
+		return stub.Run(ctx, executable, timeout, args[2:]...)
+	}
+	if err := tdl.Check(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tdl.SavedPage(context.Background(), "saved", "0", nil); err != nil {
+		t.Fatal(err)
+	}
+	want := DownloadAttachment{Attachment: Attachment{ID: "a", ExternalID: "document:701:5", Name: "media.bin", MediaType: "DOCUMENT", MIMEType: strPtr("application/octet-stream"), SizeBytes: strPtr("5")}, MessageID: "70"}
+	reader, err := tdl.OpenAttachment(context.Background(), "saved", []string{"70"}, want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	raw, err := io.ReadAll(reader)
+	if err != nil || string(raw) != "12345" || calls != 5 || len(stub.downloads) != 1 {
+		t.Fatalf("proxied download failed: err=%v calls=%d downloads=%d", err, calls, len(stub.downloads))
+	}
+}
+
+func TestInvalidProxyFailsBeforeAnyChildAndNeverExposesUserinfo(t *testing.T) {
+	for _, raw := range []string{"http://synthetic-user:synthetic-password@127.0.0.1:40000", "http://127.0.0.1:bad", "unsupported://127.0.0.1:40000", "http://127.0.0.1:40000/?bypass=1", "http://127.0.0.1:40000\n"} {
+		tdl := &TDL{ProxyURL: raw, Run: func(context.Context, string, time.Duration, ...string) ([]byte, error) {
+			t.Fatal("invalid proxy launched a child")
+			return nil, nil
+		}}
+		_, err := tdl.command(context.Background(), "version")
+		assertTDLFault(t, err, "INVALID_INPUT")
+		if strings.Contains(err.Error(), raw) || strings.Contains(err.Error(), "synthetic-password") {
+			t.Fatal("proxy credentials escaped through a configuration error")
+		}
+	}
+}
+
+func TestProxyFailureIsNotRetriedWithoutProxy(t *testing.T) {
+	calls := 0
+	tdl := &TDL{ProxyURL: "http://127.0.0.1:40000", Run: func(_ context.Context, _ string, _ time.Duration, args ...string) ([]byte, error) {
+		calls++
+		if argValue(args, "--proxy") == "" {
+			t.Fatal("proxy failure fell back to direct traffic")
+		}
+		return nil, errors.New("synthetic proxy connection failure")
+	}}
+	if _, err := tdl.command(context.Background(), "version"); err == nil || calls != 1 {
+		t.Fatalf("proxy failure was swallowed or retried: %v calls=%d", err, calls)
 	}
 }
 

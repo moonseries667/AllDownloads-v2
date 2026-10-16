@@ -127,6 +127,27 @@ func TestPrivatePathsCannotPointOutsideNewAuthDirectory(t *testing.T) {
 	}
 }
 
+func TestTelegramProxyConfigurationIsReadAndPreservedWhenBinding(t *testing.T) {
+	const proxyURL = "http://127.0.0.1:40000"
+	cfg, _ := setupTestConfig(t, map[string]any{"telegram": map[string]any{"executable": filepath.Join(t.TempDir(), "tdl.exe"), "proxyURL": proxyURL, "futureSetting": "preserved"}})
+	tdl, account, err := cfg.telegramAccount()
+	if err != nil || tdl.ProxyURL != proxyURL {
+		t.Fatalf("configured proxy was not read: %v", err)
+	}
+	account.PeerID = "123"
+	if err := cfg.saveTelegram(tdl.Executable, account); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := loadConfig(cfg.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tdl, account, err = reloaded.telegramAccount()
+	if err != nil || tdl.ProxyURL != proxyURL || account.PeerID != "123" || !bytes.Contains(reloaded.fields["telegram"], []byte(`"futureSetting": "preserved"`)) {
+		t.Fatalf("binding lost proxy or unrelated configuration: %v", err)
+	}
+}
+
 func TestQuarkUnboundExistingCookieIsNeverReadOrReplaced(t *testing.T) {
 	cfg, _ := setupTestConfig(t, nil)
 	a, _ := cfg.quarkAccount()

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/netpolicy"
 	p "github.com/moonseries667/AllDownloads-v2/backend/go/internal/platforms"
 )
 
@@ -35,6 +36,9 @@ func (t *TDL) authAccount(id string) (TDLAccount, error) {
 	}
 	if a.Namespace != "alldownloads-v2" || !filepath.IsAbs(a.StorageDir) || strings.ContainsAny(a.StorageDir, ",\x00\r\n") || !filepath.IsAbs(t.WorkDir) || !filepath.IsAbs(t.Executable) {
 		return a, p.NewFault("INVALID_INPUT", "CONFIG")
+	}
+	if err := validateProxyURL(t.ProxyURL); err != nil {
+		return a, err
 	}
 	return a, nil
 }
@@ -132,7 +136,11 @@ func (t *TDL) LoginQR(ctx context.Context, account string, input io.Reader, outp
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, t.Executable, append(t.args(a), "login", "--type", "qr")...)
+	args, err := t.proxyArgs(append(t.args(a), "login", "--type", "qr"))
+	if err != nil {
+		return err
+	}
+	cmd := exec.CommandContext(ctx, t.Executable, args...)
 	cmd.Env = childEnvironment(environment)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = input, output, diagnostic
 	cmd.WaitDelay = 2 * time.Second
@@ -146,6 +154,10 @@ func (t *TDL) LoginQR(ctx context.Context, account string, input io.Reader, outp
 }
 
 func (t *TDL) toolEnvironment() (map[string]string, error) {
+	proxyEnvironment, err := netpolicy.Environment(t.ProxyURL)
+	if err != nil {
+		return nil, p.NewFault("INVALID_INPUT", "CONFIG")
+	}
 	toolHome := filepath.Join(t.WorkDir, "tool-home")
 	if !filepath.IsAbs(toolHome) {
 		return nil, p.NewFault("INVALID_INPUT", "CONFIG")
@@ -154,7 +166,37 @@ func (t *TDL) toolEnvironment() (map[string]string, error) {
 	if err := os.MkdirAll(temporary, 0700); err != nil {
 		return nil, p.SafeFault(err, "CONFIG")
 	}
-	return map[string]string{"USERPROFILE": toolHome, "HOME": toolHome, "TMP": temporary, "TEMP": temporary, "TMPDIR": temporary, "TDL_DEBUG": "false", "TDL_PROXY": "", "TDL_NTP": "", "TDL_EXTENSION": ""}, nil
+	environment := map[string]string{"USERPROFILE": toolHome, "HOME": toolHome, "TMP": temporary, "TEMP": temporary, "TMPDIR": temporary, "TDL_DEBUG": "false", "TDL_PROXY": t.ProxyURL, "TDL_NTP": "", "TDL_EXTENSION": ""}
+	for key, value := range proxyEnvironment {
+		environment[key] = value
+	}
+	return environment, nil
+}
+
+// This integration accepts a local HTTP CONNECT proxy supported by tdl 0.20.4.
+// Validate before constructing argv: proxy URLs never contain credentials, and
+// invalid explicit settings must never become direct traffic.
+func validateProxyURL(raw string) error {
+	if _, err := netpolicy.Environment(raw); err != nil {
+		return p.NewFault("INVALID_INPUT", "CONFIG")
+	}
+	return nil
+}
+
+func (t *TDL) proxyArgs(args []string) ([]string, error) {
+	if err := validateProxyURL(t.ProxyURL); err != nil {
+		return nil, err
+	}
+	// Only the typed configuration owns proxy selection, including helper calls.
+	for _, arg := range args {
+		if arg == "--proxy" || strings.HasPrefix(arg, "--proxy=") {
+			return nil, p.NewFault("INVALID_INPUT", "CONFIG")
+		}
+	}
+	if t.ProxyURL == "" {
+		return args, nil
+	}
+	return append([]string{"--proxy", t.ProxyURL}, args...), nil
 }
 
 func childEnvironment(overrides map[string]string) []string {
