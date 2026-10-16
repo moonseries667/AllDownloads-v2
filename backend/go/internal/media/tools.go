@@ -63,15 +63,7 @@ func RunControlledDiagnostics(ctx context.Context, executable string, timeout ti
 // RunControlledEnvironment scopes tool-specific directories/settings to this
 // child process. It never changes the runner's or operating system's profile.
 func RunControlledEnvironment(ctx context.Context, executable string, timeout time.Duration, environment map[string]string, args ...string) (output, diagnostic []byte, resultErr error) {
-	if !filepath.IsAbs(executable) {
-		return nil, nil, Fail("TOOL_NOT_CONFIGURED", "TOOL", false)
-	}
-	if timeout <= 0 {
-		timeout = 10 * time.Minute
-	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, executable, args...)
+	var childEnvironment []string
 	if len(environment) > 0 {
 		for _, item := range os.Environ() {
 			key, _, _ := strings.Cut(item, "=")
@@ -83,13 +75,40 @@ func RunControlledEnvironment(ctx context.Context, executable string, timeout ti
 				}
 			}
 			if !replace {
-				cmd.Env = append(cmd.Env, item)
+				childEnvironment = append(childEnvironment, item)
 			}
 		}
 		for key, value := range environment {
-			cmd.Env = append(cmd.Env, key+"="+value)
+			childEnvironment = append(childEnvironment, key+"="+value)
 		}
 	}
+	return runControlledEnvironment(ctx, executable, timeout, childEnvironment, args...)
+}
+
+// RunControlledExactEnvironment uses only the supplied child environment;
+// nil/empty does not inherit the runner's RCLONE_* or other settings. Windows'
+// required SYSTEMROOT may be supplied by the Go runtime. Output and diagnostics
+// retain the standard 1 MiB/16 KiB bounds. Callers must keep these raw bytes in
+// their authentication adapter and never log or echo them in public errors.
+func RunControlledExactEnvironment(ctx context.Context, executable string, timeout time.Duration, environment []string, args ...string) (output, diagnostic []byte, resultErr error) {
+	childEnvironment := make([]string, len(environment))
+	copy(childEnvironment, environment)
+	return runControlledEnvironment(ctx, executable, timeout, childEnvironment, args...)
+}
+
+// environment follows exec.Cmd.Env semantics: nil inherits the parent; a
+// non-nil slice is complete. Public exact calls always pass a non-nil copy.
+func runControlledEnvironment(ctx context.Context, executable string, timeout time.Duration, environment []string, args ...string) (output, diagnostic []byte, resultErr error) {
+	if !filepath.IsAbs(executable) {
+		return nil, nil, Fail("TOOL_NOT_CONFIGURED", "TOOL", false)
+	}
+	if timeout <= 0 {
+		timeout = 10 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, executable, args...)
+	cmd.Env = environment
 	prepareProcess(cmd)
 	cmd.WaitDelay = 2 * time.Second
 	out := &boundedBuffer{max: 1 << 20}
