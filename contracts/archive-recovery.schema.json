@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alldownloads.local/contracts/archive-recovery.schema.json",
+  "$defs": {
+    "UploadManifest": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "archivePolicy": {
+          "const": "AUTO"
+        },
+        "archiveTarget": {
+          "$ref": "management.schema.json#/$defs/DriveTarget"
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "management.schema.json#/$defs/ArtifactFile"
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "archivePolicy",
+        "archiveTarget",
+        "files"
+      ],
+      "additionalProperties": false
+    },
+    "Archive": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "archiveTarget": {
+          "$ref": "management.schema.json#/$defs/DriveTarget"
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "runner.schema.json#/$defs/ArchivedFile"
+          }
+        },
+        "verified": {
+          "const": true
+        }
+      },
+      "required": [
+        "projectId",
+        "archiveTarget",
+        "files",
+        "verified"
+      ],
+      "additionalProperties": false
+    },
+    "Payload": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "originalOperationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "upload": {
+          "$ref": "#/$defs/UploadManifest"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "originalOperationId",
+        "upload"
+      ],
+      "additionalProperties": false
+    },
+    "Result": {
+      "type": "object",
+      "properties": {
+        "originalOperationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "safeToResume": {
+          "type": "boolean"
+        },
+        "archive": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/Archive"
+            }
+          ]
+        },
+        "reasonCode": {
+          "type": [
+            "null",
+            "string"
+          ],
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        }
+      },
+      "required": [
+        "originalOperationId",
+        "complete",
+        "safeToResume",
+        "archive",
+        "reasonCode"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "complete": {
+                "const": true
+              }
+            },
+            "required": [
+              "complete"
+            ]
+          },
+          "then": {
+            "properties": {
+              "safeToResume": {
+                "const": false
+              },
+              "archive": {
+                "$ref": "#/$defs/Archive"
+              },
+              "reasonCode": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "archive": {
+                "type": "null"
+              },
+              "reasonCode": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

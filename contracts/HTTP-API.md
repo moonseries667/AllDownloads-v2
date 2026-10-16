@@ -2,6 +2,8 @@
 
 新账号、单账号 B 站和登录流程的精确增量见 [账号生命周期](ACCOUNTS.md) 与 [机器模型](accounts.schema.json)。
 
+上传 NEEDS_ACTION 的只读核对及原意图恢复见 [上传恢复](ARCHIVE-RECOVERY.md)。
+
 正式平台装配与夸克追更/核对增量见 [平台客户端契约](PLATFORM-CLIENTS.md)；第三部分模型保持兼容。
 
 第三部分下载项目、取消、归档队列与目录设置见 [第三部分冻结契约](FEEDBACK-PART3.md)。批次与下载项目使用不同稳定 ID。
