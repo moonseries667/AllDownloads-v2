@@ -12,6 +12,10 @@
 - `POST /auth-sessions/{id}/steps` 需要 Idempotency-Key，输入仅 `{action:"POLL"}`，返回 202 AuthSession。只在用户打开的未过期流程中有限轮询；GET 不排队。首次 BEGIN、随后每次 POLL 使用不同内部 operation，但同一次请求幂等。
 - `DELETE /auth-sessions/{id}` 需要 If-Match，返回 202 AuthSession，立即记录取消意图并排 CANCEL；迟到结果不得将其复活。取消登录不删除已保存账号会话，不取消业务任务。
 
+Bilibili 的 SCAN_QR 同时支持旧 `https://passport.bilibili.com/h5-app/passport/login/scan` 和 2026-10-17 在 Y7000P 实测的 `https://account.bilibili.com/h5/account-h5/auth/scan-web`。新路径只公开 `navhide=1`、`callback=close`、空 `from` 与单个非空 `qrcode_key`；必须使用 HTTPS、准确主机与路径，不接受 userinfo、fragment、额外端口或重复参数，不跟随扫码地址。原生适配器核对返回 key 一致后按对应路径重建二维码内容，其他上游字段不能进入公共会话。旧路径继续兼容。
+
+账号错误保留受控的 `PLATFORM_RESPONSE_UNKNOWN`、`NETWORK_ERROR`、`RESOURCE_UNAVAILABLE`、`SESSION_WRITE_FAILED`、`LOGIN_IN_PROGRESS` 分类；未知错误仍归一，不输出响应正文、扫码 key、Cookie 或原始异常。`NETWORK_ERROR` 与已有临时网络错误同为可重试事实，不代表授权成功。
+
 Google OAuth 必须由用户亲自在 Y7000P 通过官方授权页完成；没有新 Desktop OAuth client 配置时返回 LOCAL_SETUP 与明确原因。Telegram 首次登录与夸克新会话导入可在 Y7000P 的受控本地入口完成，页面明确展示 LOCAL_SETUP，再由用户主动检查；不得声称已有浏览器自动登录能力。页面、Java 数据库和日志不接收或保存密码、验证码、Cookie、OAuth code 或 token。
 
 ## 内部执行
