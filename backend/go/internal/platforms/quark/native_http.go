@@ -209,6 +209,16 @@ func (c *NativeClient) Identity(ctx context.Context) (string, error) {
 	if c == nil || c.AccountID == "" || c.ExpectedUserID == "" {
 		return "", nativeFault("INVALID_INPUT", "IDENTITY")
 	}
+	return c.IdentifyForSetup(ctx)
+}
+
+// IdentifyForSetup performs only GET account/info. An unbound client may use it
+// for first-time local setup; a bound client can never silently change owners.
+// Business operations must continue to use Identity, which requires a binding.
+func (c *NativeClient) IdentifyForSetup(ctx context.Context) (string, error) {
+	if c == nil || c.AccountID == "" {
+		return "", nativeFault("INVALID_INPUT", "IDENTITY")
+	}
 	accountURL, err := c.accountURL()
 	if err != nil {
 		return "", nativeFault("INVALID_INPUT", "IDENTITY")
@@ -228,7 +238,7 @@ func (c *NativeClient) Identity(ctx context.Context) (string, error) {
 	if !ok || uid == "" {
 		return "", nativeFault("AUTH_REQUIRED", "IDENTITY")
 	}
-	if uid != c.ExpectedUserID {
+	if c.ExpectedUserID != "" && uid != c.ExpectedUserID {
 		return "", nativeFault("AUTH_REQUIRED", "IDENTITY")
 	}
 	return uid, nil
