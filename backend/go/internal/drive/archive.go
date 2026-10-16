@@ -59,19 +59,35 @@ type uploadRecord struct {
 
 type archiveAuthKey struct{}
 
+// archiveVerification is evidence collected by the read-only path. A missing
+// object is resumable only when its exact ID was persisted before the write.
+type archiveVerification struct {
+	planExists   bool
+	reservedOnly bool
+	incomplete   bool
+}
+
 // Archive never enumerates local directories or creates a business operation.
 // It creates only the remote directories implied by the immutable file list,
 // transfers those files, and verifies each reserved remote ID. Lost responses
 // are reconciled against persisted IDs before another write.
 func (c *Client) Archive(ctx context.Context, state *executor.State, operationID, root string, req ArchiveRequest) (ArchiveResult, error) {
-	return c.archive(ctx, state, operationID, root, req, true)
+	return c.archive(ctx, state, operationID, root, req, true, nil)
 }
 
 // Verify observes a persisted upload without resending bytes or reserving IDs.
 func (c *Client) Verify(ctx context.Context, state *executor.State, operationID, root string, req ArchiveRequest) (ArchiveResult, error) {
-	return c.archive(ctx, state, operationID, root, req, false)
+	result, _, err := c.verifyArchive(ctx, state, operationID, root, req)
+	return result, err
 }
-func (c *Client) archive(ctx context.Context, state *executor.State, operationID, root string, req ArchiveRequest, allowWrite bool) (ArchiveResult, error) {
+
+func (c *Client) verifyArchive(ctx context.Context, state *executor.State, operationID, root string, req ArchiveRequest) (ArchiveResult, archiveVerification, error) {
+	proof := archiveVerification{reservedOnly: true}
+	result, err := c.archive(ctx, state, operationID, root, req, false, &proof)
+	return result, proof, err
+}
+
+func (c *Client) archive(ctx context.Context, state *executor.State, operationID, root string, req ArchiveRequest, allowWrite bool, proof *archiveVerification) (ArchiveResult, error) {
 	result := ArchiveResult{ProjectID: req.ProjectID, ArchiveTarget: req.ArchiveTarget, Files: []ArchivedFile{}}
 	if state == nil || operationID == "" || req.SchemaVersion != 1 || req.ProjectID == "" || req.ArchivePolicy != "AUTO" || len(req.Files) == 0 || req.ArchiveTarget.AccountID != c.AccountID {
 		return result, fault("INVALID_ARCHIVE_MANIFEST")
@@ -125,6 +141,9 @@ func (c *Client) archive(ctx context.Context, state *executor.State, operationID
 	if record.Identity != identity || record.RemoteIDs == nil || record.Parents == nil {
 		return result, fault("ARCHIVE_MANIFEST_CHANGED")
 	}
+	if proof != nil {
+		proof.planExists = readErr == nil
+	}
 	if record.Folders == nil {
 		record.Folders = map[string]folderRecord{}
 	}
@@ -137,8 +156,13 @@ func (c *Client) archive(ctx context.Context, state *executor.State, operationID
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
-		parent, err := c.resolveParent(ctx, state, name, &record, identity, req.ArchiveTarget.FolderID, path.Dir(f.RelativePath), allowWrite)
+		parent, err := c.resolveParent(ctx, state, name, &record, identity, req.ArchiveTarget.FolderID, path.Dir(f.RelativePath), allowWrite, proof)
 		if err != nil {
+			if proof != nil && isCode(err, "ARCHIVE_NOT_CONFIRMED") {
+				proof.incomplete = true
+				proof.reservedOnly = false
+				continue
+			}
 			return result, err
 		}
 		if previous := record.Parents[f.OutputID]; previous != "" && previous != parent {
@@ -147,7 +171,9 @@ func (c *Client) archive(ctx context.Context, state *executor.State, operationID
 		remoteID := record.RemoteIDs[f.OutputID]
 		if remoteID == "" {
 			if !allowWrite {
-				return result, fault("ARCHIVE_NOT_CONFIRMED")
+				proof.incomplete = true
+				proof.reservedOnly = false
+				continue
 			}
 			remoteID, err = c.reserveID(ctx)
 			if err != nil {
@@ -163,7 +189,8 @@ func (c *Client) archive(ctx context.Context, state *executor.State, operationID
 		object, err := c.get(ctx, remoteID)
 		if isCode(err, "TARGET_NOT_FOUND") {
 			if !allowWrite {
-				return result, fault("ARCHIVE_NOT_CONFIRMED")
+				proof.incomplete = true
+				continue
 			}
 			if err = c.upload(ctx, remoteID, parent, path.Base(f.RelativePath), key, filepath.Join(root, filepath.FromSlash(f.RelativePath)), f.SizeBytes); err != nil {
 				return result, err
@@ -183,6 +210,9 @@ func (c *Client) archive(ctx context.Context, state *executor.State, operationID
 		if err := executor.VerifyFile(root, f.RelativePath, f.SHA256, f.SizeBytes); err != nil {
 			return result, fault("LOCAL_VERIFICATION_FAILED")
 		}
+	}
+	if proof != nil && proof.incomplete {
+		return result, fault("ARCHIVE_NOT_CONFIRMED")
 	}
 	result.Verified = true
 	return result, nil
