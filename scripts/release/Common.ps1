@@ -76,6 +76,14 @@ function Get-ToolVersion([string] $Executable, [ValidateSet('ffmpeg', 'ffprobe',
     $process.StartInfo.CreateNoWindow = $true
     $process.StartInfo.RedirectStandardOutput = $true
     $process.StartInfo.RedirectStandardError = $true
+    if ($Tool -eq 'tdl') {
+        # tdl initializes its home even for `version`. Never let that touch a user's default .tdl.
+        $probeHome = Get-FullPath (Join-Path ([IO.Path]::GetTempPath()) 'AllDownloads-v2/tool-probes/tdl-0.20.4')
+        [void][IO.Directory]::CreateDirectory($probeHome)
+        $process.StartInfo.EnvironmentVariables['USERPROFILE'] = $probeHome
+        $process.StartInfo.EnvironmentVariables['HOME'] = $probeHome
+        $process.StartInfo.EnvironmentVariables['TDL_DEBUG'] = 'false'
+    }
     try {
         [void]$process.Start()
         $stdout = $process.StandardOutput.ReadToEndAsync()

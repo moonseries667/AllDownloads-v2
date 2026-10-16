@@ -55,6 +55,38 @@ $script:bundle = Join-Path $output 'AllDownloads-v2-2026.10.16.1-windows-x64'
 $buildArguments = @{ Version = '2026.10.16.1'; FFmpegDirectory = $toolBin; TdlExecutable = (Join-Path $toolBin 'tdl.exe'); GoExecutable = (Join-Path $toolBin 'go.exe'); UsePrebuilt = $true; NoArchive = $true; JavaJar = $jarPath; RunnerExecutable = (Join-Path $toolBin 'runner.exe'); SessionSetupExecutable = (Join-Path $toolBin 'session-setup.exe'); FrontendDirectory = (Join-Path $inputRoot 'frontend'); OutputDirectory = $output }
 $deployments = [Collections.Generic.List[string]]::new()
 try {
+    Test-Case 'tdl version isolates child profile without changing the parent environment' {
+        $parentProfile = $env:USERPROFILE
+        $parentHomePath = $env:HOME
+        $parentDebug = $env:TDL_DEBUG
+        $previousCapture = $env:ALLDOWNLOADS_RELEASE_TEST_ENV_FILE
+        $capture = Join-Path $testRoot 'tdl-child-environment.json'
+        try {
+            $env:ALLDOWNLOADS_RELEASE_TEST_ENV_FILE = $capture
+            [void](Get-ToolVersion (Join-Path $toolBin 'tdl.exe') tdl)
+            $child = Read-JsonFile $capture
+            $probe = Get-FullPath (Join-Path ([IO.Path]::GetTempPath()) 'AllDownloads-v2/tool-probes/tdl-0.20.4')
+            Assert-True ($child.USERPROFILE -eq $probe -and $child.HOME -eq $probe -and $probe -ne $parentProfile) 'dedicated v2 child profile'
+            Assert-True ($child.TDL_DEBUG -eq 'false') 'tdl debug disabled in child only'
+            Assert-True ($env:USERPROFILE -eq $parentProfile -and $env:HOME -eq $parentHomePath -and $env:TDL_DEBUG -eq $parentDebug) 'parent profile and debug environment unchanged'
+        } finally { $env:ALLDOWNLOADS_RELEASE_TEST_ENV_FILE = $previousCapture }
+    }
+    Test-Case 'other version probes keep their inherited child environment' {
+        $parentProfile = $env:USERPROFILE
+        $parentHomePath = $env:HOME
+        $parentDebug = $env:TDL_DEBUG
+        $previousCapture = $env:ALLDOWNLOADS_RELEASE_TEST_ENV_FILE
+        try {
+            foreach ($tool in @('java', 'ffmpeg', 'ffprobe')) {
+                $capture = Join-Path $testRoot ($tool + '-child-environment.json')
+                $env:ALLDOWNLOADS_RELEASE_TEST_ENV_FILE = $capture
+                [void](Get-ToolVersion (Join-Path $toolBin ($tool + '.exe')) $tool)
+                $child = Read-JsonFile $capture
+                Assert-True ($child.USERPROFILE -eq [string]$parentProfile -and $child.HOME -eq [string]$parentHomePath -and $child.TDL_DEBUG -eq [string]$parentDebug) "$tool environment remains inherited"
+            }
+            Assert-True ($env:USERPROFILE -eq $parentProfile -and $env:HOME -eq $parentHomePath -and $env:TDL_DEBUG -eq $parentDebug) 'parent environment unchanged'
+        } finally { $env:ALLDOWNLOADS_RELEASE_TEST_ENV_FILE = $previousCapture }
+    }
     Test-Case 'bundle contains only declared release artifacts and no runtime' {
         & (Join-Path $PSScriptRoot '../Build-WindowsBundle.ps1') @buildArguments | Out-Null
         Assert-True (Test-Path -LiteralPath (Join-Path $script:bundle 'release/config-templates/runner.example.json')) 'configuration template'
