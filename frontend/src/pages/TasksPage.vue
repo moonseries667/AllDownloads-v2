@@ -4,13 +4,16 @@ import { useRoute, useRouter } from "vue-router";
 import { PureTable } from "@pureadmin/table";
 import { RefreshCw, AlertCircle, Activity } from "lucide-vue-next";
 import { api, dataRevision, notifyError, notifySuccess } from "../api/client";
-import { formatDate, formatBytes, platformName } from "../format";
+import { formatDate, formatBytes, platformName, taskPhaseName } from "../format";
 import StatusBadge from "../components/StatusBadge.vue";
 import SelectFilter from "../components/SelectFilter.vue";
+import { readAllPages } from "../api/pages";
+import { readAttentionIssues } from "../api/notifications";
+import type { ServerIssue } from "../notifications/store";
 const route = useRoute(),
   router = useRouter(),
   tasks = ref<any[]>([]),
-  issues = ref<any[]>([]),
+  issues = ref<ServerIssue[]>([]),
   platform = ref(""),
   status = ref(""),
   stage = ref(""),
@@ -18,6 +21,7 @@ const route = useRoute(),
   detail = ref<any>(null),
   open = ref(false),
   busy = ref("");
+const loading = ref(false), loadError = ref("");
 const actionName: Record<string, string> = {
   PAUSE: "暂停",
   RESUME: "继续",
@@ -34,6 +38,9 @@ const kindName: Record<string, string> = {
   VERIFY: "成果核对",
   AUTH: "账号登录",
 };
+function controlLabel(task: any) {
+  return task.desiredAction === "CANCEL" && !["SUCCEEDED", "FAILED", "CANCELLED"].includes(task.status) ? "正在取消" : undefined;
+}
 const filtered = computed(() =>
   tasks.value.filter(
     (t) =>
@@ -50,19 +57,23 @@ const columns = [
   { label: "可用操作", slot: "actions", minWidth: 220 },
 ];
 async function load() {
+  loading.value = true;
   try {
-    tasks.value = (await api.get("/tasks")).items;
-    issues.value = (await api.get("/issues")).items;
+    const [nextTasks, nextIssues] = await Promise.all([readAllPages<any>("/tasks"), readAttentionIssues()]);
+    tasks.value = nextTasks;
+    issues.value = nextIssues.filter(issue => !issue.resolved);
+    loadError.value = "";
     if (detail.value)
       detail.value = tasks.value.find((t) => t.id === detail.value.id);
   } catch (e) {
+    loadError.value = (e as Error).message;
     notifyError(e);
-  }
+  } finally { loading.value = false; }
 }
 async function act(t: any, action: string) {
   busy.value = t.id + action;
   try {
-    await api.post("/tasks/" + t.id + "/actions", { action }, t.revision);
+    await api.post("/tasks/" + encodeURIComponent(t.id) + "/actions", { action }, t.revision);
     notifySuccess(
       action === "CANCEL"
         ? "取消请求已记录，等待执行端确认"
@@ -78,27 +89,31 @@ async function act(t: any, action: string) {
 }
 async function acknowledge(id: string) {
   try {
-    await api.post("/issues/" + id + "/acknowledge");
+    await api.post("/issues/" + encodeURIComponent(id) + "/acknowledge");
     notifySuccess("已标为已读，问题仍需实际处理");
   } catch (e) {
     notifyError(e);
   }
 }
 async function show(t: any) {
+  if (!t?.id) return;
   try {
-    detail.value = await api.get("/tasks/" + t.id);
+    detail.value = await api.get("/tasks/" + encodeURIComponent(t.id));
     open.value = true;
   } catch (e) {
     notifyError(e);
   }
 }
-onMounted(async () => {
-  await load();
-  if (route.query.task) {
-    const t = tasks.value.find((t) => t.id === route.query.task);
-    if (t) show(t);
-  }
-});
+async function showTask(id: string | null) {
+  if (!id) return;
+  await show({ id });
+}
+onMounted(load);
+watch(() => [route.path, route.query.taskId, route.query.task], async () => {
+  if (route.path !== "/tasks") return;
+  const id = route.query.taskId || route.query.task;
+  if (typeof id === "string") await showTask(id);
+}, { immediate: true });
 watch(dataRevision, load);
 </script>
 <template>
@@ -111,6 +126,8 @@ watch(dataRevision, load);
       </div>
       <el-button :icon="RefreshCw" @click="load">刷新状态</el-button>
     </div>
+    <div v-if="loadError" class="mb16" role="alert"><p class="text-danger">读取失败：{{ loadError }}。已显示状态可能过期。</p><el-button @click="load">重新读取</el-button></div>
+    <p v-if="loading && !tasks.length" role="status">正在读取任务与问题…</p>
     <el-tabs v-model="tab"
       ><el-tab-pane
         :label="'全部任务 · ' + tasks.length"
@@ -187,13 +204,13 @@ watch(dataRevision, load);
         :columns="columns"
         row-key="id"
         locale="zhCn"
-        empty-text="暂无匹配任务"
+        :empty-text="loadError ? '任务记录暂时无法读取，请重新读取。' : loading ? '正在读取任务…' : '暂无匹配任务'"
         ><template #title="{ row }"
           ><button class="table-link" @click="show(row)">
-            {{ row.title }}
+            {{ row.title || taskPhaseName(row.phase) }}
           </button>
           <div class="muted">
-            {{ kindName[row.kind] }} · {{ row.phase }}
+            {{ kindName[row.kind] }} · {{ taskPhaseName(row.phase) }}
           </div></template
         ><template #platform="{ row }">{{
           platformName[row.platform]
@@ -202,14 +219,14 @@ watch(dataRevision, load);
           ><StatusBadge
             :state="row.status"
             :label="
-              row.desiredAction === 'CANCEL' ? '正在取消' : undefined
+              controlLabel(row)
             " /></template
         ><template #progress="{ row }"
-          ><span v-if="row.progress.totalItems !== null"
+          ><span v-if="row.progress?.totalItems != null"
             >{{ row.progress.doneItems }} /
             {{ row.progress.totalItems }} 项</span
           ><span v-else class="muted">总量待确认</span>
-          <div class="muted" v-if="row.progress.bytesPerSecond">
+          <div class="muted" v-if="row.progress?.bytesPerSecond">
             {{ formatBytes(row.progress.bytesPerSecond) }}/s
           </div></template
         ><template #actions="{ row }"
@@ -228,39 +245,40 @@ watch(dataRevision, load);
       >
     </div>
     <div v-else class="issue-list">
-      <el-empty v-if="!issues.length" description="没有需要处理的问题" />
+      <el-empty v-if="!issues.length && !loadError" description="没有需要处理的问题" />
       <article v-for="issue in issues" :key="issue.id" class="panel issue-card">
         <div class="issue-card-title">
           <AlertCircle :size="22" />
           <div>
-            <h2>{{ issue.title }}</h2>
+            <h2>{{ issue.code }}</h2>
             <span class="muted"
-              >{{ platformName[issue.platform] }} · {{ issue.phase }}</span
+              >{{ formatDate(issue.updatedAt) }}</span
             >
           </div>
           <span
             class="status-badge"
-            :class="issue.acknowledged ? 'muted' : 'bad'"
-            >{{ issue.acknowledged ? "已读 · 未解决" : "待处理" }}</span
+            :class="issue.read ? 'muted' : 'bad'"
+            >{{ issue.read ? "已读 · 未解决" : "待处理" }}</span
           >
         </div>
-        <p>{{ issue.error.message }}</p>
+        <p>{{ issue.message }}</p>
         <div class="next-step">
           <strong>下一步</strong
-          >{{ issue.error.action || "查看任务详情，处理原因后重试当前阶段。" }}
+          >查看任务详情，处理原因后重试当前阶段。
         </div>
         <div class="toolbar">
           <el-button
             type="primary"
             plain
-            @click="show(tasks.find((t) => t.id === issue.id))"
+            :disabled="!issue.taskId"
+            @click="showTask(issue.taskId)"
             >任务详情</el-button
           ><el-button
-            v-if="issue.error.code === 'AUTH_REQUIRED'"
+            v-if="issue.code === 'AUTH_REQUIRED'"
             @click="router.push('/settings')"
             >前往账号设置</el-button
           ><el-button
-            :disabled="issue.acknowledged"
+            :disabled="issue.read"
             @click="acknowledge(issue.id)"
             >标为已读</el-button
           >
@@ -269,20 +287,20 @@ watch(dataRevision, load);
     </div>
     <el-drawer v-model="open" title="任务详情" size="540px"
       ><template v-if="detail"
-        ><h2>{{ detail.title }}</h2>
+        ><h2>{{ detail.title || taskPhaseName(detail.phase) }}</h2>
         <StatusBadge
           :state="detail.status"
-          :label="detail.desiredAction === 'CANCEL' ? '正在取消' : undefined"
+          :label="controlLabel(detail)"
         />
         <dl class="detail-facts">
           <dt>任务 ID</dt>
           <dd>{{ detail.id }}</dd>
           <dt>当前阶段</dt>
-          <dd>{{ detail.phase }}</dd>
+          <dd>{{ taskPhaseName(detail.phase) }}（{{ detail.phase }}）</dd>
           <dt>已完成字节</dt>
-          <dd>{{ formatBytes(detail.progress.doneBytes) }}</dd>
+          <dd>{{ formatBytes(detail.progress?.doneBytes) }}</dd>
           <dt>已确认总量</dt>
-          <dd>{{ formatBytes(detail.progress.totalBytes) }}</dd>
+          <dd>{{ formatBytes(detail.progress?.totalBytes) }}</dd>
           <dt>创建时间</dt>
           <dd>{{ formatDate(detail.createdAt) }}</dd>
           <dt>下次重试</dt>
@@ -295,7 +313,7 @@ watch(dataRevision, load);
             :key="step"
             type="success"
             >{{ step }}</el-timeline-item
-          ><el-timeline-item type="primary">{{ detail.phase }}</el-timeline-item
+          ><el-timeline-item type="primary">{{ taskPhaseName(detail.phase) }}</el-timeline-item
           ><el-timeline-item
             v-for="step in detail.remainingSteps"
             :key="step"

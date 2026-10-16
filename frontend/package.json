@@ -5,21 +5,27 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
+    "dev:demo": "vite --mode demo --host 127.0.0.1 --port 5173 --strictPort",
     "build": "vue-tsc --noEmit && vite build",
+    "build:demo": "vue-tsc --noEmit && vite build --mode demo",
     "preview": "vite preview --host 127.0.0.1 --port 5173 --strictPort",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:java": "playwright test --config tests/java.playwright.config.ts --grep-invert @accounts",
+    "test:java:accounts": "playwright test --config tests/java.playwright.config.ts --grep @accounts"
   },
   "dependencies": {
     "@pureadmin/table": "3.3.0",
     "element-plus": "2.14.7",
     "lucide-vue-next": "0.577.0",
+    "qrcode": "1.5.4",
     "vue": "3.5.44",
     "vue-router": "4.6.3"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",
     "@types/node": "26.6.5",
+    "@types/qrcode": "1.5.6",
     "@vitejs/plugin-vue": "6.0.10",
     "typescript": "5.9.3",
     "vite": "8.3.4",

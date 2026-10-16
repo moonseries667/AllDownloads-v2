@@ -46,7 +46,9 @@ export function createArchiveSettingsApi(client: Client, wait: (ms: number) => P
         if (signal.aborted && !cancelRequested) { await client.post(path + "/cancel", {}); cancelRequested = true; }
         const selection = await client.get<DirectorySelection>(path);
         if (selection.status === "CANCELLED") return { status: "CANCELLED" };
-        if (selection.status === "UNAVAILABLE") return { status: "UNAVAILABLE", reason: errorMessage(selection.error, "运行主机的原生目录选择不可用。请确认使用同机浏览器和可交互桌面。") };
+        if (selection.status === "UNAVAILABLE") return { status: "UNAVAILABLE", reason: selection.error?.code === "RUNNER_UNAVAILABLE"
+          ? "Go 执行程序不可用，暂时无法打开系统目录窗口。原目录保持不变。"
+          : errorMessage(selection.error, "运行主机的原生目录选择不可用。请确认使用同机浏览器和可交互桌面。") };
         if (selection.status === "SELECTED") {
           if (signal.aborted) return { status: "CANCELLED" }; // Late selection never overwrites a cancelled draft.
           if (!selection.targetId) throw Error("目录选择缺少受控目标，请重新选择。");

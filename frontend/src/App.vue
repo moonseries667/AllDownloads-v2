@@ -68,6 +68,7 @@ async function load() {
   }
 }
 async function search() {
+  if (!isDemo) return;
   const n = ++searchRun;
   searching.value = true;
   try {
@@ -189,7 +190,8 @@ onBeforeUnmount(() => {
         class="connection-banner"
         role="alert"
       >
-        连接已中断 · 当前内容来自缓存，任务状态可能过期。恢复连接后将重新查询。
+        Java 数据读取未完成 · {{ connectionError || '连接中断' }}。已显示内容可能过期。
+        <button class="table-link" @click="dataRevision++">重新读取</button>
       </div>
       <AppMain />
       <footer class="app-footer">
@@ -219,7 +221,13 @@ onBeforeUnmount(() => {
         @keyup.enter="search"
         ><template #prefix><Search :size="18" /></template
       ></el-input>
-      <div v-loading="searching" class="search-results">
+      <div v-if="!isDemo" class="search-results">
+        <p class="muted">当前 Java 版本尚未提供全局搜索，可携带关键词进入平台内筛选。</p>
+        <button v-for="entry in [{platform:'BILIBILI', path:'/bilibili'}, {platform:'TELEGRAM', path:'/telegram'}, {platform:'QUARK', path:'/quark/cloud'}]" :key="entry.path" @click="router.push({ path:entry.path, query:q ? {q} : {} }); searchOpen = false">
+          <strong>{{ platformName[entry.platform] }}</strong><span>进入筛选</span><ChevronRight :size="16" />
+        </button>
+      </div>
+      <div v-else v-loading="searching" class="search-results">
         <button
           v-for="result in results"
           :key="result.platform + result.id"
