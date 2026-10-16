@@ -19,7 +19,8 @@ type ArchiveReconciliation struct {
 // Reconcile uses the same read-only verification as Verify and returns the
 // evidence needed to resume the original operation. It never creates a plan,
 // reserves an ID, creates a directory, or uploads bytes. Partial file facts do
-// not become a complete archive result.
+// not become a complete archive result. Unallocated future items can resume
+// under Archive's persist-before-write invariant, only with a matching plan.
 func (c *Client) Reconcile(ctx context.Context, state *executor.State, originalOperationID, root string, req ArchiveRequest) (ArchiveReconciliation, error) {
 	result := ArchiveReconciliation{OriginalOperationID: originalOperationID}
 	if err := ctx.Err(); err != nil {
@@ -43,6 +44,6 @@ func (c *Client) Reconcile(ctx context.Context, state *executor.State, originalO
 		code = failure.Code
 	}
 	result.ReasonCode = &code
-	result.SafeToResume = isCode(err, "ARCHIVE_NOT_CONFIRMED") && proof.planExists && proof.reservedOnly
+	result.SafeToResume = isCode(err, "ARCHIVE_NOT_CONFIRMED") && proof.planExists && proof.resumable
 	return result, nil
 }

@@ -58,8 +58,8 @@ Windows 令牌文件用当前用户的 DPAPI 加密（不使用机器级解密�
 
 1. 保留本地媒体、原操作 ID、冻结清单、目标和 Go 执行状态目录；先恢复同一账号认证。不要创建新上传任务来猜测旧结果。
 2. 使用 `Reconcile(ctx,state,originalUploadOperationID,localRoot,frozenRequest)`；原有 `Verify` 仍可用。传原上传操作 ID，不能拿新核对操作的 ID 查旧收据。二者共享只读核对路径，仅查询已保存的远端 ID、父目录、名称、大小、应用标记和 SHA-256/MD5，不写上传计划、不预留 ID、不创建目录、不重发媒体。必要本地文件仍须存在并符合冻结清单。
-3. `ArchiveReconciliation` 精确序列化为 `{originalOperationId,complete,safeToResume,archive,reasonCode}`。全部事实吻合时 `complete=true`，archive 为完整 verified 结果，safeToResume=false，reasonCode=null。未完成时 archive=null、reasonCode 为受控码；只有原持久计划存在、身份/目标/本机/冻结清单匹配、所有已观察对象无冲突，且缺项均有原预留 ID，才在 ARCHIVE_NOT_CONFIRMED 时返回 safeToResume=true。只读核对会继续检查缺项之后的文件，防止漏掉后续冲突；无计划、未预留对象、被删除的原有目录、校验/身份/权限/网络问题均不能推断可续传。context 取消作为 error 返回。
-4. 需要继续上传时由 Java 按用户动作和恢复策略安排原意图。再次 `Archive` 先核对旧 ID；只有缺失项才继续使用同一预生成 ID。Drive 会拒绝已经存在的 ID，避免产生同名重复对象。不能删除收据、换 operationId 或猜另一个目标来绕过核对。
+3. `ArchiveReconciliation` 精确序列化为 `{originalOperationId,complete,safeToResume,archive,reasonCode}`。全部事实吻合时 `complete=true`，archive 为完整 verified 结果，safeToResume=false，reasonCode=null。未完成时 archive=null、reasonCode 为受控码。只有原持久计划存在、身份/目标/完整本机文件清单及冻结请求全部匹配、已分配 ID 的对象无冲突，才在 ARCHIVE_NOT_CONFIRMED 时返回 safeToResume=true：既包括已预留但尚未确认的对象，也包括没有 RemoteID/父映射或尚无 FolderRecord 的未来项。后者依据执行器始终先持久保存预留 ID/目录映射、再发平台 write 的顺序，可证明从未发送；核对本身不补 ID 或目录。已分配文件却缺少可核对目录链、只有父映射却缺少文件 ID 等不一致状态仍拒绝续传。只读核对会继续检查缺项之后的文件，防止漏掉后续冲突；无计划、被删除的原有目录、校验/身份/权限/网络问题均不能推断可续传。context 取消作为 error 返回。
+4. 需要继续上传时由 Java 按用户动作和恢复策略安排原意图。再次 `Archive` 先核对旧 ID；已有预留 ID 的缺失项继续使用原 ID，尚未开始的未来项在实际执行时才分配并持久保存 ID/目录映射，再发送写入。Drive 会拒绝已经存在的 ID，避免产生同名重复对象。不能删除收据、换 operationId 或猜另一个目标来绕过核对。
 
 ## 本次验证与复现
 
@@ -74,7 +74,7 @@ go vet ./internal/drive
 go build -o bin/runner.exe ./cmd/runner
 ```
 
-`auth_test.go` 使用临时凭据、真实临时文件、Windows DPAPI 和本地 HTTP：并发刷新、重启复用、省略/轮换 refresh token、撤销与刷新失败、恶意错误正文脱敏、scope/身份变化、重定向拒绝、文件锁、OAuth state/PKCE、取消/轮询、上传响应丢失及上传401后的只读核对。`reconcile_test.go` 核对缺失计划、缺失预留对象、完整结果与 JSON、早期缺失后存在校验冲突、目标/本机/认证/网络失败及取消；核对前后平台写入计数和计划内容保持不变。原目录/清单/校验与相对目录恢复测试继续保留。
+`auth_test.go` 使用临时凭据、真实临时文件、Windows DPAPI 和本地 HTTP：并发刷新、重启复用、省略/轮换 refresh token、撤销与刷新失败、恶意错误正文脱敏、scope/身份变化、重定向拒绝、文件锁、OAuth state/PKCE、取消/轮询、上传响应丢失及上传401后的只读核对。`reconcile_test.go` 核对缺失计划、缺失预留对象、完整结果与 JSON、早期缺失后存在校验冲突、目标/本机/认证/网络失败及取消；另从真实上传路径制造“首项丢应答”和“首项已核验后中断”，确认后续未分配 ID 或目录映射仍可续传，同一原操作继续后首项不重复上传，并覆盖首次预留前中断及映射不一致。核对前后平台写入计数和计划内容保持不变。原目录/清单/校验与相对目录恢复测试继续保留。
 
 尚未验证：协调者 AccountWorker/Java/前端的组合认证链路、Y7000P 用户完成 Google OAuth、真实 Drive API/目录/上传及长时间运行。没有把本地 HTTP 通过算作真实账号验收。
 

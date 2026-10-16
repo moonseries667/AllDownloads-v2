@@ -48,7 +48,7 @@ func (c *Client) resolveParent(ctx context.Context, state *executor.State, state
 				if !allowWrite {
 					proof.incomplete = true
 					if !mapping.Created {
-						proof.reservedOnly = false
+						proof.resumable = false
 					}
 					// Keep following persisted IDs to inspect later objects;
 					// an early missing folder must not hide a later conflict.
