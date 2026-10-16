@@ -14,6 +14,8 @@ npm run build
 
 `dist` 为发布目录，浏览器通过相对 `/api/v1` 调用同机 Java。部署服务器需将 `/api` 交给 Java，其余业务路由回退到 `index.html`。不要向前端配置内部 runner token、账号 Cookie 或 Carbon 路径。生产构建不打包演示 transport 与种子数据；接口失败保留明确错误，不切换为演示或制造账号、任务和完成状态。普通 `build` 遇到 `VITE_API_MODE=demo` 会失败，防止误发演示产物。
 
+构建会从实际生效配置生成 `dist/release-build.json`，记录 `apiMode` 与 `apiBase`。根集成打包可将整个 `dist` 作为 prebuilt 输入；正式包应为 `{"apiMode":"http","apiBase":"/api/v1"}`，不手工改写此文件冒充构建模式。
+
 开发/临时预览可复制 `.env.example` 为不入库的 `.env.local`，启用 `DEV_JAVA_PROXY=http://127.0.0.1:8080`。Java 的 `alldownloads.allowed-origins` 需包含前端的准确 origin（开发默认 `http://127.0.0.1:5173`）；不使用通配符。执行 `npm run dev`；临时验证发布包可使用 `npm run preview`。Vite preview 用于验证构建，正式部署使用协调者确定的静态托管方式。
 
 当前消费基线为 `9e8234c`，账号增量依据协调者冻结的 `contracts/ACCOUNTS.md`。Bilibili 只用 `bilibili-main`；Telegram、夸克、Drive 分别为 `telegram-main`、`quark-main`、`drive-main`。账号普通读取不主动检查平台，检查只发 `CHECK_ACCOUNT`。登录使用服务端 AuthSession：本地生成官方二维码、由用户打开官方授权页、明确显示 LOCAL_SETUP、有限读取/轮询、带 revision 取消。页面不接收密码、验证码、Cookie 或 OAuth code/token，不持久化授权 URL。
@@ -34,7 +36,7 @@ npm run test:java
 
 包含账号增量的 Java jar 使用同样的环境变量执行 `npm run test:java:accounts`。该独立场景验证四个固定逻辑账号的真实响应、普通读取不排检查、主动检查返回持久 taskId，以及等待执行中的登录会话和带版本取消。旧 jar 的 404 会明确失败，不会用替身满足这项验收。
 
-本轮 Carbon 验证：102 项单元/适配测试、类型检查、发布构建、仓库结构检查通过；35 项历史 demo 浏览器场景通过。真实 Java 基础场景 5 项通过，其中 4 项使用实际 Java HTTP/SQLite，1 项明确为登录组件契约替身。账号独立场景待含账号增量的新 Java jar；成功媒体下载、设置保存、真实授权、Y7000P 和长期运行均未据此宣称通过。
+本轮 Carbon 验证：102 项单元/适配测试、类型检查、发布构建、仓库结构检查通过；35 项历史 demo 浏览器场景通过。真实 Java 基础场景 5 项通过，其中 4 项使用实际 Java HTTP/SQLite，1 项明确为登录组件契约替身。2026-10-17 复用含 Java 账号实现 `38b39cd` 的协调集成 jar，账号独立浏览器场景 1 项通过：四个固定账号、只读不排任务、主动检查、登录等待及带版本取消均使用实际 Java/SQLite。该场景不启动 Go，也不访问真实平台；成功媒体下载、设置保存、平台授权、Y7000P 和长期运行仍未据此宣称通过。
 
 显式演示入口为 `npm run dev:demo`；`npm run build:demo` 仅生成演示验收包。`npm run test:e2e` 的历史工作台场景使用明确的 demo mode，与上述真实 Java 浏览器测试分别记录。
 
