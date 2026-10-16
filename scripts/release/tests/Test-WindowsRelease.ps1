@@ -1,0 +1,290 @@
+#Requires -Version 5.1
+[CmdletBinding()]
+param([string] $GoExecutable = 'go.exe')
+. (Join-Path $PSScriptRoot '../Common.ps1')
+$repository = Get-FullPath (Join-Path $PSScriptRoot '../../..')
+$testRoot = Join-Path $repository ('artifacts/release-tests-' + [Guid]::NewGuid().ToString('N'))
+[void][IO.Directory]::CreateDirectory($testRoot)
+$script:passed = 0
+
+function Assert-True($Value, [string] $Message) {
+    if (-not $Value) { throw "Assertion failed: $Message" }
+}
+
+function Assert-Throws([scriptblock] $Action, [string] $Pattern) {
+    $caught = $null
+    try { & $Action | Out-Null } catch { $caught = $_.Exception.Message }
+    Assert-True ($null -ne $caught -and $caught -match $Pattern) "Expected failure /$Pattern/, got: $caught"
+}
+
+function Test-Case([string] $Name, [scriptblock] $Action) {
+    & $Action
+    $script:passed++
+    Write-Output "PASS $Name"
+}
+
+function Get-FreePort {
+    $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+    $listener.Start()
+    try { return $listener.LocalEndpoint.Port } finally { $listener.Stop() }
+}
+
+function New-TestDeployment([string] $Name) {
+    $root = Join-Path $testRoot $Name
+    & (Join-Path $PSScriptRoot '../Install-WindowsBundle.ps1') -BundleRoot $script:bundle -Root $root -Port (Get-FreePort) -JavaExecutable (Join-Path $testRoot 'tool-bin/java.exe') | Out-Null
+    return $root
+}
+
+$fixture = Join-Path $testRoot 'fixture.exe'
+$go = Resolve-Executable $GoExecutable
+Invoke-Checked $go @('build', '-trimpath', '-o', $fixture, (Join-Path $PSScriptRoot 'fixture.go'))
+$toolBin = Join-Path $testRoot 'tool-bin'
+[void][IO.Directory]::CreateDirectory($toolBin)
+foreach ($name in @('java', 'tdl', 'ffmpeg', 'ffprobe', 'rclone', 'go', 'runner', 'session-setup')) { Copy-Item -LiteralPath $fixture -Destination (Join-Path $toolBin "$name.exe") }
+$inputRoot = Join-Path $testRoot 'inputs'
+[void][IO.Directory]::CreateDirectory((Join-Path $inputRoot 'frontend/assets'))
+Write-NewText (Join-Path $inputRoot 'frontend/index.html') '<!doctype html><div id="app"></div><script src="/assets/app.js"></script>'
+Write-NewText (Join-Path $inputRoot 'frontend/assets/app.js') 'console.log("HTTP fixture")'
+Write-NewText (Join-Path $inputRoot 'frontend/release-build.json') '{"apiMode":"http","apiBase":"/api/v1"}'
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$jarPath = Join-Path $inputRoot 'backend.jar'
+$zip = [IO.Compression.ZipFile]::Open($jarPath, [IO.Compression.ZipArchiveMode]::Create)
+try { [void]$zip.CreateEntry('BOOT-INF/classes/dev/alldownloads/BackendApplication.class') } finally { $zip.Dispose() }
+$output = Join-Path $testRoot 'output'
+$script:bundle = Join-Path $output 'AllDownloads-v2-2026.10.16.1-windows-x64'
+$buildArguments = @{ Version = '2026.10.16.1'; FFmpegDirectory = $toolBin; TdlExecutable = (Join-Path $toolBin 'tdl.exe'); RcloneExecutable = (Join-Path $toolBin 'rclone.exe'); GoExecutable = (Join-Path $toolBin 'go.exe'); UsePrebuilt = $true; NoArchive = $true; JavaJar = $jarPath; RunnerExecutable = (Join-Path $toolBin 'runner.exe'); SessionSetupExecutable = (Join-Path $toolBin 'session-setup.exe'); FrontendDirectory = (Join-Path $inputRoot 'frontend'); OutputDirectory = $output }
+$deployments = [Collections.Generic.List[string]]::new()
+try {
+    Test-Case 'tdl version isolates child profile without changing the parent environment' {
+        $parentProfile = $env:USERPROFILE
+        $parentHomePath = $env:HOME
+        $parentDebug = $env:TDL_DEBUG
+        $previousCapture = $env:ALLDOWNLOADS_RELEASE_TEST_ENV_FILE
+        $capture = Join-Path $testRoot 'tdl-child-environment.json'
+        try {
+            $env:ALLDOWNLOADS_RELEASE_TEST_ENV_FILE = $capture
+            [void](Get-ToolVersion (Join-Path $toolBin 'tdl.exe') tdl)
+            $child = Read-JsonFile $capture
+            $probe = Get-FullPath (Join-Path ([IO.Path]::GetTempPath()) 'AllDownloads-v2/tool-probes/tdl-0.20.4')
+            Assert-True ($child.USERPROFILE -eq $probe -and $child.HOME -eq $probe -and $probe -ne $parentProfile) 'dedicated v2 child profile'
+            Assert-True ($child.TDL_DEBUG -eq 'false') 'tdl debug disabled in child only'
+            Assert-True ($env:USERPROFILE -eq $parentProfile -and $env:HOME -eq $parentHomePath -and $env:TDL_DEBUG -eq $parentDebug) 'parent profile and debug environment unchanged'
+        } finally { $env:ALLDOWNLOADS_RELEASE_TEST_ENV_FILE = $previousCapture }
+    }
+    Test-Case 'other version probes keep their inherited child environment' {
+        $parentProfile = $env:USERPROFILE
+        $parentHomePath = $env:HOME
+        $parentDebug = $env:TDL_DEBUG
+        $previousCapture = $env:ALLDOWNLOADS_RELEASE_TEST_ENV_FILE
+        try {
+            foreach ($tool in @('java', 'ffmpeg', 'ffprobe')) {
+                $capture = Join-Path $testRoot ($tool + '-child-environment.json')
+                $env:ALLDOWNLOADS_RELEASE_TEST_ENV_FILE = $capture
+                [void](Get-ToolVersion (Join-Path $toolBin ($tool + '.exe')) $tool)
+                $child = Read-JsonFile $capture
+                Assert-True ($child.USERPROFILE -eq [string]$parentProfile -and $child.HOME -eq [string]$parentHomePath -and $child.TDL_DEBUG -eq [string]$parentDebug) "$tool environment remains inherited"
+            }
+            Assert-True ($env:USERPROFILE -eq $parentProfile -and $env:HOME -eq $parentHomePath -and $env:TDL_DEBUG -eq $parentDebug) 'parent environment unchanged'
+        } finally { $env:ALLDOWNLOADS_RELEASE_TEST_ENV_FILE = $previousCapture }
+    }
+    Test-Case 'rclone version uses its dedicated probe config without reading account configuration' {
+        $previousCapture = $env:ALLDOWNLOADS_RELEASE_TEST_ENV_FILE
+        $parentConfig = $env:RCLONE_CONFIG
+        $parentProfile = $env:USERPROFILE
+        $capture = Join-Path $testRoot 'rclone-child-environment.json'
+        try {
+            $env:ALLDOWNLOADS_RELEASE_TEST_ENV_FILE = $capture
+            Assert-True ((Get-ToolVersion (Join-Path $toolBin 'rclone.exe') rclone) -eq '1.74.4') 'locked rclone version'
+            $child = Read-JsonFile $capture
+            $probe = Get-FullPath (Join-Path ([IO.Path]::GetTempPath()) 'AllDownloads-v2/tool-probes/rclone-1.74.4')
+            $probeConfig = Join-Path $probe 'rclone.conf'
+            Assert-True ($child.USERPROFILE -eq $probe -and $child.HOME -eq $probe -and $child.RCLONE_CONFIG -eq $probeConfig) 'rclone probe has isolated profile/config'
+            Assert-True ($child.args.Count -eq 3 -and $child.args[0] -eq 'version' -and $child.args[1] -eq '--config' -and $child.args[2] -eq $probeConfig) 'explicit probe config argument'
+            Assert-True ($env:RCLONE_CONFIG -eq $parentConfig -and $env:USERPROFILE -eq $parentProfile) 'parent rclone configuration unchanged'
+        } finally { $env:ALLDOWNLOADS_RELEASE_TEST_ENV_FILE = $previousCapture }
+    }
+    Test-Case 'bundle contains only declared release artifacts and no runtime' {
+        & (Join-Path $PSScriptRoot '../Build-WindowsBundle.ps1') @buildArguments | Out-Null
+        Assert-True (Test-Path -LiteralPath (Join-Path $script:bundle 'release/config-templates/runner.example.json')) 'configuration template'
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $script:bundle 'runtime'))) 'no runtime copied'
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $script:bundle 'scripts/release/tests'))) 'no test executable or fixture copied'
+        Assert-True ((Read-JsonFile (Join-Path $script:bundle 'release/release.json')).rclone -eq '1.74.4') 'rclone version in manifest'
+        foreach ($name in @('rclone.exe', 'COPYING', 'NOTICE.md')) { Assert-True (Test-Path -LiteralPath (Join-Path $script:bundle ('tools/rclone-1.74.4/' + $name)) -PathType Leaf) 'rclone executable/license/notice included' }
+    }
+    Test-Case 'installation refuses a bundle missing the rclone copyright file' {
+        $copying = Join-Path $script:bundle 'tools/rclone-1.74.4/COPYING'
+        $held = $copying + '.test-held'
+        Move-Item -LiteralPath $copying -Destination $held
+        try { Assert-Throws { & (Join-Path $PSScriptRoot '../Install-WindowsBundle.ps1') -BundleRoot $script:bundle -Root (Join-Path $testRoot 'missing-copyright') } 'copyright and license files are required' }
+        finally { Move-Item -LiteralPath $held -Destination $copying }
+    }
+    Test-Case 'existing bundle version is preserved' {
+        Assert-Throws { & (Join-Path $PSScriptRoot '../Build-WindowsBundle.ps1') @buildArguments } 'Output version already exists'
+    }
+    Test-Case 'demo build marker is refused' {
+        [IO.File]::WriteAllText((Join-Path $inputRoot 'frontend/release-build.json'), '{"apiMode":"demo","apiBase":"/api/v1"}')
+        Assert-Throws { & (Join-Path $PSScriptRoot '../Build-WindowsBundle.ps1') @buildArguments } 'demo or cross-origin'
+        [IO.File]::WriteAllText((Join-Path $inputRoot 'frontend/release-build.json'), '{"apiMode":"http","apiBase":"/api/v1"}')
+    }
+    Test-Case 'frontend private files are refused before copying' {
+        Write-NewText (Join-Path $inputRoot 'frontend/cookie.local.json') '{}'
+        Assert-Throws { & (Join-Path $PSScriptRoot '../Build-WindowsBundle.ps1') @buildArguments } 'Unexpected frontend release file'
+        Remove-Item -LiteralPath (Join-Path $inputRoot 'frontend/cookie.local.json')
+    }
+    Test-Case 'legacy path and unsafe versions are refused' {
+        Assert-Throws { Assert-DeploymentRoot 'D:\Code\Other\AllDownload' } 'old AllDownload'
+        Assert-Throws { Assert-DeploymentRoot 'D:\Code\Other\AllDownload\app' } 'old AllDownload'
+        Assert-Throws { Assert-Version '../1' } 'safe, unique'
+        Assert-Throws { Assert-Version '1.' } 'safe, unique'
+        Assert-Throws { Assert-ChildPath $testRoot (Join-Path $testRoot '../outside') } 'must be below'
+    }
+    Test-Case 'SSH startup is refused before writing runtime or starting processes' {
+        $previousSsh = $env:SSH_CONNECTION
+        try {
+            $env:SSH_CONNECTION = 'local-test-placeholder'
+            $guardRoot = Join-Path $testRoot 'guard-not-started'
+            Assert-Throws { & (Join-Path $PSScriptRoot '../Start-AllDownloads.ps1') -Root $guardRoot } 'Admin desktop session'
+            Assert-True (-not (Test-Path -LiteralPath $guardRoot)) 'guard precedes all deployment writes'
+        } finally { $env:SSH_CONNECTION = $previousSsh }
+    }
+    Test-Case 'fresh and stale runner observations use UTC across PowerShell date types' {
+        $now = [DateTime]::UtcNow
+        $health = ('{"data":{"runtime":{"services":[{"id":"java","state":"ACTIVE"},{"id":"go","state":"ACTIVE","lastSeenAt":"' + $now.ToString('o') + '"}]}}}') | ConvertFrom-Json
+        Assert-True (Test-HealthPhase $health -Runner -NotBeforeUtcTicks $now.AddSeconds(-1).Ticks) 'fresh runner accepted'
+        Assert-True (-not (Test-HealthPhase $health -Runner -NotBeforeUtcTicks $now.AddSeconds(1).Ticks)) 'stale runner rejected'
+    }
+    $root = New-TestDeployment 'deploy 空格'
+    $deployments.Add($root)
+    Test-Case 'installation initializes fresh runtime with no account sessions' {
+        $runner = Read-JsonFile (Join-Path $root 'runtime/config/runner.local.json')
+        Assert-True ($runner.allowedRoots[0] -eq (Join-Path $root 'downloads')) 'download root'
+        Assert-True (@($runner.telegram.accounts.PSObject.Properties).Count -eq 0) 'no Telegram login'
+        Assert-True ($runner.bilibili.cookieFile -eq (Join-Path $root 'runtime/auth/bilibili.session') -and $runner.bilibili.expectedUserId -eq '') 'one new Bilibili session path; first UID may be empty'
+        $drive = $runner.driveAccounts.'drive-main'
+        Assert-True ($drive.rootId -eq 'root' -and $drive.rclone.executable -eq (Join-Path $root 'tools/rclone-1.74.4/rclone.exe') -and $drive.rclone.configFile -eq 'C:/Users/WIN/AppData/Roaming/rclone/rclone.conf' -and $drive.rclone.remote -eq 'gdrive') 'user-authorized rclone configuration source'
+        Assert-True ($drive.rclone.bindingFile -eq (Join-Path $root 'runtime/auth/drive-binding.json')) 'new identity binding stays in v2 runtime'
+        foreach ($field in @('tokenEnv', 'tokenFile', 'clientFile')) { Assert-True (-not ($drive.PSObject.Properties.Name -contains $field)) 'rclone authentication does not also configure Google Desktop credentials' }
+        Assert-True ($runner.driveMount.enabled -and $runner.driveMount.accountId -eq 'drive-main' -and $runner.driveMount.cacheDir -eq (Join-Path $root 'runtime/cache/gdrive')) 'default mount uses the same account and a fresh v2 cache'
+        Assert-True ($runner.telegram.proxyURL -eq 'http://127.0.0.1:40000' -and $drive.proxyURL -eq 'http://127.0.0.1:40000') 'user-selected per-component WARP proxy'
+        foreach ($path in @($runner.bilibili.cookieFile, $drive.rclone.bindingFile)) { Assert-True (-not (Test-Path -LiteralPath $path)) 'no platform credential or identity binding file created by default' }
+        Assert-True ((Get-Item -LiteralPath (Join-Path $root 'runtime/auth/runner.token')).Length -ge 32) 'new token exists (contents not read)'
+    }
+    Test-Case 'private config and internal token survive initialization' {
+        $settingsPath = Join-Path $root 'runtime/config/deployment.local.json'
+        $before = Get-Content -LiteralPath $settingsPath -Raw
+        $runnerPath = Join-Path $root 'runtime/config/runner.local.json'
+        $runnerBefore = Get-Content -LiteralPath $runnerPath -Raw
+        $tokenTime = (Get-Item -LiteralPath (Join-Path $root 'runtime/auth/runner.token')).LastWriteTimeUtc
+        [void](Initialize-Runtime $root 9090 'does-not-exist.exe')
+        Assert-True ($before -eq (Get-Content -LiteralPath $settingsPath -Raw)) 'existing config kept'
+        Assert-True ($runnerBefore -eq (Get-Content -LiteralPath $runnerPath -Raw)) 'existing runner config kept'
+        Assert-True ($tokenTime -eq (Get-Item -LiteralPath (Join-Path $root 'runtime/auth/runner.token')).LastWriteTimeUtc) 'token not rewritten'
+    }
+    Test-Case 'lifecycle lock prevents simultaneous mutations' {
+        $lock = Enter-DeploymentLock $root
+        try { Assert-Throws { Enter-DeploymentLock $root } 'holds the deployment lock' } finally { $lock.Dispose() }
+    }
+    Test-Case 'runtime start reaches Java, Go, frontend and deep-route readiness' {
+        $result = Start-Deployment $root 8
+        Assert-True ($result.status -eq 'RUNNING') 'running after all checks'
+        $state = Get-ProcessState $root
+        Assert-True ($state.processes.Count -eq 2) 'only two recorded children'
+        $status = & (Join-Path $PSScriptRoot '../Get-AllDownloadsStatus.ps1') -Root $root | ConvertFrom-Json
+        Assert-True ($status.healthy -and $status.processes.Count -eq 2) 'status endpoint checks both recorded children'
+        Assert-Throws { Start-Deployment $root 5 } 'live recorded process'
+        Assert-Throws { & (Join-Path $PSScriptRoot '../Install-WindowsBundle.ps1') -BundleRoot $script:bundle -Root $root } 'already installed'
+        $manifestPath = Join-Path $script:bundle 'release/release.json'
+        $manifest = Read-JsonFile $manifestPath
+        try {
+            $manifest.version = '2026.10.16.2'
+            Write-JsonFile $manifestPath $manifest
+            Assert-Throws { & (Join-Path $PSScriptRoot '../Install-WindowsBundle.ps1') -BundleRoot $script:bundle -Root $root } 'Stop this deployment'
+        } finally { $manifest.version = '2026.10.16.1'; Write-JsonFile $manifestPath $manifest }
+    }
+    Test-Case 'PID reuse mismatch cannot stop an unrelated live process' {
+        $record = (Get-ProcessState $root).processes[0]
+        $forged = [pscustomobject]@{ name = $record.name; pid = $record.pid; executablePath = $record.executablePath; startTimeTicks = '1' }
+        Assert-True ($null -eq (Get-RecordedProcess $forged)) 'mismatched birth time rejected'
+        Stop-RecordedProcesses ([pscustomobject]@{ processes = @($forged) })
+        Assert-True ($null -ne (Get-RecordedProcess $record)) 'unmatched process remains alive'
+    }
+    Test-Case 'mount failure preserves the healthy base services and status follows recovery' {
+        $pendingRoot = New-TestDeployment 'mount-pending'
+        $deployments.Add($pendingRoot)
+        $marker = Join-Path $pendingRoot 'mount-pending'
+        Write-NewText $marker 'synthetic WinFsp failure'
+        $result = Start-Deployment $pendingRoot 2
+        Assert-True ($result.status -eq 'RUNNING_WITH_MOUNT_PENDING' -and $result.mount.state -eq 'NOT_MOUNTED' -and $result.mount.reasonCode -eq 'WINFSP_REQUIRED') 'mount failure is explicitly partial'
+        $pendingState = Get-ProcessState $pendingRoot
+        foreach ($record in $pendingState.processes) { Assert-True ($null -ne (Get-RecordedProcess $record)) 'healthy base process kept for diagnosis' }
+        $status = & (Join-Path $PSScriptRoot '../Get-AllDownloadsStatus.ps1') -Root $pendingRoot | ConvertFrom-Json
+        Assert-True (-not $status.healthy -and $status.mountRequired -and $status.status -eq 'RUNNING_WITH_MOUNT_PENDING' -and $LASTEXITCODE -eq 1) 'required unmounted drive is not reported healthy'
+        Remove-Item -LiteralPath $marker
+        $status = & (Join-Path $PSScriptRoot '../Get-AllDownloadsStatus.ps1') -Root $pendingRoot | ConvertFrom-Json
+        Assert-True ($status.healthy -and $status.mount.state -eq 'MOUNTED' -and $status.status -eq 'RUNNING' -and $LASTEXITCODE -eq 0) 'live mount observation permits recovery without restarting base processes'
+        & (Join-Path $PSScriptRoot '../Stop-AllDownloads.ps1') -Root $pendingRoot | Out-Null
+    }
+    Test-Case 'stop is scoped and repeatable' {
+        & (Join-Path $PSScriptRoot '../Stop-AllDownloads.ps1') -Root $root | Out-Null
+        & (Join-Path $PSScriptRoot '../Stop-AllDownloads.ps1') -Root $root | Out-Null
+        foreach ($record in (Get-ProcessState $root).processes) { Assert-True ($null -eq (Get-RecordedProcess $record)) 'recorded process stopped' }
+        Assert-True (Test-Path -LiteralPath (Join-Path $root 'runtime/config/runner.local.json')) 'private config preserved'
+    }
+    Test-Case 'new release activation preserves private configuration and installed tools' {
+        $manifestPath = Join-Path $script:bundle 'release/release.json'
+        $manifest = Read-JsonFile $manifestPath
+        $configPath = Join-Path $root 'runtime/config/runner.local.json'
+        $configBefore = Get-Content -LiteralPath $configPath -Raw
+        $toolBefore = (Get-Item -LiteralPath (Join-Path $root 'tools/ffmpeg-9.0.2/ffmpeg.exe')).LastWriteTimeUtc
+        try {
+            $manifest.version = '2026.10.16.2'
+            Write-JsonFile $manifestPath $manifest
+            & (Join-Path $PSScriptRoot '../Install-WindowsBundle.ps1') -BundleRoot $script:bundle -Root $root | Out-Null
+            Assert-True ((Read-JsonFile (Join-Path $root 'app/current.json')).version -eq '2026.10.16.2') 'new version activated'
+            Assert-True (Test-Path -LiteralPath (Join-Path $root 'app/releases/2026.10.16.1/runner.exe')) 'old version retained'
+            Assert-True ($configBefore -eq (Get-Content -LiteralPath $configPath -Raw)) 'private runner config retained'
+            Assert-True ($toolBefore -eq (Get-Item -LiteralPath (Join-Path $root 'tools/ffmpeg-9.0.2/ffmpeg.exe')).LastWriteTimeUtc) 'existing tool not overwritten'
+        } finally { $manifest.version = '2026.10.16.1'; Write-JsonFile $manifestPath $manifest }
+    }
+    foreach ($failure in @('fail-runner', 'fail-front')) {
+        $failureRoot = New-TestDeployment $failure
+        $deployments.Add($failureRoot)
+        Write-NewText (Join-Path $failureRoot $failure) 'intentional fixture failure'
+        Test-Case "$failure leaves diagnostics and stops only newly recorded children" {
+            Assert-Throws { Start-Deployment $failureRoot 5 } 'Startup failed'
+            $state = Get-ProcessState $failureRoot
+            Assert-True ($state.status -eq 'START_FAILED') 'diagnostic state'
+            foreach ($record in $state.processes) { Assert-True ($null -eq (Get-RecordedProcess $record)) 'failed children stopped' }
+            Assert-True (@(Get-ChildItem -LiteralPath (Join-Path $failureRoot 'runtime/logs') -File).Count -ge 2) 'failure logs retained'
+        }
+    }
+    Test-Case 'state persistence failure still cleans up the child already started' {
+        $failureRoot = New-TestDeployment 'fail-state-write'
+        $deployments.Add($failureRoot)
+        $savedWriter = (Get-Command Write-JsonFile).ScriptBlock
+        function Write-JsonFile([string] $Path, $Value) {
+            if ($Value.status -eq 'STARTING' -and $Value.processes.Count -gt 0) { throw 'deliberate state write failure' }
+            & $savedWriter $Path $Value
+        }
+        Assert-Throws { Start-Deployment $failureRoot 5 } 'deliberate state write failure'
+        $state = Get-ProcessState $failureRoot
+        Assert-True ($state.status -eq 'START_FAILED') 'failure state persisted after cleanup'
+        Assert-True ($state.processes.Count -eq 1) 'one started child recorded'
+        Assert-True ($null -eq (Get-RecordedProcess $state.processes[0])) 'child stopped despite persistence failure'
+    }
+    Test-Case 'occupied loopback port is not taken over' {
+        $occupiedRoot = New-TestDeployment 'occupied'
+        $deployments.Add($occupiedRoot)
+        $settings = Read-JsonFile (Join-Path $occupiedRoot 'runtime/config/deployment.local.json')
+        $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, [int]$settings.port)
+        $listener.Start()
+        try { Assert-Throws { Start-Deployment $occupiedRoot 5 } 'occupied' } finally { $listener.Stop() }
+        Assert-True ($null -eq (Get-ProcessState $occupiedRoot)) 'no child process started'
+    }
+    Write-Output "$script:passed release checks passed. Synthetic processes only. Evidence: $testRoot"
+} finally {
+    foreach ($deployment in $deployments) {
+        $state = Get-ProcessState $deployment
+        if ($null -ne $state) { Stop-RecordedProcesses $state }
+    }
+}

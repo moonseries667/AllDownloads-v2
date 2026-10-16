@@ -75,6 +75,8 @@ type Client struct {
 	Token func() string
 	// BaseURL is a private loopback-only fixture seam. Empty uses Google.
 	BaseURL string
+	auth    *googleAuth
+	rclone  *rcloneAuth
 }
 
 func fault(code string) error  { return media.Fail(code, "DRIVE", false) }
@@ -96,10 +98,22 @@ func (c *Client) base() (string, error) {
 	return strings.TrimSuffix(c.BaseURL, "/"), nil
 }
 func (c *Client) request(ctx context.Context, method, address string, body io.Reader, headers http.Header) (*http.Response, error) {
-	if c.Token == nil || c.AccountID == "" {
+	if c.AccountID == "" || (c.Token == nil && !c.persistentAuth()) {
 		return nil, fault("AUTH_REQUIRED")
 	}
-	token := c.Token()
+	token := ""
+	if c.persistentAuth() {
+		stored, err := c.credentials(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if binding, _ := ctx.Value(archiveAuthKey{}).(string); binding != "" && binding != authBinding(stored) {
+			return nil, fault("ACCOUNT_IDENTITY_CHANGED")
+		}
+		token = stored.AccessToken
+	} else {
+		token = c.Token()
+	}
 	if token == "" {
 		return nil, fault("AUTH_REQUIRED")
 	}
@@ -140,6 +154,14 @@ func (c *Client) request(ctx context.Context, method, address string, body io.Re
 	case 400:
 		return nil, fault("INVALID_CURSOR")
 	case 401:
+		// Never replay writes here: an upload may already have taken effect.
+		// Expire this exact token so the next attempt refreshes before the
+		// archive reconciles its stable remote IDs.
+		if c.persistentAuth() {
+			if err := c.invalidate(token); err != nil {
+				return nil, err
+			}
+		}
 		return nil, fault("AUTH_REQUIRED")
 	case 403:
 		return nil, fault("TARGET_PERMISSION_DENIED")
@@ -195,6 +217,15 @@ func checkFolder(obj Object) error {
 }
 func (c *Client) root(ctx context.Context) (Object, error) {
 	id := c.RootID
+	if c.rclone != nil {
+		stored, err := c.credentials(ctx)
+		if err != nil {
+			return Object{}, err
+		}
+		if id == "" || id == "root" {
+			id = stored.SourceRootID
+		}
+	}
 	if id == "" {
 		id = "root"
 	}

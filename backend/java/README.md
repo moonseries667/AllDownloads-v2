@@ -35,6 +35,24 @@ Java 21 独占产品 SQLite、公共 HTTP、媒体选择和路径计划；Go 独
 
 第一/二部分的契约与行为由其提交接续，第三部分没有重建公共 HTTP、租约或平台扫描系统。
 
+## 账号与授权流程
+
+`GET /api/v1/accounts` 返回固定 `bilibili-main`、`telegram-main`、`quark-main`、`drive-main` 的持久状态，初始为 UNKNOWN。只有用户主动 `POST /accounts/{id}/check` 才排 `CHECK_ACCOUNT`；Go 的实际检查结果才能写 ACTIVE。B 站来源同步、资料读取和媒体下载未指定账号时均绑定 `bilibili-main`。
+
+授权步骤为带 Idempotency-Key 的 `POST /api/v1/auth-sessions {platform}`、只读 `GET /auth-sessions/{id}`、带新幂等键的 `POST /auth-sessions/{id}/steps {action:"POLL"}`。每个平台复用同一未结束流程；每次已经完成的 BEGIN/POLL 后，新的用户 POLL 创建不同 AUTH_STEP operation。`DELETE /auth-sessions/{id}` 必须提交 GET 的 ETag 作为 If-Match，立即保存 CANCELLED 并排 CANCEL，迟到成功不能复活。取消不会清除已保存账号或取消媒体任务。
+
+Java 将流程上限固定为十分钟，Go 可以缩短；GET 不排操作也不写状态，五秒维护事务和启动恢复持久处理过期及清理。Java 重启沿用同一流程与操作；失联操作保留队列的 RESULT_UNKNOWN 核对语义，超过流程截止时间无法接受迟到成功。失败结果显示 NEEDS_ACTION/NONE 与明确原因，须取消后重新开始；LOCAL_SETUP 流程可在 Y7000P 配置后主动检查或 POLL。Telegram、夸克首次配置和缺少 Desktop OAuth client 的 Drive 依赖 Go 返回 LOCAL_SETUP，Java 不接收任何密码、验证码、Cookie 或 token。授权完成不会自动检查账号、扫描内容或重放未知上传。
+
+`AccountsFlowTest` 与 `AccountsHttpTest` 使用隔离 SQLite、合成 Go 结果和真实回环 HTTP 验证四账号、幂等、官方 URL、版本取消、旧结果、过期、重启及单账号引用；不访问真实平台。Java 只保存允许的公共字段及自行生成的安全提示，授权结果去重仅保存摘要，避免把原始平台提示存入事件表。
+
+Drive 明确报告 AUTH_CLIENT_REQUIRED 或 AUTH_SESSION_NOT_FOUND 时，公共流程显示 NEEDS_ACTION/LOCAL_SETUP 和中文配置原因；原 DPAPI 模式保留 Desktop OAuth client 配置说明。AUTH_MANAGED_EXTERNALLY 则提示用户在 Y7000P 完成指定 rclone remote 授权后主动检查，不要求为该路径另建 Desktop OAuth client。内部 AccountFact/AuthSessionFact 可省略 Java 管理的 revision/taskId，空 expiresAt 使用 Java 的有界截止时间。跨 origin 取消支持 DELETE 预检及 If-Match，并向前端暴露 ETag；HTTP 测试捕获保存为 `target/accounts-captures.json` 供冻结 schema 核验。
+
+## 上传核对与恢复
+
+上传进入 NEEDS_ACTION 后，通过已有 `POST /tasks/{id}/actions {action:"RECONCILE"}` 与 If-Match 请求只读 VERIFY_ARCHIVE。Java 从原操作复制 accountRef、destination、storageRevision 及完整 upload payload；核对不创建新上传身份。完整结果经原 `uploadResult` 校验后确认原任务并解决对应问题；只有 safeToResume 才重排原 operationId，保留 PAUSE/CANCEL。其他观察继续 NEEDS_ACTION，核对结束或失败后可重新申请。旧核对结果绑定其申请时的原上传 attempt/fencing token，不能覆盖后来继续执行的上传。
+
+来源/媒体元数据、账号检查、目录读取与校验等明确只读操作在 NEEDS_ACTION 支持用户显式 RETRY。上传失败不自动重发；Go 在上传字节写入前执行纯身份/root/quota Check，只有该次 NEEDS_ACTION/RETRYABLE_ERROR 回报明确含两个空 effects 数组，且错误码不属于未知、中断或停止未确认类，才记录原 code/event 并开放显式 RETRY；AUTH_RCLONE_FAILED、NETWORK_TEMPORARY 等前置读取失败也适用。RESULT_UNKNOWN 状态、RESULT_UNKNOWN/RUNNER_INTERRUPTED/CONTROL_PERSIST_FAILED/TOOL_STOP_UNCONFIRMED 等错误，以及缺失、null 或非空 effects 继续先核对，不触发重新下载。认证或代理恢复本身不重排任务。`ArchiveRecoveryTest` 验证固定计划、取消/暂停、重复观察、跨重启、旧结果、事务回滚和上述重试边界；它使用合成 Go 事实，不代表真实 Drive 核对已验收。
+
 ## 构建与测试
 
 锁定 Spring Boot 3.5.16、sqlite-jdbc 3.53.4.0、Maven Wrapper 3.3.4、Maven 3.9.16、Surefire 3.5.6。使用 Java 21，在本模块运行：
@@ -43,7 +61,7 @@ Java 21 独占产品 SQLite、公共 HTTP、媒体选择和路径计划；Go 独
 .\mvnw.cmd --batch-mode --no-transfer-progress -DfailIfNoTests=true verify
 ```
 
-Carbon 验证复用旧后端已下载的锁定 Maven/依赖缓存，使用隔离测试目录；缓存中的依赖来自 `aliyun-public` 镜像，因此离线构建使用相同 mirror id 的临时 settings。该主机路径不进入产品配置。Windows Wrapper 修复了普通目录 Target=null 时的空数组索引；未更换 Wrapper 或依赖版本。
+Carbon 验证复用已预热的锁定 Maven/依赖缓存，使用隔离测试目录；离线构建添加 `-o -Dmaven.repo.local=<已预热的本地仓库>`，不使用旧 aliyun settings。JUnit 临时目录可通过 `-DargLine=-Djava.io.tmpdir=<工作树>/backend/java/target/junit-temp` 固定在工作区；既有强制终止子进程测试若遇到 shm 文件 AccessDenied/IOERR_TRUNCATE，需按执行边界在沙盒外复验，不能跳过该项。该主机路径不进入产品配置。Windows Wrapper 修复了普通目录 Target=null 时的空数组索引；未更换 Wrapper 或依赖版本。
 
 `BusinessFlowTest` 验证第一部分业务、排序/日期/分页、置顶/重启、季身份、空选择、AI 排除、未知大小、目录/资源变更、精确去重和 NONE 的重试/重启/重放。`HttpBoundaryTest` 启动真实回环 Spring HTTP 与临时 SQLite，验证 envelope、幂等、ETag 和内部身份隔离。原 `TaskStoreTest/TaskStoreProcessTest` 保留原事务/进程恢复用例。业务单测使用合成 Go 事实，不当作真实文件或平台验收。
 

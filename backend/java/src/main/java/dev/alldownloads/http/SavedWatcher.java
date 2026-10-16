@@ -11,5 +11,5 @@ import org.springframework.scheduling.annotation.Scheduled;
 public class SavedWatcher {
     private final BusinessApplication app;
     public SavedWatcher(BusinessApplication app){this.app=app;}
-    @Scheduled(fixedDelay=5000,initialDelay=5000) public void check(){app.feedback.tick();}
+    @Scheduled(fixedDelay=5000,initialDelay=5000) public void check(){app.store.tx(()->{app.auth.expire();return null;});app.feedback.tick();}
 }

@@ -16,17 +16,22 @@ public final class BusinessApplication {
     public final FeedbackService feedback;
     public final StorageSettings storageSettings;
     public final DownloadManagement management;
+    public final AuthService auth;
+    public final ArchiveRecovery archiveRecovery;
     public BusinessApplication(BusinessStore store,String defaultRoot) {
         this.store=store;queue=new OperationQueue(store);catalog=new CatalogService(store,queue);downloads=new DownloadService(store,catalog,queue);
         storageSettings=new StorageSettings(store,queue);management=new DownloadManagement(store,queue,storageSettings);downloads.management(management,storageSettings);
         feedback=new FeedbackService(store,queue,downloads);
-        queue.onReconcile(feedback::reconcile);
-        queue.onReport(feedback::reported);
+        auth=new AuthService(store,queue);
+        archiveRecovery=new ArchiveRecovery(store,queue,management);
+        queue.onReconcile(op->{if(text(op,"operationType").equals("UPLOAD_ARTIFACT"))archiveRecovery.request(op);else feedback.reconcile(op);});
+        queue.onReport((op,request,status)->{auth.reported(op,request,status);feedback.reported(op,request,status);});
         queue.onCompletion(this::complete);
         queue.onOutcome(this::outcome);
-        store.tx(()->{downloads.configureDefault(defaultRoot);queue.expire();management.promote();return null;});
+        store.tx(()->{auth.initialize();downloads.configureDefault(defaultRoot);queue.expire();management.promote();return null;});
     }
     private void complete(JsonNode operation,JsonNode result) throws SQLException {
+        if(auth.complete(operation,result))return;
         if(feedback.complete(operation,result))return;
         switch(text(operation,"operationType")) {
             case "VALIDATE_TARGET" -> downloads.targetResult(operation,result);
@@ -34,6 +39,7 @@ public final class BusinessApplication {
             case "FETCH_BIL_METADATA" -> catalog.importContent(result.path("content"),null);
             case "DOWNLOAD_MEDIA" -> downloads.downloadResult(operation,result);
             case "UPLOAD_ARTIFACT" -> management.uploadResult(operation,result);
+            case "VERIFY_ARCHIVE" -> archiveRecovery.complete(operation,result);
             case "SELECT_LOCAL_DIRECTORY" -> storageSettings.selectionResult(operation,result);
             case "LIST_DRIVE_FOLDERS" -> storageSettings.foldersResult(operation,result);
             case "VALIDATE_DRIVE_TARGET" -> storageSettings.driveValidationResult(operation,result);
@@ -60,6 +66,6 @@ public final class BusinessApplication {
         }
         long download=store.all("task").stream().filter(t->text(t,"kind").equals("DOWNLOAD")&&text(t,"status").equals("SUCCEEDED")).count();long archive=store.all("file").stream().filter(f->text(f,"archiveState").equals("VERIFIED")).count();
         boolean refreshing=store.all("task").stream().anyMatch(t->text(t,"phase").equals("SYNC_BIL_SOURCE")&&Set.of("QUEUED","RUNNING","WAITING_RETRY").contains(text(t,"status")));
-        return object("runtime",object("state",ready?"RUNNING":"PARTIAL","observedAt",store.now(),"services",services,"mount",mount),"bilibili",object("accountState",active&&newest.path("facts").path("accountState").isTextual()?text(newest.path("facts"),"accountState"):"UNKNOWN","refreshState",refreshing?"REFRESHING":"IDLE","downloadCount",download,"archiveCount",archive));
+        return object("runtime",object("state",ready?"RUNNING":"PARTIAL","observedAt",store.now(),"services",services,"mount",mount),"bilibili",object("accountState",auth.account("bilibili-main").path("state"),"refreshState",refreshing?"REFRESHING":"IDLE","downloadCount",download,"archiveCount",archive));
     }
 }

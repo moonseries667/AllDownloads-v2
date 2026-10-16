@@ -2,19 +2,21 @@
 
 本模块在 Carbon 开发和隔离验证，正式运行目标仍为 Y7000P。Java 唯一决定选择、路径、任务、重试和归档；Go 取得平台事实并执行冻结计划，浏览器不调用 Go。当前共同契约已通过 PR #29 合入主线 `0b34a82`，保留第一部分 `d508c7a` 的兼容语义；协议版本和 payload schemaVersion 均为 1。
 
-正式命令已装配 Telegram `tdl 0.20.4` 与夸克原生 HTTP 客户端，复用同一发布、收据、租约及取消循环。会话与启动配置见下节；平台模块见 [说明](internal/platforms/README.md)。生产适配器已用本地协议替身验证，真实账号与 Y7000P 验收尚未进行。
+正式命令已装配单账号 Bilibili、Telegram `tdl 0.20.4`、夸克原生 HTTP、Drive 同源授权和受管 G 盘挂载，复用同一发布、收据、租约及取消循环。完整 Windows 包、同源前端及启停方式见 [Y7000P 发布说明](../../docs/Y7000P.md)。生产适配器已用本地协议替身验证，真实账号与 Y7000P 验收尚未进行。
 
 ## 正式启动与新会话配置
+
+Bilibili 读取和下载使用同一个 `bilibili-main` 会话；首次由用户在账号页扫码，后续登录必须匹配已绑定身份，失效不匿名降级。Drive 按用户明确指定的既有 rclone 配置共用 `gdrive` 授权，原 DPAPI OAuth 作为另一显式模式保留；详细接入见 [Bilibili](internal/platforms/bilibili/README.md)、[Drive 挂载](internal/drive/MOUNT.md)。tdl 和 Drive 固定走用户指定的 WARP 40000 代理，故障不直连退化。Telegram/夸克首次设置通过 [session-setup](cmd/session-setup/README.md) 在 Y7000P 交互终端完成，再重启并主动检查账号。普通 GET 和启动不触发登录或收藏扫描。
 
 复制 [runner.example.json](runner.example.json) 到不入库的 `runner.local.json`，按实际运行主机修改绝对路径。Java 的 `alldownloads.runner-token-file` 与 Go `tokenFile` 指向同一个私有内部认证文件；也可只配置 `tokenEnv`，两者不能同时配置。token、Cookie、账号会话都不放到参数、日志或 Git。
 
 先构建并启动 Java，再运行 `go build -o bin/runner.exe ./cmd/runner`、`bin/runner.exe -config <runner.local.json>`；`-once` 只注册、恢复收据并最多执行一个操作。默认未配置账号的操作返回明确 AUTH_REQUIRED；缺 FFmpeg/会话/身份不伪造成功。Telegram 配置为空时启动不会检查 tdl；配置账号后只在本地核对工具版本，普通启动仍不访问收藏夹。
 
-Telegram 由用户在正式运行主机为 v2 新建 tdl namespace/storage，以官方二维码或手机号流程登录，不使用 Desktop 导入旧会话。工具来源是 [tdl 0.20.4 官方发布](https://github.com/iyear/tdl/releases/tag/v0.20.4)，操作依据 [登录](https://docs.iyear.me/tdl/getting-started/quick-start/)、[结构化导出](https://docs.iyear.me/tdl/guide/tools/export-messages/) 与 [下载](https://docs.iyear.me/tdl/guide/download/)。登录时显式使用 `tdl --ns alldownloads-v2 --storage type=bolt,path=<新私有会话目录> login -T qr`，由用户亲自完成；`peerId` 填该新会话 Saved Messages 导出的根 `id`。Go 每次解析都会核对该身份，不把 namespace 名当作平台身份。不要运行不带新 storage 的登录或迁移命令。
+Telegram 通过 `session-setup --platform telegram` 建立新的 namespace/storage，用户亲自扫码，工具再以只读 Self 请求绑定 `peerId`，不列聊天或扫描收藏来推断身份。工具来源是 [tdl 0.20.4 官方发布](https://github.com/iyear/tdl/releases/tag/v0.20.4)，操作依据 [登录](https://docs.iyear.me/tdl/getting-started/quick-start/)、[结构化导出](https://docs.iyear.me/tdl/guide/tools/export-messages/) 与 [下载](https://docs.iyear.me/tdl/guide/download/)。Go 每次解析都会核对身份；不要运行缺少新 storage 的登录或 Desktop 导入命令。
 
-tdl 会在进程初始化访问用户目录；Go 仅为自己的子进程将 USERPROFILE 固定到 `<stateDir>/telegram-work/tool-home`，避免隐式读取默认 `.tdl`。显式 storage 仍指向上述新会话目录。工具日志留在私有运行范围，错误只映射受控原因；限流返回等待秒数，取消终止该文件的受控进程树。每次下载只输入一个冻结 message，不启用 `--group` 扩大操作范围，下载前后核对附件身份，发布仍由统一 executor 完成。
+tdl 会在进程初始化访问用户目录；Go 仅为自己的子进程将 USERPROFILE/HOME 固定到 `<stateDir>/telegram-work/tool-home`，避免隐式读取默认 `.tdl`。显式 storage 仍指向上述新会话目录。工具日志留在私有运行范围，错误只映射受控原因；限流返回等待秒数，取消终止该文件的受控进程树。每次下载只输入一个冻结 message，不启用 `--group` 扩大操作范围，下载前后核对附件身份，发布仍由统一 executor 完成。
 
-夸克由用户为新产品提供新登录态的私有 cookie 文件及 `/account/info` 的稳定 `uid`，分别填 `cookieFile` / `expectedUserId`。程序不会读取旧应用或浏览器的凭据；操作时重新读取受控文件，核对真实 uid。会话过期返回 AUTH_REQUIRED，更新同一账号的新会话后显式重试/核对；账号变化会阻止旧意图继续。Native HTTP 请求形状参考 [作者实现](https://github.com/Cp0204/quark-auto-save/blob/main/quark_auto_save.py) 与 [OpenList Quark 类型](https://github.com/OpenListTeam/OpenList/blob/main/drivers/quark_uc/types.go)，未引入第三方 Go 依赖或 Node/Python 业务后台。
+夸克通过 `session-setup --platform quark` 在 Y7000P 隐藏输入新 Cookie，并只读核对、绑定真实 `uid` 后保存 `cookieFile` / `expectedUserId`。程序不读取旧应用或浏览器凭据。会话过期返回 AUTH_REQUIRED，更新同一账号的新会话后显式重试/核对；账号变化阻止旧意图继续。Native HTTP 请求形状参考 [作者实现](https://github.com/Cp0204/quark-auto-save/blob/main/quark_auto_save.py) 与 [OpenList Quark 类型](https://github.com/OpenListTeam/OpenList/blob/main/drivers/quark_uc/types.go)，保留原生 Go HTTP 适配。
 
 转存前持久化账号、源快照、固定目标与节点基线；超时后按 task/remote ID 或新节点的强校验事实核对。RESULT_UNKNOWN 只提供 RECONCILE，核对操作不发 save；证明剩余从未发送后才恢复同一 operationId，PAUSE/CANCEL 意图继续生效。每小时追更及手动刷新由 Java 统一调度，新增只转存；选择下载另走冻结清单。下载校验稳定节点、版本、长度与平台 SHA1/MD5，再由 executor 记录本机 SHA-256。
 
@@ -157,7 +159,7 @@ Java 本地组合测试可增加 `fixtureCatalog`，指向临时 JSON 文件。�
 
 原生请求结构参考 [yt-dlp Bilibili 提取器](https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/bilibili.py)，字幕证据参考 [字幕 API 参数追溯](https://github.com/gcnyin/bilibili-subtitle-api)。本轮仅读取公开开发资料，没有请求实际 Bilibili 账号/内容。接口变化、WBI、账号权限、付费/地区限制、收藏夹/合集大规模扫描和实际 XML 弹幕仍需获准后在 Y7000P 实测。
 
-电影各版本按平台真实单元返回，不伪造 P；依据实际 DASH audio 的 language/language_doc 等字段按语言保留最高可用音轨，形成 LANGUAGE 单元并保留共享视频身份，字段依据见 [BBDown Rust 平台解析器](https://github.com/Joey-Project/BBDown-rust/blob/master/crates/bbdown/src/client.rs)。未提供语言的音轨不猜标签。额外 `dubbing_info` 结构遇到时报告 ALTERNATE_AUDIO_METADATA_UNSUPPORTED。非 DASH/DRM/未知媒体结构不伪造可下载轨道。Bilibili 账号登录/session 装载与云盘挂载探测仍有缺项；Telegram/夸克正式会话装载及 Drive 上传实现见前文，真实账号与云端结果未验收。
+电影各版本按平台真实单元返回，不伪造 P；依据实际 DASH audio 的 language/language_doc 等字段按语言保留最高可用音轨，形成 LANGUAGE 单元并保留共享视频身份，字段依据见 [BBDown Rust 平台解析器](https://github.com/Joey-Project/BBDown-rust/blob/master/crates/bbdown/src/client.rs)。未提供语言的音轨不猜标签。额外 `dubbing_info` 结构遇到时报告 ALTERNATE_AUDIO_METADATA_UNSUPPORTED。非 DASH/DRM/未知媒体结构不伪造可下载轨道。各平台会话及 G 盘组件已接入；真实账号、Explorer、云端结果与长期运行仍待 Y7000P 验收。
 
 ## 正式入口的隔离跨进程复现
 

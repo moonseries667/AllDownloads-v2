@@ -50,10 +50,22 @@ type ArchiveResult struct {
 	Verified      bool           `json:"verified"`
 }
 type uploadRecord struct {
-	Identity  string
-	RemoteIDs map[string]string
-	Parents   map[string]string
-	Folders   map[string]folderRecord
+	Identity    string
+	AuthBinding string `json:"authBinding,omitempty"`
+	RemoteIDs   map[string]string
+	Parents     map[string]string
+	Folders     map[string]folderRecord
+}
+
+type archiveAuthKey struct{}
+
+// archiveVerification is evidence collected by the read-only path. Existing
+// IDs are reconciled; future items without a persisted ID were never sent,
+// because Archive always persists the reservation before issuing a write.
+type archiveVerification struct {
+	planExists bool
+	resumable  bool
+	incomplete bool
 }
 
 // Archive never enumerates local directories or creates a business operation.
@@ -61,17 +73,34 @@ type uploadRecord struct {
 // transfers those files, and verifies each reserved remote ID. Lost responses
 // are reconciled against persisted IDs before another write.
 func (c *Client) Archive(ctx context.Context, state *executor.State, operationID, root string, req ArchiveRequest) (ArchiveResult, error) {
-	return c.archive(ctx, state, operationID, root, req, true)
+	return c.archive(ctx, state, operationID, root, req, true, nil)
 }
 
 // Verify observes a persisted upload without resending bytes or reserving IDs.
 func (c *Client) Verify(ctx context.Context, state *executor.State, operationID, root string, req ArchiveRequest) (ArchiveResult, error) {
-	return c.archive(ctx, state, operationID, root, req, false)
+	result, _, err := c.verifyArchive(ctx, state, operationID, root, req)
+	return result, err
 }
-func (c *Client) archive(ctx context.Context, state *executor.State, operationID, root string, req ArchiveRequest, allowWrite bool) (ArchiveResult, error) {
+
+func (c *Client) verifyArchive(ctx context.Context, state *executor.State, operationID, root string, req ArchiveRequest) (ArchiveResult, archiveVerification, error) {
+	proof := archiveVerification{resumable: true}
+	result, err := c.archive(ctx, state, operationID, root, req, false, &proof)
+	return result, proof, err
+}
+
+func (c *Client) archive(ctx context.Context, state *executor.State, operationID, root string, req ArchiveRequest, allowWrite bool, proof *archiveVerification) (ArchiveResult, error) {
 	result := ArchiveResult{ProjectID: req.ProjectID, ArchiveTarget: req.ArchiveTarget, Files: []ArchivedFile{}}
 	if state == nil || operationID == "" || req.SchemaVersion != 1 || req.ProjectID == "" || req.ArchivePolicy != "AUTO" || len(req.Files) == 0 || req.ArchiveTarget.AccountID != c.AccountID {
 		return result, fault("INVALID_ARCHIVE_MANIFEST")
+	}
+	binding := ""
+	if c.persistentAuth() {
+		stored, err := c.credentials(ctx)
+		if err != nil {
+			return result, err
+		}
+		binding = authBinding(stored)
+		ctx = context.WithValue(ctx, archiveAuthKey{}, binding)
 	}
 	seenID, seenPath := map[string]bool{}, map[string]bool{}
 	for _, f := range req.Files {
@@ -97,12 +126,24 @@ func (c *Client) archive(ctx context.Context, state *executor.State, operationID
 	}{filepath.Clean(root), req})
 	identity := digest(raw)
 	name := "upload-" + digest([]byte(operationID))
-	record := uploadRecord{Identity: identity, RemoteIDs: map[string]string{}, Parents: map[string]string{}}
-	if err := state.Read(name, &record); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return result, err
+	var record uploadRecord
+	readErr := state.Read(name, &record)
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		return result, readErr
+	}
+	// Do not silently adopt legacy records whose actual Google identity was
+	// never pinned. They remain available to the original tokenEnv client.
+	if readErr == nil && record.AuthBinding != binding {
+		return result, fault("ACCOUNT_IDENTITY_CHANGED")
+	}
+	if errors.Is(readErr, os.ErrNotExist) {
+		record = uploadRecord{Identity: identity, AuthBinding: binding, RemoteIDs: map[string]string{}, Parents: map[string]string{}}
 	}
 	if record.Identity != identity || record.RemoteIDs == nil || record.Parents == nil {
 		return result, fault("ARCHIVE_MANIFEST_CHANGED")
+	}
+	if proof != nil {
+		proof.planExists = readErr == nil
 	}
 	if record.Folders == nil {
 		record.Folders = map[string]folderRecord{}
@@ -116,8 +157,18 @@ func (c *Client) archive(ctx context.Context, state *executor.State, operationID
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
-		parent, err := c.resolveParent(ctx, state, name, &record, identity, req.ArchiveTarget.FolderID, path.Dir(f.RelativePath), allowWrite)
+		parent, err := c.resolveParent(ctx, state, name, &record, identity, req.ArchiveTarget.FolderID, path.Dir(f.RelativePath), allowWrite, proof)
 		if err != nil {
+			if proof != nil && isCode(err, "ARCHIVE_NOT_CONFIRMED") {
+				proof.incomplete = true
+				// An unmapped future directory is safe only if this file has
+				// not been allocated either. Otherwise its known remote ID
+				// cannot be checked against the frozen parent chain.
+				if record.RemoteIDs[f.OutputID] != "" || record.Parents[f.OutputID] != "" {
+					proof.resumable = false
+				}
+				continue
+			}
 			return result, err
 		}
 		if previous := record.Parents[f.OutputID]; previous != "" && previous != parent {
@@ -126,7 +177,14 @@ func (c *Client) archive(ctx context.Context, state *executor.State, operationID
 		remoteID := record.RemoteIDs[f.OutputID]
 		if remoteID == "" {
 			if !allowWrite {
-				return result, fault("ARCHIVE_NOT_CONFIRMED")
+				proof.incomplete = true
+				// With no ID and no parent mapping, the write-ahead invariant
+				// proves this future file was never sent. A partial mapping
+				// is inconsistent and cannot establish that fact.
+				if record.Parents[f.OutputID] != "" {
+					proof.resumable = false
+				}
+				continue
 			}
 			remoteID, err = c.reserveID(ctx)
 			if err != nil {
@@ -142,7 +200,8 @@ func (c *Client) archive(ctx context.Context, state *executor.State, operationID
 		object, err := c.get(ctx, remoteID)
 		if isCode(err, "TARGET_NOT_FOUND") {
 			if !allowWrite {
-				return result, fault("ARCHIVE_NOT_CONFIRMED")
+				proof.incomplete = true
+				continue
 			}
 			if err = c.upload(ctx, remoteID, parent, path.Base(f.RelativePath), key, filepath.Join(root, filepath.FromSlash(f.RelativePath)), f.SizeBytes); err != nil {
 				return result, err
@@ -162,6 +221,9 @@ func (c *Client) archive(ctx context.Context, state *executor.State, operationID
 		if err := executor.VerifyFile(root, f.RelativePath, f.SHA256, f.SizeBytes); err != nil {
 			return result, fault("LOCAL_VERIFICATION_FAILED")
 		}
+	}
+	if proof != nil && proof.incomplete {
+		return result, fault("ARCHIVE_NOT_CONFIRMED")
 	}
 	result.Verified = true
 	return result, nil

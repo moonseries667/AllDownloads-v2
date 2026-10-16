@@ -1,29 +1,41 @@
 {
   "runnerId": "runner-y7000p",
   "controlUrl": "http://127.0.0.1:8080",
-  "tokenFile": "C:/AllDownloads-v2/runtime/auth/runner.token",
-  "stateDir": "C:/AllDownloads-v2/runtime/runner",
-  "allowedRoots": ["D:/Downloads"],
-  "roots": {"download-root": "D:/Downloads"},
-  "ffmpeg": "C:/AllDownloads-v2/tools/ffmpeg.exe",
-  "ffprobe": "C:/AllDownloads-v2/tools/ffprobe.exe",
+  "tokenFile": "D:/Code/Other/AllDownloads-v2/runtime/auth/runner.token",
+  "stateDir": "D:/Code/Other/AllDownloads-v2/runtime/runner",
+  "allowedRoots": [
+    "D:/Code/Other/AllDownloads-v2/downloads"
+  ],
+  "roots": {
+    "download-root": "D:/Code/Other/AllDownloads-v2/downloads"
+  },
+  "ffmpeg": "D:/Code/Other/AllDownloads-v2/tools/ffmpeg-9.0.2/ffmpeg.exe",
+  "ffprobe": "D:/Code/Other/AllDownloads-v2/tools/ffmpeg-9.0.2/ffprobe.exe",
+  "bilibili": {
+    "cookieFile": "D:/Code/Other/AllDownloads-v2/runtime/auth/bilibili.session",
+    "expectedUserId": ""
+  },
   "telegram": {
-    "executable": "C:/AllDownloads-v2/tools/tdl.exe",
-    "accounts": {
-      "telegram-main": {
-        "namespace": "alldownloads-v2",
-        "storageDir": "C:/AllDownloads-v2/runtime/auth/telegram",
-        "peerId": "REPLACE_WITH_NEW_SESSION_USER_ID"
+    "executable": "D:/Code/Other/AllDownloads-v2/tools/tdl-0.20.4/tdl.exe",
+    "proxyURL": "http://127.0.0.1:40000",
+    "accounts": {}
+  },
+  "quarkAccounts": {},
+  "driveAccounts": {
+    "drive-main": {
+      "rootId": "root",
+      "proxyURL": "http://127.0.0.1:40000",
+      "rclone": {
+        "executable": "D:/Code/Other/AllDownloads-v2/tools/rclone-1.74.4/rclone.exe",
+        "configFile": "C:/Users/WIN/AppData/Roaming/rclone/rclone.conf",
+        "remote": "gdrive",
+        "bindingFile": "D:/Code/Other/AllDownloads-v2/runtime/auth/drive-binding.json"
       }
     }
   },
-  "quarkAccounts": {
-    "quark-main": {
-      "cookieFile": "C:/AllDownloads-v2/runtime/auth/quark-cookie.local",
-      "expectedUserId": "REPLACE_WITH_NEW_SESSION_QUARK_UID"
-    }
-  },
-  "driveAccounts": {
-    "drive-main": {"tokenEnv": "ALLDOWNLOADS_DRIVE_ACCESS_TOKEN", "rootId": "root"}
+  "driveMount": {
+    "enabled": true,
+    "accountId": "drive-main",
+    "cacheDir": "D:/Code/Other/AllDownloads-v2/runtime/cache/gdrive"
   }
 }

@@ -25,6 +25,7 @@ type StorageWorker struct {
 	Picker      DirectoryPicker
 	PickerReady func() bool
 	Drives      map[string]*drive.Client
+	LocalFacts  func() map[string]any
 }
 
 func (w *StorageWorker) SupportsOperation(op Operation) bool {
@@ -34,7 +35,7 @@ func (w *StorageWorker) SupportsOperation(op Operation) bool {
 	switch op.OperationType {
 	case "SELECT_LOCAL_DIRECTORY":
 		return w.Picker != nil
-	case "LIST_DRIVE_FOLDERS", "VALIDATE_DRIVE_TARGET", "UPLOAD_ARTIFACT":
+	case "LIST_DRIVE_FOLDERS", "VALIDATE_DRIVE_TARGET", "UPLOAD_ARTIFACT", "VERIFY_ARCHIVE":
 		return len(w.Drives) > 0
 	}
 	if adapter, ok := w.Next.(interface{ SupportsOperation(Operation) bool }); ok {
@@ -55,7 +56,7 @@ func (w *StorageWorker) Capabilities() []string {
 		caps = append(caps, "SELECT_LOCAL_DIRECTORY")
 	}
 	if len(w.Drives) > 0 {
-		caps = append(caps, "LIST_DRIVE_FOLDERS", "VALIDATE_DRIVE_TARGET", "UPLOAD_ARTIFACT")
+		caps = append(caps, "LIST_DRIVE_FOLDERS", "VALIDATE_DRIVE_TARGET", "UPLOAD_ARTIFACT", "VERIFY_ARCHIVE")
 	}
 	return caps
 }
@@ -65,7 +66,13 @@ func (w *StorageWorker) RegistrationFacts() map[string]any {
 	if !available {
 		reason = pointer("NATIVE_PICKER_UNAVAILABLE")
 	}
-	return map[string]any{"directoryPicker": map[string]any{"available": available, "reasonCode": reason, "hostId": w.HostID}}
+	facts := map[string]any{"directoryPicker": map[string]any{"available": available, "reasonCode": reason, "hostId": w.HostID}}
+	if w.LocalFacts != nil {
+		for key, value := range w.LocalFacts() {
+			facts[key] = value
+		}
+	}
+	return facts
 }
 func (w *StorageWorker) client(account string, op Operation) (*drive.Client, error) {
 	c := w.Drives[account]
@@ -150,6 +157,8 @@ func (w *StorageWorker) Handle(ctx context.Context, op Operation) (any, []File, 
 		return map[string]any{"validationId": p.ValidationID, "target": target, "writable": true}, nil, nil
 	case "UPLOAD_ARTIFACT":
 		return w.archive(ctx, op, false)
+	case "VERIFY_ARCHIVE":
+		return w.reconcileArchive(ctx, op)
 	default:
 		if w.Next == nil {
 			return nil, nil, media.Fail("UNSUPPORTED_OPERATION", "EXECUTE", false)
@@ -159,12 +168,24 @@ func (w *StorageWorker) Handle(ctx context.Context, op Operation) (any, []File, 
 }
 func (w *StorageWorker) archive(ctx context.Context, op Operation, verify bool) (any, []File, error) {
 	var p drive.ArchiveRequest
-	if decode(op.Payload, &p) != nil || op.Destination == nil || w.Roots == nil {
+	if decode(op.Payload, &p) != nil || p.SchemaVersion != 1 || p.ProjectID == "" || p.ArchivePolicy != "AUTO" || len(p.Files) == 0 || op.Destination == nil || w.Roots == nil {
 		return nil, nil, media.Fail("INVALID_PAYLOAD", "UPLOAD", false)
 	}
 	c, err := w.client(p.ArchiveTarget.AccountID, op)
 	if err != nil {
+		if !verify && media.Classify(err, "DRIVE").Code == "AUTH_REQUIRED" {
+			return nil, nil, &uploadPreflightFailure{code: "AUTH_REQUIRED"}
+		}
 		return nil, nil, err
+	}
+	if !verify {
+		// This stage is read-only and precedes every upload write. Its precise
+		// no-effects preflight failure lets the user fix access and retry the
+		// same intent; later failures still require remote reconciliation.
+		if err := c.Check(ctx); err != nil {
+			code := media.Classify(err, "DRIVE").Code
+			return nil, nil, &uploadPreflightFailure{code: code}
+		}
 	}
 	root, err := w.Roots.canonicalRoot(op.Destination.RootPath)
 	if err != nil {
@@ -184,6 +205,13 @@ func (w *StorageWorker) archive(ctx context.Context, op Operation, verify bool) 
 		files = append(files, File{OutputID: done.OutputID, RelativePath: done.RelativePath, SizeBytes: done.SizeBytes, SHA256: done.SHA256, Verified: true})
 	}
 	return result, files, err
+}
+
+type uploadPreflightFailure struct{ code string }
+
+func (f *uploadPreflightFailure) Error() string { return "DRIVE: " + f.code }
+func (f *uploadPreflightFailure) RunnerFailure() (string, *ResultError) {
+	return "NEEDS_ACTION", &ResultError{Code: f.code, Message: "上传尚未开始，请检查账号、代理和目录后重试", CompletedEffects: []string{}, PendingEffects: []string{}}
 }
 func (w *StorageWorker) Recover(op Operation) (any, []File, bool, error) {
 	if op.OperationType == "UPLOAD_ARTIFACT" {

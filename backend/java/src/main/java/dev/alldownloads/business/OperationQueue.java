@@ -9,6 +9,7 @@ import static dev.alldownloads.business.Json.*;
 
 /** One persistent queue for metadata, downloads and archive stages; called within the store transaction. */
 public final class OperationQueue {
+    private static final Set<String> READ_ONLY=Set.of("SYNC_BIL_SOURCE","FETCH_BIL_METADATA","CHECK_ACCOUNT","CHECK_QUARK_SHARE","LIST_QUARK_TREE","LIST_DRIVE_FOLDERS","VALIDATE_TARGET","VALIDATE_DRIVE_TARGET","VERIFY_ARCHIVE","RECONCILE_QUARK_TRANSFER");
     private final BusinessStore store;
     @FunctionalInterface public interface Completion { void accept(JsonNode operation,JsonNode result) throws Exception; }
     private Completion completion=(op,result)->{};
@@ -30,12 +31,13 @@ public final class OperationQueue {
         if(prior!=null)return prior[0];
         String taskId=id(),operationId=id();
         ObjectNode task=object("id",taskId,"platform",platform,"kind",kind(type),"status","QUEUED","phase",type,"progress",null,"desiredAction","CONTINUE","allowedActions",List.of("PAUSE","CANCEL"),"error",null,"nextRetryAt",null,"createdAt",store.now(),"updatedAt",store.now(),"revision","1");
-        ObjectNode op=object("protocolVersion",1,"operationId",operationId,"taskId",taskId,"operationType",type,"platform",platform,"accountRef",payload.path("accountId").isTextual()?text(payload,"accountId"):null,"resourceKey",key,"storageRevision",storageRevision,"destination",destination,"payload",payload);
+        String accountRef=payload.path("accountId").isTextual()?text(payload,"accountId"):platform.equals("BILIBILI")&&Set.of("SYNC_BIL_SOURCE","FETCH_BIL_METADATA","DOWNLOAD_MEDIA").contains(type)?"bilibili-main":null;
+        ObjectNode op=object("protocolVersion",1,"operationId",operationId,"taskId",taskId,"operationType",type,"platform",platform,"accountRef",accountRef,"resourceKey",key,"storageRevision",storageRevision,"destination",destination,"payload",payload);
         store.put("task",taskId,task);
         store.update("INSERT INTO operations(id,task_id,type,resource_key,body,status,created) VALUES(?,?,?,?,?,'QUEUED',?)",operationId,taskId,type,key,op.toString(),store.millis());
         return taskId;
     }
-    private String kind(String type) { return switch(type) { case "DOWNLOAD_MEDIA"->"DOWNLOAD";case "UPLOAD_ARTIFACT"->"UPLOAD";case "VERIFY_ARCHIVE"->"VERIFY";case "TRANSFER_QUARK_ITEMS","RECONCILE_QUARK_TRANSFER"->"TRANSFER_SYNC";default->"INFO_SYNC"; }; }
+    private String kind(String type) { return switch(type) { case "CHECK_ACCOUNT","AUTH_STEP"->"AUTH";case "DOWNLOAD_MEDIA"->"DOWNLOAD";case "UPLOAD_ARTIFACT"->"UPLOAD";case "VERIFY_ARCHIVE"->"VERIFY";case "TRANSFER_QUARK_ITEMS","RECONCILE_QUARK_TRANSFER"->"TRANSFER_SYNC";default->"INFO_SYNC"; }; }
     public ObjectNode register(JsonNode request) throws SQLException {
         String runner=required(request,"runnerId");if(request.path("protocolVersion").asInt()!=1)throw Failure.conflict("PROTOCOL_MISMATCH");
         List<String> capabilities=strings(request.path("capabilities"));
@@ -68,9 +70,18 @@ public final class OperationQueue {
     }
     private ObjectNode prior(String event,String route,JsonNode body) throws SQLException {
         String[] r=store.row("SELECT body,ack FROM events WHERE id=?",event);if(r==null)return null;
-        if(!r[0].equals(route+":"+canonical(body)))throw Failure.conflict("EVENT_CONFLICT");return (ObjectNode)parse(r[1]);
+        if(!r[0].equals(eventBody(route,body)))throw Failure.conflict("EVENT_CONFLICT");return (ObjectNode)parse(r[1]);
     }
-    private ObjectNode ack(String event,String route,JsonNode body,ObjectNode ack) throws SQLException { store.update("INSERT INTO events VALUES(?,?,?)",event,route+":"+canonical(body),ack.toString());return ack; }
+    private String eventBody(String route,JsonNode body) throws SQLException {
+        String canonical=canonical(body);
+        if(route.startsWith("result:")) {
+            String[] operation=store.row("SELECT type FROM operations WHERE id=?",route.substring("result:".length()));
+            // Keep idempotency proof, not raw authorization responses or provider messages.
+            if(operation!=null&&Set.of("CHECK_ACCOUNT","AUTH_STEP").contains(operation[0]))return route+":sha256:"+PathPlanner.digest(canonical);
+        }
+        return route+":"+canonical;
+    }
+    private ObjectNode ack(String event,String route,JsonNode body,ObjectNode ack) throws SQLException { store.update("INSERT INTO events VALUES(?,?,?)",event,eventBody(route,body),ack.toString());return ack; }
     public ObjectNode heartbeat(String leaseId,JsonNode request) throws SQLException {
         String event=required(request,"eventId"),operationId=required(request,"operationId"),route="heartbeat:"+leaseId;ObjectNode old=prior(event,route,request);if(old!=null)return old;
         ObjectNode op=proof(operationId,object("runnerId",request.path("runnerId"),"leaseId",leaseId,"attempt",request.path("attempt"),"fencingToken",request.path("fencingToken")),false);
@@ -81,7 +92,9 @@ public final class OperationQueue {
     }
     public ObjectNode facts(String operationId,JsonNode request) throws SQLException {
         String event=required(request,"eventId"),route="facts:"+operationId;ObjectNode old=prior(event,route,request);if(old!=null)return old;
-        proof(operationId,request,false);if(!request.path("facts").isObject())throw Failure.bad("INVALID_INPUT","facts required");
+        ObjectNode operation=proof(operationId,request,false);
+        if(Set.of("CHECK_ACCOUNT","AUTH_STEP").contains(text(operation,"operationType")))throw Failure.conflict("ACTION_NOT_ALLOWED");
+        if(!request.path("facts").isObject())throw Failure.bad("INVALID_INPUT","facts required");
         JsonNode sequence=request.path("sequence");if(!sequence.isIntegralNumber()||!sequence.canConvertToLong()||sequence.asLong()<0)throw Failure.bad("INVALID_INPUT","non-negative sequence required");
         ObjectNode last=store.optional("factsSequence",operationId);if(last!=null&&sequence.asLong()<=last.path("sequence").asLong())throw Failure.conflict("FACTS_OUT_OF_ORDER");
         store.put("factsSequence",operationId,object("sequence",sequence,"eventId",event));
@@ -104,7 +117,7 @@ public final class OperationQueue {
             }
             case "RETRYABLE_ERROR","NEEDS_ACTION","RESULT_UNKNOWN" -> {
                 errorCode=required(request.path("error"),"code");
-                if(status.equals("RETRYABLE_ERROR")&&!text(op,"operationType").equals("SELECT_LOCAL_DIRECTORY")&&(text(op,"operationType").equals("DOWNLOAD_MEDIA")&&text(op,"platform").equals("BILIBILI")||request.path("error").path("completedEffects").size()==0&&request.path("error").path("pendingEffects").size()==0)) {
+                if(status.equals("RETRYABLE_ERROR")&&!Set.of("SELECT_LOCAL_DIRECTORY","UPLOAD_ARTIFACT").contains(text(op,"operationType"))&&(text(op,"operationType").equals("DOWNLOAD_MEDIA")&&text(op,"platform").equals("BILIBILI")||request.path("error").path("completedEffects").size()==0&&request.path("error").path("pendingEffects").size()==0)) {
                     if(text(task,"desiredAction").equals("CANCEL"))status="CANCELLED";
                     else if(text(task,"desiredAction").equals("PAUSE"))status="PAUSED";
                     else if(op.path("attempt").asInt()<=3) { status="WAITING_RETRY";retry=store.millis()+Math.max(new long[]{30_000,120_000,600_000}[op.path("attempt").asInt()-1],Math.min(86_400L,Math.max(0,request.path("error").path("retryAfterSeconds").asLong(0)))*1000); }
@@ -128,12 +141,20 @@ public final class OperationQueue {
             if(text(request,"status").equals("RESULT_UNKNOWN")||text(request.path("error"),"code").equals("RESULT_UNKNOWN"))store.update("DELETE FROM objects WHERE kind='knownDownloadFailure' AND id=?",text(op,"taskId"));
             else if(Set.of("RETRYABLE_ERROR","NEEDS_ACTION").contains(text(request,"status")))store.put("knownDownloadFailure",text(op,"taskId"),object("eventId",event,"code",request.path("error").path("code")));
         }
+        if(text(op,"operationType").equals("UPLOAD_ARTIFACT")) {
+            store.update("DELETE FROM objects WHERE kind='knownUploadFailure' AND id=?",text(op,"taskId"));
+            JsonNode error=request.path("error");
+            if(Set.of("NEEDS_ACTION","RETRYABLE_ERROR").contains(text(request,"status"))&&knownUploadFailureCode(text(error,"code"))
+                &&error.path("completedEffects").isArray()&&error.path("completedEffects").isEmpty()&&error.path("pendingEffects").isArray()&&error.path("pendingEffects").isEmpty())
+                store.put("knownUploadFailure",text(op,"taskId"),object("eventId",event,"code",text(error,"code")));
+        }
         store.update("UPDATE operations SET status=?,retry_at=? WHERE id=?",status,retry,operationId);state(task,status,errorCode,retry);
         outcome.accept(op,request);
         return ack(event,route,request,object("ackId",id(),"eventId",event,"taskId",text(task,"id"),"status",status));
     }
     public void expire() throws SQLException {
         for(String[] r:store.rows("SELECT id,task_id,resource_key FROM operations WHERE status='RUNNING' AND expires<=?",store.millis())) {
+            store.update("DELETE FROM objects WHERE kind='knownUploadFailure' AND id=?",r[1]);
             store.update("UPDATE operations SET status='NEEDS_ACTION' WHERE id=?",r[0]);state(store.get("task",r[1]),"NEEDS_ACTION","RESULT_UNKNOWN",null);issue(r[1],r[2],"RESULT_UNKNOWN","ERROR");
         }
     }
@@ -148,14 +169,21 @@ public final class OperationQueue {
             }
             case "RESUME","RETRY" -> {
                 JsonNode plan=parse(store.row("SELECT body FROM operations WHERE id=?",op[0])[0]);
+                if(action.equals("RETRY")&&text(plan,"operationType").equals("UPLOAD_ARTIFACT")&&!knownUploadFailure(task))throw Failure.conflict("ACTION_NOT_ALLOWED");
+                if(text(plan,"operationType").equals("VERIFY_ARCHIVE")) {
+                    String originalId=required(plan.path("payload"),"originalOperationId");String[] original=store.row("SELECT status,attempt,fence FROM operations WHERE id=? AND type='UPLOAD_ARTIFACT'",originalId);
+                    if(original==null||!original[0].equals("NEEDS_ACTION"))throw Failure.conflict("RECONCILE_REQUIRED");
+                    store.put("archiveVerification",id,object("originalOperationId",originalId,"attempt",original[1],"fence",original[2]));
+                }
                 if(text(plan,"operationType").equals("DOWNLOAD_MEDIA"))for(JsonNode output:plan.path("payload").path("outputs")) {
                     String[] claim=store.row("SELECT task_id FROM output_claims WHERE root_id=? AND output_id=?",text(plan.path("destination"),"rootId"),text(output,"id"));
                     if(claim!=null&&!claim[0].equals(id))throw Failure.conflict("OUTPUT_OWNED_BY_ANOTHER_TASK");
                 }
                 store.update("DELETE FROM objects WHERE kind='knownDownloadFailure' AND id=?",id);
+                store.update("DELETE FROM objects WHERE kind='knownUploadFailure' AND id=?",id);
                 task.put("desiredAction","CONTINUE");store.update("UPDATE operations SET status='QUEUED',retry_at=NULL WHERE id=?",op[0]);state(task,"QUEUED",null,null);
             }
-            case "RECONCILE" -> {JsonNode plan=parse(store.row("SELECT body FROM operations WHERE id=?",op[0])[0]);if(!text(plan,"operationType").equals("TRANSFER_QUARK_ITEMS"))throw Failure.conflict("RUNNER_RECONCILIATION_REQUIRED");reconciliation.request(plan);}
+            case "RECONCILE" -> {JsonNode plan=parse(store.row("SELECT body FROM operations WHERE id=?",op[0])[0]);if(!Set.of("TRANSFER_QUARK_ITEMS","UPLOAD_ARTIFACT").contains(text(plan,"operationType")))throw Failure.conflict("RUNNER_RECONCILIATION_REQUIRED");reconciliation.request(plan);}
             default -> throw Failure.conflict("ACTION_NOT_ALLOWED");
         }
         return task;
@@ -173,8 +201,34 @@ public final class OperationQueue {
     private void state(ObjectNode task,String status,String error,Long retry) throws SQLException {
         task.put("status",status);task.put("revision",Long.toString(Long.parseLong(text(task,"revision"))+1));task.put("updatedAt",store.now());task.set("error",error==null?null:object("code",error,"message",message(error)));task.put("nextRetryAt",retry==null?null:Instant.ofEpochMilli(retry).toString());
         String[] operation=store.row("SELECT type FROM operations WHERE task_id=?",text(task,"id"));
-        List<String> allowed=switch(status) {case "QUEUED","WAITING_RETRY","RUNNING"->List.of("PAUSE","CANCEL");case "PAUSED"->List.of("RESUME","CANCEL");case "FAILED"->List.of("RETRY","CANCEL");case "NEEDS_ACTION"->operation!=null&&operation[0].equals("TRANSFER_QUARK_ITEMS")?List.of("RECONCILE"):store.optional("knownDownloadFailure",text(task,"id"))!=null&&!"RESULT_UNKNOWN".equals(error)?List.of("RETRY","CANCEL"):List.of();default->List.of();};
+        String type=operation==null?"":operation[0];
+        List<String> allowed=switch(status) {case "QUEUED","WAITING_RETRY","RUNNING"->List.of("PAUSE","CANCEL");case "PAUSED"->List.of("RESUME","CANCEL");case "FAILED"->type.equals("UPLOAD_ARTIFACT")&&!knownUploadFailure(task)?List.of():List.of("RETRY","CANCEL");case "NEEDS_ACTION"->neededActions(task,type,error);default->List.of();};
         task.set("allowedActions",MAPPER.valueToTree(allowed));store.put("task",text(task,"id"),task);
+    }
+    private List<String> neededActions(JsonNode task,String type,String error) throws SQLException {
+        if(type.equals("UPLOAD_ARTIFACT"))return knownUploadFailure(task)?List.of("RECONCILE","RETRY"):List.of("RECONCILE");
+        if(type.equals("TRANSFER_QUARK_ITEMS"))return List.of("RECONCILE");
+        if(READ_ONLY.contains(type)||store.optional("knownDownloadFailure",text(task,"id"))!=null&&!"RESULT_UNKNOWN".equals(error))return List.of("RETRY","CANCEL");
+        return List.of();
+    }
+    private boolean knownUploadFailure(JsonNode task) throws SQLException {
+        ObjectNode proof=store.optional("knownUploadFailure",text(task,"id"));
+        return proof!=null&&knownUploadFailureCode(text(proof,"code"))&&text(proof,"code").equals(text(task.path("error"),"code"));
+    }
+    private static boolean knownUploadFailureCode(String code) {
+        // The runner uses explicit empty effects only for a failed read-only pre-upload check.
+        // Unknown/interrupted execution cannot establish that proof, even with empty arrays.
+        String category=code.toUpperCase(Locale.ROOT);
+        return !code.isBlank()&&!category.contains("UNKNOWN")&&!category.contains("INTERRUPT")&&!category.contains("UNCONFIRMED")&&!category.equals("CONTROL_PERSIST_FAILED");
+    }
+    public void confirmedArchive(String operationId,boolean complete,boolean safeToResume,String reason) throws SQLException {
+        String[] row=store.row("SELECT task_id,type,status FROM operations WHERE id=?",operationId);
+        if(row==null||!row[1].equals("UPLOAD_ARTIFACT")||!row[2].equals("NEEDS_ACTION"))throw Failure.conflict("RECONCILE_REQUIRED");
+        ObjectNode task=store.get("task",row[0]);String next="NEEDS_ACTION";
+        store.update("DELETE FROM objects WHERE kind='knownUploadFailure' AND id=?",row[0]);
+        if(complete){next="SUCCEEDED";reason=null;resolveIssues(row[0]);}
+        else if(safeToResume){next=text(task,"desiredAction").equals("CANCEL")?"CANCELLED":text(task,"desiredAction").equals("PAUSE")?"PAUSED":"QUEUED";reason=null;}
+        store.update("UPDATE operations SET status=?,retry_at=NULL WHERE id=?",next,operationId);state(task,next,reason,null);
     }
     public void issue(String taskId,String objectId,String code,String severity) throws SQLException {
         new dev.alldownloads.feedback2.IssueRepository(store.domainConnection(),MAPPER,store.clock).record(taskId,objectId,code,severity);

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/executor"
@@ -26,6 +27,7 @@ type Runner struct {
 	HeartbeatInterval time.Duration
 	ToolVersions      map[string]string
 	Log               func(string)
+	logMu             sync.Mutex
 }
 type journal struct {
 	Operation Operation
@@ -42,25 +44,29 @@ func (r *Runner) Run(ctx context.Context, once bool) error {
 	if r.ID == "" || r.Client == nil || r.State == nil || r.Worker == nil {
 		return errors.New("incomplete runner configuration")
 	}
-	var registration struct {
+	type registrationResponse struct {
 		ProtocolVersion  int `json:"protocolVersion"`
 		HeartbeatSeconds int `json:"heartbeatSeconds"`
 	}
-	facts := map[string]any{"mount": map[string]any{"state": "UNSUPPORTED", "reasonCode": "MOUNT_PROBE_UNSUPPORTED", "observedAt": time.Now().UTC()}, "accountState": "UNKNOWN"}
-	if provider, ok := r.Worker.(interface{ RegistrationFacts() map[string]any }); ok {
-		for name, value := range provider.RegistrationFacts() {
-			facts[name] = value
+	runnerID := r.ID
+	capabilities := append([]string{}, r.Worker.Capabilities()...)
+	versions := make(map[string]string, len(r.ToolVersions))
+	for name, version := range r.ToolVersions {
+		versions[name] = version
+	}
+	register := func(ctx context.Context) (registrationResponse, error) {
+		requestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		var response registrationResponse
+		err := r.Client.Post(requestCtx, "/runners/register", map[string]any{"runnerId": runnerID, "protocolVersion": 1, "capabilities": capabilities, "tools": versions, "facts": r.registrationFacts()}, &response)
+		if err == nil && response.ProtocolVersion != 1 {
+			err = errors.New("unsupported control protocol")
 		}
+		return response, err
 	}
-	versions := r.ToolVersions
-	if versions == nil {
-		versions = map[string]string{}
-	}
-	if err := r.Client.Post(ctx, "/runners/register", map[string]any{"runnerId": r.ID, "protocolVersion": 1, "capabilities": r.Worker.Capabilities(), "tools": versions, "facts": facts}, &registration); err != nil {
+	registration, err := register(ctx)
+	if err != nil {
 		return err
-	}
-	if registration.ProtocolVersion != 1 {
-		return errors.New("unsupported control protocol")
 	}
 	if r.HeartbeatInterval <= 0 {
 		r.HeartbeatInterval = time.Duration(registration.HeartbeatSeconds) * time.Second
@@ -70,6 +76,33 @@ func (r *Runner) Run(ctx context.Context, once bool) error {
 	}
 	if r.PollInterval <= 0 {
 		r.PollInterval = 2 * time.Second
+	}
+	if !once {
+		refreshCtx, stopRefresh := context.WithCancel(ctx)
+		refreshDone := make(chan struct{})
+		go func() {
+			defer close(refreshDone)
+			ticker := time.NewTicker(r.HeartbeatInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-refreshCtx.Done():
+					return
+				case <-ticker.C:
+					if refreshCtx.Err() != nil {
+						return
+					}
+					if _, err := register(refreshCtx); err != nil && refreshCtx.Err() == nil {
+						r.log("control registration refresh failed; will retry")
+					}
+				}
+			}
+		}()
+		defer func() {
+			stopRefresh()
+			// Join the request cancelled above; do not abandon an HTTP worker.
+			<-refreshDone
+		}()
 	}
 	if err := r.replay(ctx); err != nil {
 		return err
@@ -109,7 +142,22 @@ func (r *Runner) Run(ctx context.Context, once bool) error {
 		}
 	}
 }
+
+func (r *Runner) registrationFacts() map[string]any {
+	facts := map[string]any{"mount": map[string]any{"state": "UNSUPPORTED", "reasonCode": "MOUNT_PROBE_UNSUPPORTED", "observedAt": time.Now().UTC()}, "accountState": "UNKNOWN"}
+	// Providers must return bounded local snapshots, without platform checks or
+	// business I/O, so registration can run independently of active operations.
+	if provider, ok := r.Worker.(interface{ RegistrationFacts() map[string]any }); ok {
+		for name, value := range provider.RegistrationFacts() {
+			facts[name] = value
+		}
+	}
+	return facts
+}
+
 func (r *Runner) log(message string) {
+	r.logMu.Lock()
+	defer r.logMu.Unlock()
 	if r.Log != nil {
 		r.Log(message)
 	}

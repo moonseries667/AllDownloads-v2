@@ -19,6 +19,8 @@ import (
 	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/executor"
 	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/folder"
 	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/media"
+	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/netpolicy"
+	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/platforms/bilibili"
 	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/platforms/binding"
 	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/platforms/quark"
 	"github.com/moonseries667/AllDownloads-v2/backend/go/internal/platforms/telegram"
@@ -37,8 +39,15 @@ type config struct {
 	FFprobe          string            `json:"ffprobe"`
 	FixtureCatalog   string            `json:"fixtureCatalog"`
 	IsolatedTestMode bool              `json:"isolatedTestMode"`
-	Telegram         struct {
+	Bilibili         struct {
+		CookieFile     string `json:"cookieFile"`
+		ExpectedUserID string `json:"expectedUserId"`
+		APIBase        string `json:"apiBase"`
+		PassportBase   string `json:"passportBase"`
+	} `json:"bilibili"`
+	Telegram struct {
 		Executable string                         `json:"executable"`
+		ProxyURL   string                         `json:"proxyURL"`
 		Accounts   map[string]telegram.TDLAccount `json:"accounts"`
 	} `json:"telegram"`
 	QuarkAccounts map[string]struct {
@@ -48,9 +57,19 @@ type config struct {
 		AccountURL     string `json:"accountUrl"`
 	} `json:"quarkAccounts"`
 	DriveAccounts map[string]struct {
-		TokenEnv string `json:"tokenEnv"`
-		RootID   string `json:"rootId"`
+		TokenEnv   string `json:"tokenEnv"`
+		TokenFile  string `json:"tokenFile"`
+		ClientFile string `json:"clientFile"`
+		RootID     string `json:"rootId"`
+		ProxyURL   string `json:"proxyURL"`
+		Rclone     *struct {
+			Executable  string `json:"executable"`
+			ConfigFile  string `json:"configFile"`
+			Remote      string `json:"remote"`
+			BindingFile string `json:"bindingFile"`
+		} `json:"rclone"`
 	} `json:"driveAccounts"`
+	DriveMount drive.MountSettings `json:"driveMount"`
 }
 
 func main() {
@@ -69,7 +88,7 @@ func main() {
 		os.Exit(1)
 	}
 }
-func run(ctx context.Context, path string, once bool) error {
+func run(ctx context.Context, path string, once bool) (runErr error) {
 	if path == "" {
 		return errors.New("-config is required")
 	}
@@ -110,7 +129,19 @@ func run(ctx context.Context, path string, once bool) error {
 		return err
 	}
 	defer state.Close()
-	var provider media.Provider = &media.Bilibili{Client: &http.Client{Timeout: 30 * time.Second}}
+	if cfg.Bilibili.CookieFile == "" {
+		cfg.Bilibili.CookieFile, err = filepath.Abs(filepath.Join(cfg.StateDir, "auth", "bilibili.session"))
+		if err != nil {
+			return errors.New("cannot resolve private Bilibili session path")
+		}
+	}
+	bilSession, err := bilibili.New(bilibili.Config{CookieFile: cfg.Bilibili.CookieFile, ExpectedUserID: cfg.Bilibili.ExpectedUserID,
+		IsolatedTestMode: cfg.IsolatedTestMode, APIBase: cfg.Bilibili.APIBase, PassportBase: cfg.Bilibili.PassportBase})
+	if err != nil {
+		return err
+	}
+	var provider media.Provider = &media.Bilibili{Session: bilSession}
+	downloadClient := bilSession.DownloadClient()
 	if cfg.FixtureCatalog != "" {
 		if !cfg.IsolatedTestMode {
 			return errors.New("fixtureCatalog requires isolatedTestMode")
@@ -137,6 +168,7 @@ func run(ctx context.Context, path string, once bool) error {
 			}
 		}
 		provider = catalog
+		downloadClient = &http.Client{Timeout: 30 * time.Minute}
 	}
 	var mediaTools *media.Tools
 	versions := map[string]string{}
@@ -148,8 +180,11 @@ func run(ctx context.Context, path string, once bool) error {
 		versions["ffmpeg"] = media.FFmpegVersion
 		versions["ffprobe"] = media.FFmpegVersion
 	}
-	handler := &runner.Handler{State: state, StateDir: cfg.StateDir, AllowedRoots: cfg.AllowedRoots, Roots: cfg.Roots, Provider: provider, Tools: mediaTools, Downloads: media.Downloader{Client: &http.Client{Timeout: 30 * time.Minute}}}
-	tel := &telegram.TDL{Executable: cfg.Telegram.Executable, Accounts: cfg.Telegram.Accounts, State: state, WorkDir: filepath.Join(cfg.StateDir, "telegram-work")}
+	handler := &runner.Handler{State: state, StateDir: cfg.StateDir, AllowedRoots: cfg.AllowedRoots, Roots: cfg.Roots, Provider: provider, Tools: mediaTools, Downloads: media.Downloader{Client: downloadClient}}
+	if _, err := netpolicy.Environment(cfg.Telegram.ProxyURL); err != nil {
+		return errors.New("invalid Telegram local proxy configuration")
+	}
+	tel := &telegram.TDL{Executable: cfg.Telegram.Executable, ProxyURL: cfg.Telegram.ProxyURL, Accounts: cfg.Telegram.Accounts, State: state, WorkDir: filepath.Join(cfg.StateDir, "telegram-work")}
 	if len(cfg.Telegram.Accounts) > 0 {
 		if err := tel.Check(ctx); err != nil {
 			return err
@@ -175,12 +210,60 @@ func run(ctx context.Context, path string, once bool) error {
 	platforms := &binding.Worker{Base: handler, Saved: tel, Telegram: tel, Tree: transfers, Quark: transfers, Transfers: transfers}
 	drives := map[string]*drive.Client{}
 	for account, settings := range cfg.DriveAccounts {
-		if account == "" || settings.TokenEnv == "" {
-			return errors.New("drive account and tokenEnv are required")
+		if account == "" || (settings.TokenEnv != "" && settings.TokenFile != "") || (settings.Rclone != nil && (settings.TokenEnv != "" || settings.TokenFile != "" || settings.ClientFile != "")) {
+			return errors.New("drive account requires exactly one private authentication source")
 		}
-		drives[account] = &drive.Client{AccountID: account, RootID: settings.RootID, Token: func() string { return os.Getenv(settings.TokenEnv) }}
+		if settings.Rclone != nil {
+			drives[account], err = drive.NewRclone(drive.RcloneConfig{AccountID: account, RootID: settings.RootID, Executable: settings.Rclone.Executable,
+				ConfigFile: settings.Rclone.ConfigFile, Remote: settings.Rclone.Remote, BindingFile: settings.Rclone.BindingFile, ProxyURL: settings.ProxyURL,
+				Run: func(ctx context.Context, executable string, timeout time.Duration, environment, args []string) ([]byte, []byte, error) {
+					return media.RunControlledExactEnvironment(ctx, executable, timeout, environment, args...)
+				}})
+			if err != nil {
+				return err
+			}
+		} else if settings.TokenEnv != "" {
+			drives[account] = &drive.Client{AccountID: account, RootID: settings.RootID, Token: func() string { return os.Getenv(settings.TokenEnv) }}
+		} else {
+			if settings.TokenFile == "" {
+				return errors.New("drive account requires a private tokenFile")
+			}
+			drives[account], err = drive.NewGoogle(drive.GoogleConfig{AccountID: account, RootID: settings.RootID, TokenFile: settings.TokenFile, ClientFile: settings.ClientFile})
+			if err != nil {
+				return err
+			}
+		}
+		drives[account].HTTP, err = netpolicy.HTTPClient(settings.ProxyURL, 30*time.Minute)
+		if err != nil {
+			return errors.New("invalid Drive local proxy configuration")
+		}
 	}
 	storage := &runner.StorageWorker{Next: platforms, Roots: handler, State: state, HostID: cfg.RunnerID, Picker: &folder.Picker{}, PickerReady: folder.InteractiveDesktop, Drives: drives}
-	service := runner.Runner{ID: cfg.RunnerID, Client: client, State: state, Worker: storage, ToolVersions: versions, Log: func(s string) { fmt.Fprintln(os.Stderr, s) }}
+	if cfg.DriveMount.Enabled {
+		if cfg.DriveMount.AccountID != "drive-main" {
+			return errors.New("Drive mount requires the fixed drive-main account")
+		}
+		mount, err := drive.NewMounter(drives[cfg.DriveMount.AccountID], drive.MountConfig{CacheDir: cfg.DriveMount.CacheDir},
+			func(ctx context.Context, executable string, args, environment []string) (drive.MountProcess, error) {
+				return media.StartManaged(ctx, executable, args, environment)
+			})
+		if err != nil {
+			return err
+		}
+		storage.LocalFacts = func() map[string]any { return mountFacts(mount.Status()) }
+		if !once {
+			mountCtx, stopMount := context.WithCancel(ctx)
+			mountDone := make(chan error, 1)
+			go func() { mountDone <- maintainMount(mountCtx, mount, 15*time.Second) }()
+			defer func() {
+				stopMount()
+				if err := <-mountDone; err != nil {
+					runErr = err
+				}
+			}()
+		}
+	}
+	accounts := &runner.AccountWorker{Next: storage, Accounts: accountAdapters(bilSession, drives, transfers, tel)}
+	service := runner.Runner{ID: cfg.RunnerID, Client: client, State: state, Worker: accounts, ToolVersions: versions, Log: func(s string) { fmt.Fprintln(os.Stderr, s) }}
 	return service.Run(ctx, once)
 }
