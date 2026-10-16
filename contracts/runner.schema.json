@@ -1407,6 +1407,58 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "operationType": {
+                "const": "CHECK_ACCOUNT"
+              }
+            },
+            "required": [
+              "operationType"
+            ]
+          },
+          "then": {
+            "properties": {
+              "destination": {
+                "type": "null"
+              },
+              "accountRef": {
+                "type": "string",
+                "minLength": 1
+              },
+              "payload": {
+                "$ref": "accounts.schema.json#/$defs/CheckPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operationType": {
+                "const": "AUTH_STEP"
+              }
+            },
+            "required": [
+              "operationType"
+            ]
+          },
+          "then": {
+            "properties": {
+              "destination": {
+                "type": "null"
+              },
+              "accountRef": {
+                "type": "string",
+                "minLength": 1
+              },
+              "payload": {
+                "$ref": "accounts.schema.json#/$defs/AuthPayload"
+              }
+            }
+          }
         }
       ]
     },
@@ -1549,7 +1601,9 @@
         "RECONCILE_QUARK_TRANSFER",
         "SELECT_LOCAL_DIRECTORY",
         "LIST_DRIVE_FOLDERS",
-        "VALIDATE_DRIVE_TARGET"
+        "VALIDATE_DRIVE_TARGET",
+        "CHECK_ACCOUNT",
+        "AUTH_STEP"
       ]
     },
     "ResultPayload": {

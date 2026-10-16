@@ -1,0 +1,421 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alldownloads.local/contracts/accounts.schema.json",
+  "title": "New account authentication lifecycle",
+  "$defs": {
+    "Account": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "enum": [
+            "bilibili-main",
+            "telegram-main",
+            "quark-main",
+            "drive-main"
+          ]
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "BILIBILI",
+            "TELEGRAM",
+            "QUARK",
+            "GOOGLE_DRIVE"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "state": {
+          "enum": [
+            "ACTIVE",
+            "AUTH_REQUIRED",
+            "UNKNOWN",
+            "ERROR"
+          ]
+        },
+        "lastCheckedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "reasonCode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Z0-9_]+$"
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "platform",
+        "label",
+        "state",
+        "lastCheckedAt",
+        "reasonCode",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    "AccountFact": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "enum": [
+            "bilibili-main",
+            "telegram-main",
+            "quark-main",
+            "drive-main"
+          ]
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "BILIBILI",
+            "TELEGRAM",
+            "QUARK",
+            "GOOGLE_DRIVE"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "state": {
+          "enum": [
+            "ACTIVE",
+            "AUTH_REQUIRED",
+            "UNKNOWN",
+            "ERROR"
+          ]
+        },
+        "lastCheckedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "reasonCode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Z0-9_]+$"
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "platform",
+        "label",
+        "state",
+        "lastCheckedAt",
+        "reasonCode"
+      ],
+      "additionalProperties": false
+    },
+    "AuthSession": {
+      "type": "object",
+      "properties": {
+        "authSessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "accountId": {
+          "type": "string",
+          "enum": [
+            "bilibili-main",
+            "telegram-main",
+            "quark-main",
+            "drive-main"
+          ]
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "BILIBILI",
+            "TELEGRAM",
+            "QUARK",
+            "GOOGLE_DRIVE"
+          ]
+        },
+        "state": {
+          "enum": [
+            "PENDING",
+            "SUCCEEDED",
+            "CANCELLED",
+            "EXPIRED",
+            "NEEDS_ACTION"
+          ]
+        },
+        "nextAction": {
+          "enum": [
+            "WAIT",
+            "SCAN_QR",
+            "OPEN_URL",
+            "LOCAL_SETUP",
+            "NONE"
+          ]
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uri"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "expiresAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "taskId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reasonCode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Z0-9_]+$"
+        }
+      },
+      "required": [
+        "authSessionId",
+        "accountId",
+        "platform",
+        "state",
+        "nextAction",
+        "url",
+        "message",
+        "expiresAt",
+        "revision",
+        "taskId",
+        "reasonCode"
+      ],
+      "additionalProperties": false
+    },
+    "AuthSessionFact": {
+      "type": "object",
+      "properties": {
+        "authSessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "accountId": {
+          "type": "string",
+          "enum": [
+            "bilibili-main",
+            "telegram-main",
+            "quark-main",
+            "drive-main"
+          ]
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "BILIBILI",
+            "TELEGRAM",
+            "QUARK",
+            "GOOGLE_DRIVE"
+          ]
+        },
+        "state": {
+          "enum": [
+            "PENDING",
+            "SUCCEEDED",
+            "CANCELLED",
+            "EXPIRED",
+            "NEEDS_ACTION"
+          ]
+        },
+        "nextAction": {
+          "enum": [
+            "WAIT",
+            "SCAN_QR",
+            "OPEN_URL",
+            "LOCAL_SETUP",
+            "NONE"
+          ]
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uri"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "expiresAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "taskId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reasonCode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Z0-9_]+$"
+        }
+      },
+      "required": [
+        "authSessionId",
+        "accountId",
+        "platform",
+        "state",
+        "nextAction",
+        "url",
+        "message",
+        "expiresAt",
+        "reasonCode"
+      ],
+      "additionalProperties": false
+    },
+    "CheckPayload": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "accountId": {
+          "type": "string",
+          "enum": [
+            "bilibili-main",
+            "telegram-main",
+            "quark-main",
+            "drive-main"
+          ]
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "BILIBILI",
+            "TELEGRAM",
+            "QUARK",
+            "GOOGLE_DRIVE"
+          ]
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "accountId",
+        "platform"
+      ],
+      "additionalProperties": false
+    },
+    "AuthPayload": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "accountId": {
+          "type": "string",
+          "enum": [
+            "bilibili-main",
+            "telegram-main",
+            "quark-main",
+            "drive-main"
+          ]
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "BILIBILI",
+            "TELEGRAM",
+            "QUARK",
+            "GOOGLE_DRIVE"
+          ]
+        },
+        "authSessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "action": {
+          "enum": [
+            "BEGIN",
+            "POLL",
+            "CANCEL"
+          ]
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "accountId",
+        "platform",
+        "authSessionId",
+        "action"
+      ],
+      "additionalProperties": false
+    },
+    "CheckResult": {
+      "type": "object",
+      "properties": {
+        "account": {
+          "$ref": "#/$defs/AccountFact"
+        }
+      },
+      "required": [
+        "account"
+      ],
+      "additionalProperties": false
+    },
+    "AuthResult": {
+      "type": "object",
+      "properties": {
+        "session": {
+          "$ref": "#/$defs/AuthSessionFact"
+        }
+      },
+      "required": [
+        "session"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
