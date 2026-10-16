@@ -79,7 +79,7 @@ public class BoundaryFilter extends OncePerRequestFilter {
         response.setHeader("Access-Control-Allow-Origin", origin);
         response.setHeader("Vary", "Origin");
         response.setHeader("Access-Control-Allow-Headers", "Content-Type,Idempotency-Key,If-Match");
-        response.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,OPTIONS");
+        response.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
         response.setHeader("Access-Control-Expose-Headers", "ETag");
         if (request.getMethod().equals("OPTIONS")) {
           response.setStatus(204);

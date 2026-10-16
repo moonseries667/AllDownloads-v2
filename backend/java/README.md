@@ -45,6 +45,8 @@ Java 将流程上限固定为十分钟，Go 可以缩短；GET 不排操作也�
 
 `AccountsFlowTest` 与 `AccountsHttpTest` 使用隔离 SQLite、合成 Go 结果和真实回环 HTTP 验证四账号、幂等、官方 URL、版本取消、旧结果、过期、重启及单账号引用；不访问真实平台。Java 只保存允许的公共字段及自行生成的安全提示，授权结果去重仅保存摘要，避免把原始平台提示存入事件表。
 
+Drive 明确报告 AUTH_CLIENT_REQUIRED 或 AUTH_SESSION_NOT_FOUND 时，公共流程显示 NEEDS_ACTION/LOCAL_SETUP 和中文配置原因；配置后可主动 POLL 或检查账号。内部 AccountFact/AuthSessionFact 可省略 Java 管理的 revision/taskId，空 expiresAt 使用 Java 的有界截止时间。跨 origin 取消支持 DELETE 预检及 If-Match，并向前端暴露 ETag；HTTP 测试捕获保存为 `target/accounts-captures.json` 供冻结 schema 核验。
+
 ## 构建与测试
 
 锁定 Spring Boot 3.5.16、sqlite-jdbc 3.53.4.0、Maven Wrapper 3.3.4、Maven 3.9.16、Surefire 3.5.6。使用 Java 21，在本模块运行：
@@ -53,7 +55,7 @@ Java 将流程上限固定为十分钟，Go 可以缩短；GET 不排操作也�
 .\mvnw.cmd --batch-mode --no-transfer-progress -DfailIfNoTests=true verify
 ```
 
-Carbon 验证复用旧后端已下载的锁定 Maven/依赖缓存，使用隔离测试目录；缓存中的依赖来自 `aliyun-public` 镜像，因此离线构建使用相同 mirror id 的临时 settings。该主机路径不进入产品配置。Windows Wrapper 修复了普通目录 Target=null 时的空数组索引；未更换 Wrapper 或依赖版本。
+Carbon 验证复用已预热的锁定 Maven/依赖缓存，使用隔离测试目录；离线构建添加 `-o -Dmaven.repo.local=<已预热的本地仓库>`，不使用旧 aliyun settings。JUnit 临时目录可通过 `-DargLine=-Djava.io.tmpdir=<工作树>/backend/java/target/junit-temp` 固定在工作区；既有强制终止子进程测试若遇到 shm 文件 AccessDenied/IOERR_TRUNCATE，需按执行边界在沙盒外复验，不能跳过该项。该主机路径不进入产品配置。Windows Wrapper 修复了普通目录 Target=null 时的空数组索引；未更换 Wrapper 或依赖版本。
 
 `BusinessFlowTest` 验证第一部分业务、排序/日期/分页、置顶/重启、季身份、空选择、AI 排除、未知大小、目录/资源变更、精确去重和 NONE 的重试/重启/重放。`HttpBoundaryTest` 启动真实回环 Spring HTTP 与临时 SQLite，验证 envelope、幂等、ETag 和内部身份隔离。原 `TaskStoreTest/TaskStoreProcessTest` 保留原事务/进程恢复用例。业务单测使用合成 Go 事实，不当作真实文件或平台验收。
 

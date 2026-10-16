@@ -86,27 +86,31 @@ public final class AuthService {
         String type=text(operation,"operationType");if(!Set.of("CHECK_ACCOUNT","AUTH_STEP").contains(type))return false;
         identity(operation);
         if(type.equals("CHECK_ACCOUNT")) {
-            fields(result,Set.of("account"));JsonNode value=result.path("account");fields(value,ACCOUNT_FIELDS);
+            fields(result,Set.of("account"));JsonNode value=result.path("account");factFields(value,ACCOUNT_FIELDS,Set.of("revision"));
+            if(!value.path("label").isTextual()||text(value,"label").isEmpty()||text(value,"label").length()>120)throw invalid();
             ObjectNode account=account(text(operation.path("payload"),"accountId"));
             if(!text(value,"id").equals(text(account,"id"))||!text(value,"platform").equals(text(account,"platform")))throw invalid();
             String state=required(value,"state"),reason=reason(value);
             if(!Set.of("ACTIVE","AUTH_REQUIRED","UNKNOWN","ERROR").contains(state)||state.equals("ACTIVE")&&reason!=null||Set.of("AUTH_REQUIRED","ERROR").contains(state)&&reason==null)throw invalid();
-            Instant checked=instant(value,"lastCheckedAt");if(checked.isAfter(store.clock.instant().plusSeconds(30)))throw invalid();
+            Instant checked=value.path("lastCheckedAt").isNull()?null:instant(value,"lastCheckedAt");
+            if(state.equals("ACTIVE")&&checked==null||checked!=null&&checked.isAfter(store.clock.instant().plusSeconds(30)))throw invalid();
             ObjectNode latest=store.optional("accountCheck",text(account,"id"));
             if(latest!=null&&text(latest,"taskId").equals(text(operation,"taskId"))) {
-                account.put("state",state);account.put("reasonCode",reason);account.put("lastCheckedAt",checked.toString());bump(account);store.put("account",text(account,"id"),account);
+                account.put("state",state);account.put("reasonCode",reason);account.put("lastCheckedAt",checked==null?null:checked.toString());bump(account);store.put("account",text(account,"id"),account);
             }
         } else {
-            fields(result,Set.of("session"));JsonNode value=result.path("session");fields(value,SESSION_FIELDS);
+            fields(result,Set.of("session"));JsonNode value=result.path("session");factFields(value,SESSION_FIELDS,Set.of("revision","taskId"));
+            if(!value.path("message").isTextual()||text(value,"message").length()>1000)throw invalid();
             JsonNode payload=operation.path("payload");ObjectNode session=store.get("authSession",required(payload,"authSessionId"));
             for(String field:List.of("authSessionId","accountId","platform"))if(!required(value,field).equals(text(session,field)))throw invalid();
             String state=required(value,"state"),next=required(value,"nextAction"),reason=reason(value);
             if(!Set.of("PENDING","SUCCEEDED","CANCELLED","EXPIRED","NEEDS_ACTION").contains(state)||!Set.of("WAIT","SCAN_QR","OPEN_URL","LOCAL_SETUP","NONE").contains(next))throw invalid();
-            if(Set.of("SUCCEEDED","CANCELLED","EXPIRED").contains(state)&&!next.equals("NONE")||state.equals("PENDING")&&next.equals("NONE")||state.equals("NEEDS_ACTION")&&reason==null)throw invalid();
+            if(Set.of("SUCCEEDED","CANCELLED","EXPIRED").contains(state)&&!next.equals("NONE")||state.equals("PENDING")&&next.equals("NONE")||state.equals("NEEDS_ACTION")&&reason==null||state.equals("SUCCEEDED")&&reason!=null)throw invalid();
             if(text(payload,"action").equals("CANCEL")&&!state.equals("CANCELLED"))throw invalid();
             if(value.has("taskId")&&!value.path("taskId").isNull()&&!text(value,"taskId").equals(text(operation,"taskId")))throw invalid();
-            Instant expiry=instant(value,"expiresAt"),deadline=Instant.parse(text(session,"expiresAt"));String url=url(value,next,text(session,"platform"));
+            Instant deadline=Instant.parse(text(session,"expiresAt")),expiry=value.path("expiresAt").isNull()?deadline:instant(value,"expiresAt");String url=url(value,next,text(session,"platform"));
             if(expiry.isAfter(deadline))expiry=deadline;
+            if(state.equals("NEEDS_ACTION")&&driveSetup(session,reason)) {next="LOCAL_SETUP";url=null;}
             if(!text(session,"taskId").equals(text(operation,"taskId"))||!open(session))return true;
             if(expired(session)||!expiry.isAfter(store.clock.instant())) {ended(session,"EXPIRED","AUTH_SESSION_EXPIRED");enqueue(session,"CANCEL");}
             else {
@@ -135,6 +139,7 @@ public final class AuthService {
         if(!open(session)||!text(session,"taskId").equals(text(operation,"taskId")))return;
         if(expired(session))ended(session,"EXPIRED","AUTH_SESSION_EXPIRED");
         else if(status.equals("CANCELLED"))ended(session,"CANCELLED",null);
+        else if(driveSetup(session,code)) {session.put("state","NEEDS_ACTION");session.put("nextAction","LOCAL_SETUP");session.putNull("url");session.put("reasonCode",code);session.put("message",message("NEEDS_ACTION","LOCAL_SETUP",code));bump(session);}
         else if(!Set.of("WAITING_RETRY","PAUSED").contains(status))ended(session,"NEEDS_ACTION",code==null?"AUTH_SESSION_INTERRUPTED":code);
         else {session.put("reasonCode",code);session.put("message",status.equals("PAUSED")?"授权操作已暂停":"授权操作暂时失败，等待有限重试");bump(session);}
         store.put("authSession",text(session,"authSessionId"),session);
@@ -149,14 +154,21 @@ public final class AuthService {
     private static void ended(ObjectNode session,String state,String reason) {session.put("state",state);session.put("nextAction","NONE");session.putNull("url");session.put("reasonCode",reason);session.put("message",message(state,"NONE",reason));bump(session);}
     private static String route(String platform) {return platform.equals("GOOGLE_DRIVE")?"BILIBILI":platform;}
     private static String label(String platform) {return switch(platform) {case "BILIBILI"->"Bilibili 主账号";case "TELEGRAM"->"Telegram 主账号";case "QUARK"->"夸克主账号";default->"Google Drive 主账号";};}
+    private static boolean driveSetup(JsonNode session,String reason) {return text(session,"platform").equals("GOOGLE_DRIVE")&&reason!=null&&Set.of("AUTH_CLIENT_REQUIRED","AUTH_SESSION_NOT_FOUND").contains(reason);}
     private static String message(String state,String next,String reason) {
         if(state.equals("SUCCEEDED"))return "授权流程已完成，请主动检查账号";
         if(state.equals("CANCELLED"))return "授权流程已取消";
         if(state.equals("EXPIRED"))return "授权流程已过期，请重新开始";
+        if(next.equals("LOCAL_SETUP")&&"AUTH_CLIENT_REQUIRED".equals(reason))return "Y7000P 尚未配置新的 Google Desktop OAuth client，请在受控本地入口完成配置后主动检查；Google 官方授权须由用户亲自完成";
+        if(next.equals("LOCAL_SETUP")&&"AUTH_SESSION_NOT_FOUND".equals(reason))return "Y7000P 未找到本次 Google 授权会话，请在受控本地入口配置新会话后主动检查，或取消本流程后重新开始";
         return switch(next) {case "SCAN_QR"->"请使用官方应用扫描二维码";case "OPEN_URL"->"请在 Y7000P 亲自打开官方授权页完成授权";case "LOCAL_SETUP"->"请在 Y7000P 的受控本地入口配置新会话或 Desktop OAuth client，然后主动检查";case "WAIT"->"等待授权完成，请主动查询进度";default->"授权流程未完成（"+reason+"），请取消后重新开始，或在 Y7000P 检查本地配置";};
     }
     private static void fields(JsonNode node,Set<String> allowed) {
         if(!node.isObject())throw invalid();node.fieldNames().forEachRemaining(key->{if(!allowed.contains(key))throw invalid();});
+    }
+    private static void factFields(JsonNode node,Set<String> allowed,Set<String> optional) {
+        fields(node,allowed);for(String field:allowed)if(!optional.contains(field)&&!node.has(field))throw invalid();
+        if(node.has("revision")&&(!node.path("revision").isTextual()||text(node,"revision").isBlank()))throw invalid();
     }
     private static String reason(JsonNode node) {
         if(node.path("reasonCode").isMissingNode()||node.path("reasonCode").isNull())return null;

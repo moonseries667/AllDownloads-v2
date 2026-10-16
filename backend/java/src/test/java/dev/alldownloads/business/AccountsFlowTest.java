@@ -112,6 +112,15 @@ class AccountsFlowTest {
         ObjectNode obsolete=active.deepCopy();obsolete.put("state","AUTH_REQUIRED");obsolete.put("reasonCode","ACCOUNT_NOT_CONFIGURED");ObjectNode late=request(old,object("account",obsolete));store.tx(()->app.queue.result(text(old,"operationId"),late,true));
         assertEquals("ACTIVE",text(store.tx(()->app.auth.account("bilibili-main")),"state"));
     }
+    @Test void driveSetupFailuresArePublicLocalSetupAndOptionalJavaFieldsAndNullExpiryAreAccepted() {
+        for(String code:List.of("AUTH_CLIENT_REQUIRED","AUTH_SESSION_NOT_FOUND")) {
+            ObjectNode first=begin("GOOGLE_DRIVE");JsonNode operation=acquire("AUTH_STEP");ObjectNode failure=request(operation,null);failure.put("status","NEEDS_ACTION");failure.set("error",object("code",code,"message","must not be published","completedEffects",List.of(),"pendingEffects",List.of()));
+            store.tx(()->app.queue.result(text(operation,"operationId"),failure,false));ObjectNode setup=session(first);assertEquals("NEEDS_ACTION",text(setup,"state"));assertEquals("LOCAL_SETUP",text(setup,"nextAction"));assertEquals(code,text(setup,"reasonCode"));assertTrue(text(setup,"message").contains("Y7000P"));assertTrue(text(setup,"message").contains(code.equals("AUTH_CLIENT_REQUIRED")?"Desktop OAuth client":"未找到本次"));assertEquals(text(first,"authSessionId"),text(begin("GOOGLE_DRIVE"),"authSessionId"));
+            store.tx(()->app.auth.poll(text(first,"authSessionId"),object("action","POLL")));JsonNode poll=acquire("AUTH_STEP");ObjectNode fact=facts(setup,"NEEDS_ACTION","NONE",null,code);((ObjectNode)fact.path("session")).putNull("expiresAt");complete(poll,fact);assertEquals("LOCAL_SETUP",text(session(first),"nextAction"));
+            ObjectNode current=session(first);store.tx(()->app.auth.cancel(text(first,"authSessionId"),text(current,"revision")));JsonNode cancel=acquire("AUTH_STEP");complete(cancel,facts(current,"CANCELLED","NONE",null,null));
+        }
+        store.tx(()->app.auth.check("drive-main"));JsonNode check=acquire("CHECK_ACCOUNT");ObjectNode account=store.tx(()->app.auth.account("drive-main"));account.remove("revision");account.put("state","AUTH_REQUIRED");account.put("reasonCode","ACCOUNT_NOT_CONFIGURED");complete(check,object("account",account));assertTrue(store.tx(()->app.auth.account("drive-main")).path("revision").isTextual());assertTrue(store.tx(()->app.auth.account("drive-main")).path("lastCheckedAt").isNull());
+    }
     static void invalid(Runnable work) {assertEquals("INVALID_INPUT",assertThrows(Failure.class,work::run).code);}
     static class MutableClock extends Clock {Instant now=Instant.parse("2026-10-16T00:00:00Z");public ZoneId getZone(){return ZoneOffset.UTC;}public Clock withZone(ZoneId zone){return this;}public Instant instant(){return now;}}
 }
