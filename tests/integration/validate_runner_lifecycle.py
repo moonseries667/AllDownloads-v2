@@ -22,10 +22,18 @@ def main():
     Draft202012Validator.check_schema(runner)
     Draft202012Validator(fixture).validate(load("fixture.examples.json"))
     registry=Registry()
-    for name in ("runner.schema.json","feedback2.schema.json","management.schema.json","fixture.schema.json"):
+    for name in ("runner.schema.json","feedback2.schema.json","management.schema.json","fixture.schema.json","accounts.schema.json"):
         document=load(name);resource=Resource.from_contents(document)
         for uri in {(CONTRACTS/name).as_uri(),document.get("$id"),urljoin(runner["$id"],name)}:
             if uri: registry=registry.with_resource(uri,resource)
+    accounts=load("accounts.schema.json")
+    Draft202012Validator.check_schema(accounts)
+    for key,definition in (("account","Account"),("session","AuthSession"),("checkPayload","CheckPayload"),("authPayload","AuthPayload")):
+        value=load("accounts.examples.json")[key]
+        validator=Draft202012Validator({"$id":accounts["$id"],"$defs":accounts["$defs"],"$ref":"#/$defs/"+definition},registry=registry)
+        validator.validate(value)
+        rejected=dict(value,cookie="must-never-appear")
+        assert not validator.is_valid(rejected), "Private credentials must not enter account contracts"
     def validate(ref,value):
         if ref.startswith("runner.schema.json#"):
             schema={"$id":runner["$id"],"$ref":ref.split("runner.schema.json",1)[1],"$defs":runner["$defs"]}

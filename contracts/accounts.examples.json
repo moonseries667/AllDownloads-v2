@@ -1,0 +1,36 @@
+{
+  "account": {
+    "id": "bilibili-main",
+    "platform": "BILIBILI",
+    "label": "Bilibili 主账号",
+    "state": "UNKNOWN",
+    "lastCheckedAt": null,
+    "reasonCode": null,
+    "revision": "1"
+  },
+  "session": {
+    "authSessionId": "auth-example",
+    "accountId": "bilibili-main",
+    "platform": "BILIBILI",
+    "state": "PENDING",
+    "nextAction": "WAIT",
+    "url": null,
+    "message": "等待登录步骤",
+    "expiresAt": "2026-10-16T16:00:00Z",
+    "revision": "1",
+    "taskId": "task-example",
+    "reasonCode": null
+  },
+  "checkPayload": {
+    "schemaVersion": 1,
+    "accountId": "bilibili-main",
+    "platform": "BILIBILI"
+  },
+  "authPayload": {
+    "schemaVersion": 1,
+    "accountId": "bilibili-main",
+    "platform": "BILIBILI",
+    "authSessionId": "auth-example",
+    "action": "BEGIN"
+  }
+}
