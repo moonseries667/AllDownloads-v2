@@ -4,6 +4,7 @@ param(
     [Parameter(Mandatory)] [string] $Version,
     [Parameter(Mandatory)] [string] $FFmpegDirectory,
     [Parameter(Mandatory)] [string] $TdlExecutable,
+    [Parameter(Mandatory)] [string] $RcloneExecutable,
     [string] $OutputDirectory,
     [string] $JavaHome = $env:JAVA_HOME,
     [string] $GoExecutable = 'go.exe',
@@ -25,13 +26,15 @@ if (-not $SessionSetupExecutable) { $SessionSetupExecutable = Join-Path $reposit
 if (-not $FrontendDirectory) { $FrontendDirectory = Join-Path $repository 'frontend/dist' }
 $FFmpegDirectory = Get-FullPath $FFmpegDirectory
 $TdlExecutable = Get-FullPath $TdlExecutable
+$RcloneExecutable = Get-FullPath $RcloneExecutable
 $go = Resolve-Executable $GoExecutable
 $ffmpeg = Join-Path $FFmpegDirectory 'ffmpeg.exe'
 $ffprobe = Join-Path $FFmpegDirectory 'ffprobe.exe'
-foreach ($path in @($ffmpeg, $ffprobe, $TdlExecutable)) { Assert-PlainTree $path }
+foreach ($path in @($ffmpeg, $ffprobe, $TdlExecutable, $RcloneExecutable)) { Assert-PlainTree $path }
 [void](Get-ToolVersion $ffmpeg ffmpeg)
 [void](Get-ToolVersion $ffprobe ffprobe)
 [void](Get-ToolVersion $TdlExecutable tdl)
+[void](Get-ToolVersion $RcloneExecutable rclone)
 $commit = (& git -c "safe.directory=$repository" -C $repository rev-parse HEAD | Out-String).Trim()
 if ($LASTEXITCODE -ne 0) { throw 'Build from a Git checkout with an identifiable source commit.' }
 $dirty = & git -c "safe.directory=$repository" -C $repository status --porcelain -- backend/java backend/go frontend
@@ -113,16 +116,20 @@ $bundle = Join-Path $OutputDirectory "AllDownloads-v2-$Version-windows-x64"
 $archive = $bundle + '.zip'
 if ((Test-Path -LiteralPath $bundle) -or (Test-Path -LiteralPath $archive)) { throw 'Output version already exists. Use a new version; old outputs are preserved.' }
 $release = Join-Path $bundle 'release'
-foreach ($directory in @($release, (Join-Path $release 'frontend'), (Join-Path $release 'config-templates'), (Join-Path $bundle 'scripts/release'), (Join-Path $bundle 'tools/ffmpeg-9.0.2'), (Join-Path $bundle 'tools/tdl-0.20.4'))) { [void][IO.Directory]::CreateDirectory($directory) }
+foreach ($directory in @($release, (Join-Path $release 'frontend'), (Join-Path $release 'config-templates'), (Join-Path $bundle 'scripts/release'), (Join-Path $bundle 'tools/ffmpeg-9.0.2'), (Join-Path $bundle 'tools/tdl-0.20.4'), (Join-Path $bundle 'tools/rclone-1.74.4'))) { [void][IO.Directory]::CreateDirectory($directory) }
 Copy-Item -LiteralPath $JavaJar -Destination (Join-Path $release 'backend.jar')
 Copy-Item -LiteralPath $RunnerExecutable -Destination (Join-Path $release 'runner.exe')
 Copy-Item -LiteralPath $SessionSetupExecutable -Destination (Join-Path $release 'session-setup.exe')
 Get-ChildItem -LiteralPath $FrontendDirectory -Force | Copy-Item -Destination (Join-Path $release 'frontend') -Recurse
 Copy-Item -LiteralPath $ffmpeg, $ffprobe -Destination (Join-Path $bundle 'tools/ffmpeg-9.0.2')
 Copy-Item -LiteralPath $TdlExecutable -Destination (Join-Path $bundle 'tools/tdl-0.20.4/tdl.exe')
+Copy-Item -LiteralPath $RcloneExecutable -Destination (Join-Path $bundle 'tools/rclone-1.74.4/rclone.exe')
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'licenses/rclone-1.74.4/COPYING') -Destination (Join-Path $bundle 'tools/rclone-1.74.4/COPYING')
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'licenses/rclone-1.74.4/NOTICE.md') -Destination (Join-Path $bundle 'tools/rclone-1.74.4/NOTICE.md')
 # Validate the copied executables too, so a source tool's adjacent DLLs cannot hide an incomplete bundle.
 foreach ($name in @('ffmpeg', 'ffprobe')) { [void](Get-ToolVersion (Join-Path $bundle "tools/ffmpeg-9.0.2/$name.exe") $name) }
 [void](Get-ToolVersion (Join-Path $bundle 'tools/tdl-0.20.4/tdl.exe') tdl)
+[void](Get-ToolVersion (Join-Path $bundle 'tools/rclone-1.74.4/rclone.exe') rclone)
 foreach ($name in @('deployment.example.json', 'runner.example.json')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot ('templates/' + $name)) -Destination (Join-Path $release 'config-templates')
 }
@@ -132,7 +139,7 @@ foreach ($name in @('Common.ps1', 'Install-WindowsBundle.ps1', 'Start-AllDownloa
 $guide = Get-Content -LiteralPath (Join-Path $repository 'docs/Y7000P.md') -Raw -Encoding UTF8
 $guide = $guide.Replace('(../backend/go/README.md)', "(https://github.com/moonseries667/AllDownloads-v2/blob/$commit/backend/go/README.md)").Replace('(ACCEPTANCE.md)', "(https://github.com/moonseries667/AllDownloads-v2/blob/$commit/docs/ACCEPTANCE.md)")
 Write-NewText (Join-Path $bundle 'Y7000P.md') $guide
-$manifest = [ordered]@{ schemaVersion = 1; version = $Version; platform = 'windows-x64'; sourceCommit = $commit; createdAt = [DateTime]::UtcNow.ToString('o'); java = '21'; ffmpeg = '9.0.2'; ffprobe = '9.0.2'; tdl = '0.20.4'; sessionSetup = $true; frontend = @{ apiMode = 'http'; apiBase = '/api/v1' } }
+$manifest = [ordered]@{ schemaVersion = 1; version = $Version; platform = 'windows-x64'; sourceCommit = $commit; createdAt = [DateTime]::UtcNow.ToString('o'); java = '21'; ffmpeg = '9.0.2'; ffprobe = '9.0.2'; tdl = '0.20.4'; rclone = '1.74.4'; sessionSetup = $true; frontend = @{ apiMode = 'http'; apiBase = '/api/v1' } }
 Write-NewText (Join-Path $release 'release.json') ($manifest | ConvertTo-Json -Depth 5)
 if (-not $NoArchive) { Compress-Archive -LiteralPath $bundle -DestinationPath $archive -CompressionLevel Optimal }
 [pscustomobject]@{ bundle = $bundle; archive = $(if ($NoArchive) { $null } else { $archive }); version = $Version; sourceCommit = $commit } | Format-List

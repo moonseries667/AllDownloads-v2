@@ -23,7 +23,7 @@ func main() {
 	}
 	if len(os.Args) > 1 && (os.Args[1] == "-version" || os.Args[1] == "version") {
 		if capture := os.Getenv("ALLDOWNLOADS_RELEASE_TEST_ENV_FILE"); capture != "" {
-			data, _ := json.Marshal(map[string]string{"tool": name, "USERPROFILE": os.Getenv("USERPROFILE"), "HOME": os.Getenv("HOME"), "TDL_DEBUG": os.Getenv("TDL_DEBUG")})
+			data, _ := json.Marshal(map[string]any{"tool": name, "USERPROFILE": os.Getenv("USERPROFILE"), "HOME": os.Getenv("HOME"), "TDL_DEBUG": os.Getenv("TDL_DEBUG"), "RCLONE_CONFIG": os.Getenv("RCLONE_CONFIG"), "args": os.Args[1:]})
 			if err := os.WriteFile(capture, data, 0600); err != nil {
 				panic(err)
 			}
@@ -33,6 +33,8 @@ func main() {
 			fmt.Fprintln(os.Stderr, `openjdk version "21.0.12"`)
 		case "tdl":
 			fmt.Println("Version: 0.20.4")
+		case "rclone":
+			fmt.Println("rclone v1.74.4")
 		default:
 			fmt.Println(name + " version 9.0.2-fixture")
 		}
@@ -84,7 +86,11 @@ func main() {
 			goState = "ACTIVE"
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"runtime": map[string]any{"services": []map[string]string{{"id": "java", "state": "ACTIVE"}, {"id": "go", "state": goState, "lastSeenAt": time.Now().UTC().Format(time.RFC3339Nano)}}}}})
+		mount := map[string]any{"state": "MOUNTED", "reasonCode": nil}
+		if _, err := os.Stat(filepath.Join(root, "mount-pending")); err == nil {
+			mount = map[string]any{"state": "NOT_MOUNTED", "reasonCode": "WINFSP_REQUIRED"}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"runtime": map[string]any{"services": []map[string]string{{"id": "java", "state": "ACTIVE"}, {"id": "go", "state": goState, "lastSeenAt": time.Now().UTC().Format(time.RFC3339Nano)}}, "mount": mount}}})
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if _, err := os.Stat(filepath.Join(root, "fail-front")); err == nil {

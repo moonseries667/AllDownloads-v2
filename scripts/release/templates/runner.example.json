@@ -13,14 +13,25 @@
   },
   "telegram": {
     "executable": "<ROOT>/tools/tdl-0.20.4/tdl.exe",
+    "proxyURL": "http://127.0.0.1:40000",
     "accounts": {}
   },
   "quarkAccounts": {},
   "driveAccounts": {
     "drive-main": {
       "rootId": "root",
-      "tokenFile": "<ROOT>/runtime/auth/drive.session",
-      "clientFile": "<ROOT>/runtime/auth/google-desktop-client.json"
+      "proxyURL": "http://127.0.0.1:40000",
+      "rclone": {
+        "executable": "<ROOT>/tools/rclone-1.74.4/rclone.exe",
+        "configFile": "C:/Users/WIN/AppData/Roaming/rclone/rclone.conf",
+        "remote": "gdrive",
+        "bindingFile": "<ROOT>/runtime/auth/drive-binding.json"
+      }
     }
+  },
+  "driveMount": {
+    "enabled": true,
+    "accountId": "drive-main",
+    "cacheDir": "<ROOT>/runtime/cache/gdrive"
   }
 }
