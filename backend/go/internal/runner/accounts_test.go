@@ -121,6 +121,36 @@ func TestAccountWorkerUnconfiguredFactsAndLocalSetup(t *testing.T) {
 	}
 }
 
+func TestAccountWorkerDriveLocalSetupNamesTheConfiguredAuthorizationSource(t *testing.T) {
+	for _, code := range []string{"AUTH_MANAGED_EXTERNALLY", "AUTH_CLIENT_REQUIRED"} {
+		t.Run(code, func(t *testing.T) {
+			w := AccountWorker{Accounts: map[string]AccountAdapter{"drive-main": {Begin: func(_ context.Context, id string) (AuthSession, error) {
+				return AuthSession{AuthSessionID: id, AccountID: "drive-main", Platform: "GOOGLE_DRIVE", State: "NEEDS_ACTION", NextAction: "LOCAL_SETUP", ReasonCode: pointer(code)}, nil
+			}}}}
+			value, _, err := w.Handle(context.Background(), accountTestOperation("AUTH_STEP", "drive-main", "GOOGLE_DRIVE", "BEGIN"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			session := sessionValue(t, value)
+			if session.ReasonCode == nil || *session.ReasonCode != code {
+				t.Fatal("local setup reason changed")
+			}
+			if code == "AUTH_MANAGED_EXTERNALLY" {
+				for _, expected := range []string{"Y7000P", "指定 rclone 配置", "gdrive", "主动检查账号"} {
+					if !strings.Contains(session.Message, expected) {
+						t.Fatal("managed authorization setup omitted its configured source or next action")
+					}
+				}
+				if strings.Contains(session.Message, "Desktop OAuth client") {
+					t.Fatal("managed authorization incorrectly requested a new OAuth client")
+				}
+			} else if !strings.Contains(session.Message, "Desktop OAuth client") {
+				t.Fatal("explicit Desktop OAuth setup guidance changed")
+			}
+		})
+	}
+}
+
 func TestAccountWorkerRejectsInvalidOperationBeforeCallingAdapter(t *testing.T) {
 	calls := 0
 	w := AccountWorker{Accounts: map[string]AccountAdapter{"bilibili-main": {Check: func(context.Context) (Account, error) {

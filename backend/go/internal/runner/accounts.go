@@ -363,6 +363,9 @@ func authMessage(session AuthSession, setup string) string {
 		case "QUARK":
 			return "请在 Y7000P 的受控本地入口配置新夸克会话，再主动检查账号。"
 		case "GOOGLE_DRIVE":
+			if session.ReasonCode != nil && *session.ReasonCode == "AUTH_MANAGED_EXTERNALLY" {
+				return "请在 Y7000P 维护指定 rclone 配置中的 gdrive 授权源，再主动检查账号。"
+			}
 			return "请在 Y7000P 配置新的 Desktop OAuth client，再亲自完成 Google 官方授权。"
 		default:
 			return "请在 Y7000P 配置 Bilibili 主账号的受控登录入口，再重新发起登录。"

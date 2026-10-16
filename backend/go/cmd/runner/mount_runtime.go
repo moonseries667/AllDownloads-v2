@@ -23,7 +23,11 @@ func maintainMount(ctx context.Context, mount mountLifecycle, retryInterval time
 		}
 		status := mount.Status()
 		if status.State != "MOUNTED" && status.State != "STARTING" {
-			_ = mount.Start(ctx)
+			// A previous stop may only become confirmable on this retry. Keep
+			// its ownership until cleanup succeeds before starting another child.
+			if err := mount.Close(); err == nil && ctx.Err() == nil {
+				_ = mount.Start(ctx)
+			}
 		}
 		timer := time.NewTimer(retryInterval)
 		select {
