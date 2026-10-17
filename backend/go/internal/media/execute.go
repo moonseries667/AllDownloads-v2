@@ -1,6 +1,7 @@
 package media
 
 import (
+	"compress/flate"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -78,6 +79,15 @@ func (e *Executor) Execute(ctx context.Context, plan Plan) ([]FileFact, error) {
 				return facts, Fail("TOOL_NOT_CONFIGURED", "VERIFY", false)
 			}
 			probe, err = e.Tools.Inspect(ctx, final, expected)
+			if err != nil {
+				return facts, err
+			}
+		} else if output.Inputs[0].Kind == "DANMAKU" {
+			decoded, err := e.Files.WorkFile(id, "danmaku.xml")
+			if err != nil {
+				return facts, err
+			}
+			final, err = prepareDanmaku(ctx, final, decoded)
 			if err != nil {
 				return facts, err
 			}
@@ -175,28 +185,112 @@ func verifySupplement(path, kind string) error {
 			}
 		}
 	case "DANMAKU":
-		decoder := xml.NewDecoder(io.LimitReader(f, 64<<20))
-		root := false
-		for {
-			token, err := decoder.Token()
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			if err != nil {
-				return Fail("INVALID_DANMAKU", "VERIFY", false)
-			}
-			if start, ok := token.(xml.StartElement); ok && !root {
-				if start.Name.Local != "i" {
-					return Fail("INVALID_DANMAKU", "VERIFY", false)
-				}
-				root = true
-			}
-		}
-		if !root {
-			return Fail("INVALID_DANMAKU", "VERIFY", false)
-		}
+		return verifyDanmaku(context.Background(), f)
 	default:
 		return Fail("UNSUPPORTED_TRACK", "VERIFY", false)
+	}
+	return nil
+}
+
+const maxDanmakuBytes = 64 << 20
+
+// Keep the transport cache intact: a Complete raw-DEFLATE input can be reused
+// after restart, while the independently decoded XML is verified and published.
+func prepareDanmaku(ctx context.Context, inputPath, decodedPath string) (string, error) {
+	input, err := os.Open(inputPath)
+	if err != nil {
+		return "", err
+	}
+	defer input.Close()
+	if err := verifyDanmaku(ctx, input); err == nil {
+		return inputPath, nil
+	} else {
+		var failure *Failure
+		if !errors.As(err, &failure) || failure.Code != "INVALID_DANMAKU" {
+			return "", err
+		}
+	}
+	if _, err := input.Seek(0, io.SeekStart); err != nil {
+		return "", err
+	}
+	inflated := flate.NewReader(input)
+	defer inflated.Close()
+	decoded, err := os.OpenFile(decodedPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+	if err != nil {
+		return "", err
+	}
+	bytes, decodeErr := io.Copy(decoded, io.LimitReader(danmakuContextReader{ctx, inflated}, maxDanmakuBytes+1))
+	persistErr := errors.Join(decoded.Sync(), decoded.Close())
+	if persistErr != nil {
+		return "", persistErr
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if decodeErr != nil {
+		var localError *os.PathError
+		if errors.As(decodeErr, &localError) {
+			return "", decodeErr
+		}
+		return "", Fail("INVALID_DANMAKU", "VERIFY", false)
+	}
+	if bytes > maxDanmakuBytes {
+		return "", Fail("INVALID_DANMAKU", "VERIFY", false)
+	}
+	file, err := os.Open(decodedPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	if err := verifyDanmaku(ctx, file); err != nil {
+		return "", err
+	}
+	return decodedPath, nil
+}
+
+type danmakuContextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r danmakuContextReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(p)
+}
+
+func verifyDanmaku(ctx context.Context, input io.Reader) error {
+	limited := &io.LimitedReader{R: danmakuContextReader{ctx, input}, N: maxDanmakuBytes + 1}
+	decoder := xml.NewDecoder(limited)
+	root := false
+	for {
+		token, err := decoder.Token()
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if limited.N == 0 {
+			return Fail("INVALID_DANMAKU", "VERIFY", false)
+		}
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			var localError *os.PathError
+			if errors.As(err, &localError) {
+				return err
+			}
+			return Fail("INVALID_DANMAKU", "VERIFY", false)
+		}
+		if start, ok := token.(xml.StartElement); ok && !root {
+			if start.Name.Local != "i" {
+				return Fail("INVALID_DANMAKU", "VERIFY", false)
+			}
+			root = true
+		}
+	}
+	if !root {
+		return Fail("INVALID_DANMAKU", "VERIFY", false)
 	}
 	return nil
 }

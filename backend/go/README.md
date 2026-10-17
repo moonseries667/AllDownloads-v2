@@ -2,7 +2,7 @@
 
 本模块在 Carbon 开发和隔离验证，正式运行目标仍为 Y7000P。Java 唯一决定选择、路径、任务、重试和归档；Go 取得平台事实并执行冻结计划，浏览器不调用 Go。当前共同契约已通过 PR #29 合入主线 `0b34a82`，保留第一部分 `d508c7a` 的兼容语义；协议版本和 payload schemaVersion 均为 1。
 
-正式命令已装配单账号 Bilibili、Telegram `tdl 0.20.4`、夸克原生 HTTP、Drive 同源授权和受管 G 盘挂载，复用同一发布、收据、租约及取消循环。完整 Windows 包、同源前端及启停方式见 [Y7000P 发布说明](../../docs/Y7000P.md)。生产适配器已用本地协议替身验证，真实账号与 Y7000P 验收尚未进行。
+正式命令已装配单账号 Bilibili、Telegram `tdl 0.20.4`、夸克原生 HTTP、Drive 同源授权和受管 G 盘挂载，复用同一发布、收据、租约及取消循环。完整 Windows 包、同源前端及启停方式见 [Y7000P 发布说明](../../docs/Y7000P.md)。生产适配器的本地协议替身验证与 Y7000P 的真实账号、文件及界面验收分别记录。
 
 ## 正式启动与新会话配置
 
@@ -153,13 +153,13 @@ Java 本地组合测试可增加 `fixtureCatalog`，指向临时 JSON 文件。�
 }
 ```
 
-先通过 FETCH_BIL_METADATA 或 USER_ADDED 来源同步让 Go 保存快照，Java 使用返回的 `content.revision` 和轨道 ID 创建预览/订单；不要直接把共享示例的 `fixture-v1` 当运行时 revision。测试 HTTP 返回 Bilibili 字幕格式，如 `{"body":[{"from":0,"to":1,"content":"测试"}]}`。视频/音频使用临时 FFmpeg 文件与 VIDEO/AUDIO 轨道；DANMAKU 返回 `<i>...</i>` XML。此 catalog 是 Go 私有测试入口，不是另起平台协议，也不自动填充真实目录。
+先通过 FETCH_BIL_METADATA 或 USER_ADDED 来源同步让 Go 保存快照，Java 使用返回的 `content.revision` 和轨道 ID 创建预览/订单；不要直接把共享示例的 `fixture-v1` 当运行时 revision。测试 HTTP 返回 Bilibili 字幕格式，如 `{"body":[{"from":0,"to":1,"content":"测试"}]}`。视频/音频使用临时 FFmpeg 文件与 VIDEO/AUDIO 轨道；DANMAKU 返回 `<i>...</i>` XML，或平台实际返回的 raw DEFLATE 实体。压缩弹幕在下载缓存之后解压至独立工作文件，校验后发布 XML；保留原始输入和下载状态，既有缓存也能重试。有效的空 `<i>` XML 表示源站未提供弹幕条目。此 catalog 是 Go 私有测试入口，不是另起平台协议，也不自动填充真实目录。
 
 ## 实质限制与真实验收
 
-原生请求结构参考 [yt-dlp Bilibili 提取器](https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/bilibili.py)，字幕证据参考 [字幕 API 参数追溯](https://github.com/gcnyin/bilibili-subtitle-api)。本轮仅读取公开开发资料，没有请求实际 Bilibili 账号/内容。接口变化、WBI、账号权限、付费/地区限制、收藏夹/合集大规模扫描和实际 XML 弹幕仍需获准后在 Y7000P 实测。
+原生请求结构参考 [yt-dlp Bilibili 提取器](https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/bilibili.py)，字幕证据参考 [字幕 API 参数追溯](https://github.com/gcnyin/bilibili-subtitle-api)。接口变化、WBI、账号权限、付费/地区限制、收藏夹/合集大规模扫描和实际 XML 弹幕须在获准的目标与操作范围内于 Y7000P 分别实测，不以单个视频或替身通过代替。
 
-电影各版本按平台真实单元返回，不伪造 P；依据实际 DASH audio 的 language/language_doc 等字段按语言保留最高可用音轨，形成 LANGUAGE 单元并保留共享视频身份，字段依据见 [BBDown Rust 平台解析器](https://github.com/Joey-Project/BBDown-rust/blob/master/crates/bbdown/src/client.rs)。未提供语言的音轨不猜标签。额外 `dubbing_info` 结构遇到时报告 ALTERNATE_AUDIO_METADATA_UNSUPPORTED。非 DASH/DRM/未知媒体结构不伪造可下载轨道。各平台会话及 G 盘组件已接入；真实账号、Explorer、云端结果与长期运行仍待 Y7000P 验收。
+电影各版本按平台真实单元返回，不伪造 P；依据实际 DASH audio 的 language/language_doc 等字段按语言保留最高可用音轨，形成 LANGUAGE 单元并保留共享视频身份，字段依据见 [BBDown Rust 平台解析器](https://github.com/Joey-Project/BBDown-rust/blob/master/crates/bbdown/src/client.rs)。未提供语言的音轨不猜标签。额外 `dubbing_info` 结构遇到时报告 ALTERNATE_AUDIO_METADATA_UNSUPPORTED。非 DASH/DRM/未知媒体结构不伪造可下载轨道。各平台会话及 G 盘组件已接入；真实账号、Explorer、云端结果与长期运行均独立验收，本地替身不能替代这些事实。
 
 ## 正式入口的隔离跨进程复现
 
