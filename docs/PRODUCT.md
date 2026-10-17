@@ -115,7 +115,7 @@ Telegram 收藏同步沿用旧版批次语义：本批新增消息按消息时�
 
 ## 7 上传 留存与异常
 
-2026-10-17 补充：Google Drive 的原生上传和资源管理器 G: (`MyGDrive`) 共用用户指定的 `C:\Users\WIN\AppData\Roaming\rclone\rclone.conf` 中的 `gdrive` 授权，凭据仅在程序内部使用。此项不导入旧数据；Bilibili、Telegram、夸克继续使用新会话。tdl 的全部网络流程和 Drive 通过 Cloudflare WARP `http://127.0.0.1:40000`，不配置全局代理、不在故障时绕过。挂载使用新 v2 缓存，故障不停止其余平台的网页和独立任务，具体运行边界见 [代理与挂载](../contracts/PROXY-MOUNT.md)。
+2026-10-17 补充：Google Drive 的原生上传和资源管理器 G: (`MyGDrive`) 共用用户指定的 `C:\Users\WIN\AppData\Roaming\rclone\rclone.conf` 中的 `gdrive` 授权，凭据仅在程序内部使用。此项不导入旧数据；Bilibili、Telegram、夸克继续使用新会话。tdl 的全部网络流程通过 Cloudflare WARP `socks5://127.0.0.1:40000`，Drive 保持同一端口的 `http://127.0.0.1:40000`，不配置全局代理、不在故障时绕过。挂载使用新 v2 缓存，故障不停止其余平台的网页和独立任务，具体运行边界见 [代理与挂载](../contracts/PROXY-MOUNT.md)。
 
 设计默认完整成果自动进入独立的上传队列，可分别暂停下载与上传；用户覆盖本批目录的 `NONE` 订单除外。Google Drive 实际结果核对完成后才标记归档完成。挂载成功、本机下载完成、云端核验归档是独立事实。上传失败保留本机文件，重新上传不能重新触发平台下载或夸克转存。
 

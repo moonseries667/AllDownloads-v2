@@ -14,6 +14,7 @@ import BilibiliMediaChoices from "./BilibiliMediaChoices.vue";
 const props = defineProps<{ modelValue: boolean; contentId: string | null }>();
 const emit = defineEmits<{ "update:modelValue": [open: boolean]; saved: [selection: SavedMediaSelection]; close: [] }>();
 const content = ref<BilibiliContent | null>(null);
+const failedCoverUrls = ref(new Set<string>());
 const selectedIds = ref<string[]>([]), descriptionOpen = ref(false), busy = ref(false), error = ref("");
 const changedVersion = ref(false), missingChoices = ref(false);
 let generation = 0;
@@ -52,6 +53,10 @@ function save() {
   emit("saved", saved);
   emit("update:modelValue", false);
 }
+function markCoverFailed(event: Event) {
+  const url = (event.currentTarget as HTMLImageElement).getAttribute("src");
+  if (url) failedCoverUrls.value.add(url);
+}
 watch(() => [props.modelValue, props.contentId] as const, ([open]) => {
   if (open) void load(); else { generation++; busy.value = false; }
 }, { immediate: true });
@@ -65,8 +70,8 @@ onBeforeUnmount(() => generation++);
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
       <el-button v-if="error" class="retry-detail" @click="load">重试加载详情</el-button>
       <template v-if="content">
-        <img v-if="content.coverUrl" class="content-cover" :src="content.coverUrl" :alt="content.title + '封面'" />
-        <div v-else class="missing-cover">暂无封面</div>
+        <img v-if="content.coverUrl && !failedCoverUrls.has(content.coverUrl)" :key="content.coverUrl" class="content-cover" referrerpolicy="no-referrer" :src="content.coverUrl" :alt="content.title + '封面'" @error="markCoverFailed" />
+        <div v-else class="missing-cover">{{ content.coverUrl ? '封面加载失败' : '暂无封面' }}</div>
         <h2 class="content-title">{{ content.title }}</h2>
         <p class="content-byline">UP 主：{{ content.author?.name || '未知' }}<span>上传日期：{{ calendarDate(content.publishedAt) }}</span></p>
         <section class="description-section" aria-label="简介">

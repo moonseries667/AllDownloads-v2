@@ -20,7 +20,7 @@ import (
 
 func TestProxyValidationAndRedactedErrors(t *testing.T) {
 	for _, raw := range []string{
-		"http://fixture-user:fixture-secret@127.0.0.1:40000", "https://127.0.0.1:40000", "socks5://127.0.0.1:40000",
+		"http://fixture-user:fixture-secret@127.0.0.1:40000", "https://127.0.0.1:40000", "socks5h://127.0.0.1:40000",
 		"http://external.invalid:40000", "http://localhost:40000", "http://192.0.2.1:40000", "http://127.0.0.1", "http://127.0.0.1:0", "http://127.0.0.1:65536",
 		"http://127.0.0.1:40000/path", "http://127.0.0.1:40000/%2f", "http://127.0.0.1:40000?fixture-secret", "http://127.0.0.1:40000?", "http://127.0.0.1:40000#", " http://127.0.0.1:40000", "http://127.0.0.1:bad",
 	} {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -77,6 +78,90 @@ func TestBilibiliMetadataMultiPartSeasonsAndSubtitleEvidence(t *testing.T) {
 		t.Fatal("seasons merged")
 	}
 }
+
+func TestBilibiliDASHBackupsStayWithSelectedRepresentation(t *testing.T) {
+	for _, style := range []struct{ name, base, backup string }{{"camel", "baseUrl", "backupUrl"}, {"snake", "base_url", "backup_url"}} {
+		t.Run(style.name, func(t *testing.T) {
+			representation := func(id, codec, bandwidth int, language, primary string, backups []any) map[string]any {
+				return map[string]any{"id": id, "codecid": codec, "bandwidth": bandwidth, "language": language, style.base: primary, style.backup: backups}
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/x/web-interface/view":
+					fmt.Fprint(w, `{"code":0,"data":{"bvid":"BVfixture","pages":[{"cid":11,"duration":214}]}}`)
+				case "/x/web-interface/nav":
+					fmt.Fprint(w, `{"code":0,"data":{"isLogin":true,"mid":42,"wbi_img":{"img_url":"https://example/abcdefghijklmnopqrstuvwxyz012345.png","sub_url":"https://example/ABCDEFGHIJKLMNOPQRSTUVWXYZ678901.png"}}}`)
+				case "/x/player/wbi/playurl":
+					video := []any{
+						representation(80, 7, 100, "", "https://video-low.invalid/main", []any{"https://video-low.invalid/backup"}),
+						representation(125, 13, 900, "", "//video-high.invalid/main", []any{"", " ", "//video-high.invalid/main", "//video-backup.invalid/one", "https://video-backup.invalid/one", " https://video-backup.invalid/two ", nil, 7}),
+					}
+					audio := []any{
+						representation(30216, 0, 100, "zh-CN", "https://audio-low.invalid/main", []any{"https://audio-low.invalid/backup"}),
+						representation(30280, 0, 400, "zh-CN", "https://audio-zh.invalid/main", []any{"//audio-zh.invalid/main", "//audio-zh.invalid/backup", "https://audio-zh.invalid/backup"}),
+						representation(30280, 0, 350, "en", "https://audio-en.invalid/main", []any{"https://audio-en.invalid/backup"}),
+					}
+					json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"dash": map[string]any{"video": video, "audio": audio}}})
+				case "/x/player/wbi/v2":
+					fmt.Fprint(w, `{"code":0,"data":{"subtitle":{"subtitles":[]}}}`)
+				case "/x/v2/dm/web/view":
+					w.Write([]byte{8, 0})
+				default:
+					t.Error("metadata fetched a media locator or expanded its API requests")
+					w.WriteHeader(http.StatusBadRequest)
+				}
+			}))
+			defer server.Close()
+			meta, err := (&Bilibili{Session: fixedBilibiliSession{server.Client()}, APIBase: server.URL}).Fetch(context.Background(), Reference{"BVID", "BVfixture"})
+			if err != nil || len(meta.Units) != 1 || len(meta.Units[0].Tracks) != 4 {
+				t.Fatalf("DASH metadata failed: units=%d err=%v", len(meta.Units), err)
+			}
+			wanted := map[string]struct {
+				primary string
+				backups []string
+			}{
+				"cid:11:video:125:13":        {"https://video-high.invalid/main", []string{"https://video-backup.invalid/one", "https://video-backup.invalid/two"}},
+				"cid:11:audio:30280:0:zh-CN": {"https://audio-zh.invalid/main", []string{"https://audio-zh.invalid/backup"}},
+				"cid:11:audio:30280:0:en":    {"https://audio-en.invalid/main", []string{"https://audio-en.invalid/backup"}},
+			}
+			for _, track := range meta.Units[0].Tracks {
+				if track.Kind != "VIDEO" && track.Kind != "AUDIO" {
+					continue
+				}
+				expected, ok := wanted[track.ID]
+				if !ok {
+					t.Fatalf("highest-quality representation changed: %s", track.ID)
+				}
+				encoded, _ := json.Marshal(track.Source)
+				var source struct {
+					BackupURLs []string
+				}
+				if json.Unmarshal(encoded, &source) != nil || !reflect.DeepEqual(source.BackupURLs, expected.backups) {
+					t.Fatalf("selected representation lost or mixed backup URLs: track=%s backups=%v", track.ID, source.BackupURLs)
+				}
+				if track.Source.URL != expected.primary || track.Source.Version != "bilibili:42:"+track.ID || track.Source.Headers.Get(BilibiliIdentityHeader) != "42" || track.Source.Headers.Get("Referer") != "https://www.bilibili.com/" || track.Source.Headers.Get("User-Agent") != "Mozilla/5.0" {
+					t.Fatal("backup extraction changed the primary URL, identity, version or headers")
+				}
+				delete(wanted, track.ID)
+			}
+			if len(wanted) != 0 {
+				t.Fatal("selected representation disappeared")
+			}
+		})
+	}
+}
+
+func TestLegacySourceFixtureWithoutBackupsRoundTrips(t *testing.T) {
+	var source Source
+	if err := json.Unmarshal([]byte(`{"URL":"https://cdn.invalid/legacy","Version":"legacy-track","Headers":{"Referer":["https://www.bilibili.com/"]},"Size":null}`), &source); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(source)
+	if err != nil || strings.Contains(string(encoded), "BackupURLs") || source.URL != "https://cdn.invalid/legacy" || source.Version != "legacy-track" || source.Headers.Get("Referer") != "https://www.bilibili.com/" || source.Size != nil {
+		t.Fatal("legacy private source changed when backups were absent", err)
+	}
+}
+
 func TestBilibiliFailuresAndAbsentClassification(t *testing.T) {
 	for _, code := range []int{-404, -403, -101, -412, 777} {
 		t.Run(fmt.Sprint(code), func(t *testing.T) {

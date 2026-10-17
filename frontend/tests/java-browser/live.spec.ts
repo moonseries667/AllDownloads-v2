@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { AuthSession } from "../../src/api/accounts";
+import type { BilibiliContent } from "../../src/api/types";
 
 test.describe.configure({ mode: "serial" });
 const pageErrors: string[] = [];
@@ -252,6 +253,71 @@ test("contract stub: WAIT confirmation keeps polling only after its current task
   expect(steps).toBe(2);
   expect(begins).toBe(1);
   expect(external).toEqual([]);
+});
+
+test("contract stub: cover images omit Referer and distinguish loading failures from missing covers", async ({ page }, info) => {
+  const imageOrigin = "http://cover-fixture.invalid";
+  const coverRequests: { path: string; referer: string | undefined }[] = [];
+  const makeContent = (id: string, title: string, coverUrl: string | null): BilibiliContent => ({
+    id, title, coverUrl, platform: "BILIBILI", externalId: "BV1SyntheticCover", externalIdType: "BVID", kind: "SINGLE", revision: "1",
+    sourceIds: [], originalUrl: "https://www.bilibili.com/video/BV1SyntheticCover", availability: "AVAILABLE", availabilityReason: null,
+    downloadSummary: { state: "NOT_REQUESTED" }, archiveSummary: { state: "NOT_REQUESTED" }, updatedAt: "2026-10-17T00:00:00Z", publishedAt: "2026-10-17T00:00:00Z",
+    author: { id: "synthetic-author", name: "合成作者" }, description: "仅用于封面请求与失败反馈回归", seasonId: null, sources: [], mediaUnits: [], warnings: [],
+  });
+  const contents = [
+    makeContent("synthetic-cover-ready", "合成封面正常", imageOrigin + "/ready-list.svg"),
+    makeContent("synthetic-cover-failed", "合成封面失败", imageOrigin + "/failed-list.svg"),
+    makeContent("synthetic-cover-missing", "合成无封面", null),
+  ];
+  await page.route(imageOrigin + "/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    const referer = route.request().headers()["referer"];
+    coverRequests.push({ path, referer });
+    if (path.startsWith("/failed")) {
+      await route.fulfill({ status: 404, contentType: "text/plain", body: "synthetic missing image" });
+    } else if (referer) {
+      await route.fulfill({ status: 403, contentType: "text/html", body: "synthetic referer rejection" });
+    } else {
+      await route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="9"><rect width="16" height="9" fill="#166a59"/></svg>' });
+    }
+  });
+  await page.route(/\/api\/v1\/bilibili\/contents(?:\?.*)?$/, route => route.fulfill({ json: { data: { items: contents, nextCursor: null, total: contents.length }, requestId: "stub-cover-list" } }));
+  await page.route(/\/api\/v1\/bilibili\/sources(?:\?.*)?$/, route => route.fulfill({ json: { data: { items: [], nextCursor: null, total: 0 }, requestId: "stub-cover-sources" } }));
+  await page.route("**/api/v1/bilibili/contents/synthetic-cover-*", async route => {
+    const content = contents.find(item => route.request().url().endsWith("/" + item.id));
+    expect(content).toBeTruthy();
+    const coverUrl = content!.coverUrl?.replace("-list.svg", "-detail.svg") ?? null;
+    await route.fulfill({ json: { data: { ...content!, coverUrl }, requestId: "stub-cover-detail" } });
+  });
+  await page.goto("/bilibili");
+  const readyCard = page.locator(".video-card").filter({ hasText: "合成封面正常" });
+  const failedCard = page.locator(".video-card").filter({ hasText: "合成封面失败" });
+  const missingCard = page.locator(".video-card").filter({ hasText: "合成无封面" });
+  const readyImage = readyCard.getByRole("img", { name: "合成封面正常封面", exact: true });
+  // This fails before no-referrer is set: the fixture returns HTTP 403 and naturalWidth remains zero.
+  await expect.poll(() => readyImage.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  await expect(readyImage).toHaveAttribute("referrerpolicy", "no-referrer");
+  expect(await readyImage.getAttribute("crossorigin")).toBeNull();
+  await expect(failedCard.getByText("封面加载失败", { exact: true })).toBeVisible();
+  await expect(failedCard.locator(".video-cover img")).toHaveCount(0);
+  await expect(missingCard.getByText("暂无封面", { exact: true })).toBeVisible();
+  await page.screenshot({ path: info.outputPath("cover-list-loaded-and-fallbacks.png"), animations: "disabled", fullPage: true });
+
+  // Reuse the same detail drawer across different URLs: one failed cover must not poison the next.
+  await failedCard.getByRole("button", { name: "详情", exact: true }).click();
+  const detail = page.getByRole("dialog", { name: "内容详情", exact: true });
+  await expect(detail.getByText("封面加载失败", { exact: true })).toBeVisible();
+  await expect(detail.locator("img.content-cover")).toHaveCount(0);
+  await detail.getByRole("button", { name: "关闭", exact: true }).click();
+  await expect(detail).toBeHidden();
+  await readyCard.getByRole("button", { name: "详情", exact: true }).click();
+  const detailImage = detail.getByRole("img", { name: "合成封面正常封面", exact: true });
+  await expect.poll(() => detailImage.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  await expect(detailImage).toHaveAttribute("referrerpolicy", "no-referrer");
+  expect(await detailImage.getAttribute("crossorigin")).toBeNull();
+  expect(coverRequests.some(request => request.path === "/ready-list.svg")).toBe(true);
+  expect(coverRequests.some(request => request.path === "/ready-detail.svg")).toBe(true);
+  expect(coverRequests.every(request => !request.referer)).toBe(true);
 });
 
 test("a stopped Java process keeps the page in a visible error state without demo fallback", async ({ page }, info) => {

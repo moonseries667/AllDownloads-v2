@@ -29,6 +29,33 @@ func (d Downloader) Fetch(ctx context.Context, source Source, path string) error
 	if source.Version == "" || source.URL == "" {
 		return Fail("RESOURCE_VERSION_MISSING", "DOWNLOAD", false)
 	}
+	seen := map[string]bool{}
+	candidates := append([]string{source.URL}, source.BackupURLs...)
+	var lastErr error
+	for index, candidate := range candidates {
+		if index != 0 {
+			candidate = strings.TrimSpace(candidate)
+		}
+		if candidate == "" || seen[candidate] {
+			continue
+		}
+		seen[candidate] = true
+		source.URL = candidate
+		retryMirror, err := d.fetch(ctx, source, path)
+		if err == nil || !retryMirror {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		lastErr = err
+	}
+	return lastErr
+}
+
+// Only pre-body transport failures and HTTP 5xx allow another official URL.
+// Reloading the existing file/state keeps range reuse behind its strong ETag.
+func (d Downloader) fetch(ctx context.Context, source Source, path string) (retryMirror bool, err error) {
 	client := d.Client
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Minute}
@@ -37,33 +64,33 @@ func (d Downloader) Fetch(ctx context.Context, source Source, path string) error
 	raw, err := os.ReadFile(path + ".json")
 	if err == nil {
 		if json.Unmarshal(raw, &state) != nil {
-			return Fail("INVALID_DOWNLOAD_STATE", "DOWNLOAD", false)
+			return false, Fail("INVALID_DOWNLOAD_STATE", "DOWNLOAD", false)
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
+		return false, err
 	}
 	var offset int64
 	if info, err := os.Stat(path); err == nil {
 		offset = info.Size()
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
+		return false, err
 	}
 	if state.Version != "" && state.Version != source.Version {
-		return Fail("RESOURCE_VERSION_CHANGED", "DOWNLOAD", false)
+		return false, Fail("RESOURCE_VERSION_CHANGED", "DOWNLOAD", false)
 	}
 	if offset > 0 && state.SavedBytes == offset && state.SHA256 != "" {
 		actual, err := hashFile(path)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if actual != state.SHA256 {
-			return Fail("PARTIAL_FILE_CORRUPT", "DOWNLOAD", false)
+			return false, Fail("PARTIAL_FILE_CORRUPT", "DOWNLOAD", false)
 		}
 	} else {
 		offset = 0
 	}
 	if state.Complete && offset == state.Total && state.SHA256 != "" {
-		return nil
+		return false, nil
 	}
 	// Only a strong validator authorizes range reuse. Otherwise restart this file.
 	if state.ETag == "" || strings.HasPrefix(state.ETag, "W/") || state.Version == "" {
@@ -71,7 +98,7 @@ func (d Downloader) Fetch(ctx context.Context, source Source, path string) error
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, source.URL, nil)
 	if err != nil {
-		return Fail("INVALID_MEDIA_URL", "DOWNLOAD", false)
+		return false, Fail("INVALID_MEDIA_URL", "DOWNLOAD", false)
 	}
 	req.Header = source.Headers.Clone()
 	if req.Header == nil {
@@ -85,27 +112,31 @@ func (d Downloader) Fetch(ctx context.Context, source Source, path string) error
 	resp, err := client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return false, ctx.Err()
 		}
-		return Fail("NETWORK_ERROR", "DOWNLOAD", true)
+		var failure *Failure
+		if errors.As(err, &failure) {
+			return false, failure
+		}
+		return true, Fail("NETWORK_ERROR", "DOWNLOAD", true)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 && resp.StatusCode != 206 {
-		return HTTPFailure(resp.StatusCode, "DOWNLOAD")
+		return resp.StatusCode >= 500, HTTPFailure(resp.StatusCode, "DOWNLOAD")
 	}
 	etag := resp.Header.Get("ETag")
 	total := resp.ContentLength
 	if resp.StatusCode == 206 {
 		start, end, full, ok := parseRange(resp.Header.Get("Content-Range"))
 		if !ok || offset == 0 || start != offset || end < start || full <= end || etag != state.ETag || (state.Total >= 0 && full != state.Total) || (resp.ContentLength >= 0 && resp.ContentLength != end-start+1) {
-			return Fail("RESOURCE_VERSION_CHANGED", "DOWNLOAD", false)
+			return false, Fail("RESOURCE_VERSION_CHANGED", "DOWNLOAD", false)
 		}
 		total = full
 	} else {
 		offset = 0
 	}
 	if source.Size != nil && total >= 0 && *source.Size != total {
-		return Fail("RESOURCE_VERSION_CHANGED", "DOWNLOAD", false)
+		return false, Fail("RESOURCE_VERSION_CHANGED", "DOWNLOAD", false)
 	}
 	flags := os.O_CREATE | os.O_WRONLY
 	if offset == 0 {
@@ -113,48 +144,48 @@ func (d Downloader) Fetch(ctx context.Context, source Source, path string) error
 	}
 	file, err := os.OpenFile(path, flags, 0600)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if _, err := file.Seek(offset, io.SeekStart); err != nil {
 		file.Close()
-		return err
+		return false, err
 	}
 	state = downloadState{Version: source.Version, ETag: etag, Total: total}
 	if err := saveDownloadState(path, state); err != nil {
 		file.Close()
-		return err
+		return false, err
 	}
 	n, copyErr := io.Copy(file, resp.Body)
 	persistErr := errors.Join(file.Sync(), file.Close())
 	if persistErr != nil {
-		return persistErr
+		return false, persistErr
 	}
 	state.SavedBytes = offset + n
 	state.SHA256, err = hashFile(path)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if err := saveDownloadState(path, state); err != nil {
-		return err
+		return false, err
 	}
 	err = copyErr
 	if err != nil {
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return false, ctx.Err()
 		}
 		var fileError *os.PathError
 		if errors.As(err, &fileError) {
-			return err
+			return false, err
 		}
-		return Fail("NETWORK_INTERRUPTED", "DOWNLOAD", true)
+		return false, Fail("NETWORK_INTERRUPTED", "DOWNLOAD", true)
 	}
 	actual := offset + n
 	if (total >= 0 && actual != total) || (source.Size != nil && actual != *source.Size) {
-		return Fail("INCOMPLETE_DOWNLOAD", "DOWNLOAD", true)
+		return false, Fail("INCOMPLETE_DOWNLOAD", "DOWNLOAD", true)
 	}
 	state.Total = actual
 	state.Complete = true
-	return saveDownloadState(path, state)
+	return false, saveDownloadState(path, state)
 }
 
 func parseRange(s string) (int64, int64, int64, bool) {

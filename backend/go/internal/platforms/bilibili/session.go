@@ -280,16 +280,16 @@ func (s *Session) DownloadClient() *http.Client {
 			if req.Context().Err() != nil {
 				return nil, req.Context().Err()
 			}
-			// Downloader maps HTTP statuses to controlled media failures; returning
-			// a transport error would erase AUTH_REQUIRED as NETWORK_ERROR.
-			code := http.StatusServiceUnavailable
 			switch media.Classify(err, "DOWNLOAD").Code {
 			case "AUTH_REQUIRED":
-				code = http.StatusUnauthorized
+				return statusResponse(req, http.StatusUnauthorized), nil
 			case "RATE_LIMITED":
-				code = http.StatusTooManyRequests
+				return statusResponse(req, http.StatusTooManyRequests), nil
+			default:
+				// Preserve controlled verification failures. A synthetic CDN 503
+				// would incorrectly allow media mirrors after an account error.
+				return nil, err
 			}
-			return statusResponse(req, code), nil
 		}
 		if sameOrigin(req.URL, s.api) {
 			return client.Transport.RoundTrip(req)

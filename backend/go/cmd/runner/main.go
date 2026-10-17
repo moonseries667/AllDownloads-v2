@@ -160,9 +160,11 @@ func run(ctx context.Context, path string, once bool) (runErr error) {
 					if !track.Selectable() {
 						continue
 					}
-					u, err := url.Parse(track.Source.URL)
-					if err != nil || u.User != nil || u.Scheme != "http" || net.ParseIP(u.Hostname()) == nil || !net.ParseIP(u.Hostname()).IsLoopback() {
-						return errors.New("fixture media URLs must be loopback HTTP")
+					for _, address := range append([]string{track.Source.URL}, track.Source.BackupURLs...) {
+						u, err := url.Parse(address)
+						if err != nil || u.User != nil || u.Scheme != "http" || net.ParseIP(u.Hostname()) == nil || !net.ParseIP(u.Hostname()).IsLoopback() {
+							return errors.New("fixture media URLs must be loopback HTTP")
+						}
 					}
 				}
 			}

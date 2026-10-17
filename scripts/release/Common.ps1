@@ -140,7 +140,7 @@ function Initialize-Runtime([string] $Root, [int] $Port = 8080, [string] $JavaEx
             allowedRoots = @((Join-Path $Root 'downloads')); roots = @{ 'download-root' = (Join-Path $Root 'downloads') }
             ffmpeg = (Join-Path $Root 'tools/ffmpeg-9.0.2/ffmpeg.exe'); ffprobe = (Join-Path $Root 'tools/ffmpeg-9.0.2/ffprobe.exe')
             bilibili = @{ cookieFile = (Join-Path $Root 'runtime/auth/bilibili.session'); expectedUserId = '' }
-            telegram = @{ executable = (Join-Path $Root 'tools/tdl-0.20.4/tdl.exe'); proxyURL = 'http://127.0.0.1:40000'; accounts = @{} }
+            telegram = @{ executable = (Join-Path $Root 'tools/tdl-0.20.4/tdl.exe'); proxyURL = 'socks5://127.0.0.1:40000'; accounts = @{} }
             quarkAccounts = @{}
             driveAccounts = @{ 'drive-main' = @{ rootId = 'root'; proxyURL = 'http://127.0.0.1:40000'; rclone = @{ executable = (Join-Path $Root 'tools/rclone-1.74.4/rclone.exe'); configFile = 'C:/Users/WIN/AppData/Roaming/rclone/rclone.conf'; remote = 'gdrive'; bindingFile = (Join-Path $Root 'runtime/auth/drive-binding.json') } } }
             driveMount = @{ enabled = $true; accountId = 'drive-main'; cacheDir = (Join-Path $Root 'runtime/cache/gdrive') }

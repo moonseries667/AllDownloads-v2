@@ -219,6 +219,33 @@ func TestFrozenSelectionTargetBindingAndNoExtraIO(t *testing.T) {
 		t.Fatal("empty selection became default", err)
 	}
 }
+
+func TestPrivateMediaLocatorRefreshKeepsFrozenPublicRevision(t *testing.T) {
+	h, _, _ := setupHandler(t)
+	meta := testMetadata("http://127.0.0.1:1")
+	first, err := h.saveMetadata(meta, "content")
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta.Units[0].Tracks[0].Source.URL = "http://127.0.0.1:2/renewed?private-signature=new"
+	meta.Units[0].Tracks[0].Source.BackupURLs = []string{"http://127.0.0.1:3/mirror?private-signature=backup"}
+	next, err := h.saveMetadata(meta, "content")
+	if err != nil || next.Revision != first.Revision {
+		t.Fatal("private locator renewal invalidated a frozen public selection", err)
+	}
+	public, _ := json.Marshal(next)
+	if strings.Contains(string(public), "private-signature") || strings.Contains(string(public), "127.0.0.1") {
+		t.Fatal("private mirror locator leaked to the public content")
+	}
+	var saved snapshot
+	if err := h.State.Read("snapshot-"+digest("content@"+first.Revision), &saved); err != nil {
+		t.Fatal(err)
+	}
+	source := saved.Metadata.Units[0].Tracks[0].Source
+	if source.URL != meta.Units[0].Tracks[0].Source.URL || len(source.BackupURLs) != 1 || source.BackupURLs[0] != meta.Units[0].Tracks[0].Source.BackupURLs[0] {
+		t.Fatal("frozen snapshot did not retain renewed primary and official mirror")
+	}
+}
 func TestRootValidationAndPlanMismatch(t *testing.T) {
 	h, root, _ := setupHandler(t)
 	for _, path := range []string{filepath.Join(root, "absent"), t.TempDir(), "relative", `\\server\share`} {
