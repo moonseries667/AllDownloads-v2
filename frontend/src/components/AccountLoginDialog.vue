@@ -8,6 +8,7 @@ const props = defineProps<{ modelValue: boolean; platform: AccountPlatform | nul
 const emit = defineEmits<{ "update:modelValue": [value: boolean]; changed: [] }>();
 const session = ref<AuthSession | null>(null), qrImage = ref("");
 const loading = ref(false), cancelling = ref(false), error = ref(""), pollingStopped = ref(false);
+const authorizationShown = ref(false);
 const officialUrl = computed(() => session.value ? officialAuthUrl(session.value) : null);
 const terminal = computed(() => !!session.value && session.value.state !== "PENDING");
 const stateLabels = { PENDING: "等待授权", SUCCEEDED: "授权流程已完成", CANCELLED: "登录流程已取消", EXPIRED: "登录流程已过期", NEEDS_ACTION: "登录需要处理" };
@@ -24,9 +25,12 @@ async function apply(value: AuthSession, run: number) {
     const url = officialAuthUrl(value);
     if (!url) throw Error("未收到当前平台的官方二维码地址，请重新读取登录状态。");
     const image = await QRCode.toDataURL(url, { width: 240, margin: 2, errorCorrectionLevel: "M" });
-    if (run === generation) qrImage.value = image;
+    if (run === generation && props.modelValue) { qrImage.value = image; authorizationShown.value = true; }
   }
-  if (value.nextAction === "OPEN_URL" && !officialAuthUrl(value)) throw Error("未收到当前平台的官方授权地址，请重新读取登录状态。");
+  if (value.nextAction === "OPEN_URL") {
+    if (!officialAuthUrl(value)) throw Error("未收到当前平台的官方授权地址，请重新读取登录状态。");
+    if (value.state === "PENDING") authorizationShown.value = true;
+  }
   if (value.state !== "PENDING") emit("changed");
 }
 function schedule(run: number) {
@@ -47,12 +51,17 @@ async function refresh(automatic = false) {
     await apply(await accountsApi.session(current.authSessionId), run);
     const latest = session.value;
     // A pending runner task must finish before another AUTH_STEP is queued.
-    if (automatic && latest?.state === "PENDING" && ["SCAN_QR", "OPEN_URL"].includes(latest.nextAction)
+    if (automatic && run === generation && props.modelValue && !document.hidden && !cancelling.value
+      && latest?.state === "PENDING" && ["SCAN_QR", "OPEN_URL", "WAIT"].includes(latest.nextAction) && latest.taskId
       && Date.parse(latest.expiresAt) > Date.now() && Date.now() - lastStepAt >= 4000) {
-      const task = latest.taskId ? await accountsApi.task(latest.taskId) : null;
-      if (run === generation && (!task || task.status === "SUCCEEDED")) {
+      const task = await accountsApi.task(latest.taskId);
+      const pending = session.value;
+      if (run === generation && props.modelValue && !document.hidden && !cancelling.value
+        && pending?.authSessionId === latest.authSessionId && pending.taskId === latest.taskId
+        && pending.state === "PENDING" && ["SCAN_QR", "OPEN_URL", "WAIT"].includes(pending.nextAction)
+        && Date.parse(pending.expiresAt) > Date.now() && Date.now() - lastStepAt >= 4000 && task.status === "SUCCEEDED") {
         lastStepAt = Date.now();
-        await apply(await accountsApi.poll(latest.authSessionId), run);
+        await apply(await accountsApi.poll(pending.authSessionId), run);
       }
     }
   } catch (cause) { if (run === generation) error.value = (cause as Error).message; }
@@ -62,7 +71,7 @@ async function begin() {
   stop();
   if (!props.modelValue || !props.platform) return;
   const run = generation;
-  session.value = null; error.value = ""; qrImage.value = ""; pollingStopped.value = false;
+  session.value = null; error.value = ""; qrImage.value = ""; pollingStopped.value = false; authorizationShown.value = false;
   attempts = 0; lastStepAt = 0; loading.value = true;
   try { await apply(await accountsApi.begin(props.platform), run); }
   catch (cause) { if (run === generation) error.value = (cause as Error).message; }
@@ -93,7 +102,7 @@ onActivated(() => { if (props.modelValue && session.value?.state === "PENDING") 
       <p v-if="error" class="text-danger" role="alert">{{ error }}</p>
       <template v-if="session">
         <p v-if="session.message">{{ session.message }}</p>
-        <p v-if="session.state === 'PENDING' && session.nextAction === 'WAIT'" role="status">正在等待执行程序返回官方授权步骤。</p>
+        <p v-if="session.state === 'PENDING' && session.nextAction === 'WAIT'" role="status">{{ authorizationShown ? '请在官方应用或页面完成确认，页面会自动更新' : '正在准备官方授权步骤，请稍候' }}</p>
         <img v-if="qrImage && session.state === 'PENDING' && !pollingStopped" :src="qrImage" class="auth-qr" :alt="'使用 ' + platformName[session.platform] + ' 官方客户端扫码登录'" />
         <a v-if="session.nextAction === 'OPEN_URL' && officialUrl && session.state === 'PENDING'" class="official-auth-link" :href="officialUrl" target="_blank" rel="noopener noreferrer">打开官方授权页 <ExternalLink :size="15" aria-hidden="true" /></a>
         <p v-if="session.nextAction === 'LOCAL_SETUP'" class="field-help">请在 Y7000P 的受控本地入口完成新会话配置，再回到平台账号点击「检查」。</p>

@@ -35,6 +35,105 @@ func testMetadata(server string) media.Metadata {
 		{ID: "sub-unknown", Kind: "SUBTITLE", SubtitleType: "UNKNOWN", Availability: "AVAILABLE"},
 	}}}}
 }
+
+type accountReferenceProvider func(context.Context, media.Reference) (media.Metadata, error)
+
+func (p accountReferenceProvider) Fetch(ctx context.Context, ref media.Reference) (media.Metadata, error) {
+	return p(ctx, ref)
+}
+
+func fixedBilibiliOperations() []Operation {
+	return []Operation{
+		{ProtocolVersion: 1, OperationType: "SYNC_BIL_SOURCE", Platform: "BILIBILI", AccountRef: pointer("bilibili-main"), Payload: raw(map[string]any{"schemaVersion": 1, "sourceId": "source", "kind": "USER_ADDED", "externalId": "BV1WhJ46vETE", "url": "https://www.bilibili.com/video/BV1WhJ46vETE"})},
+		{ProtocolVersion: 1, OperationType: "FETCH_BIL_METADATA", Platform: "BILIBILI", AccountRef: pointer("bilibili-main"), Payload: raw(map[string]any{"schemaVersion": 1, "contentId": "content", "externalId": "BV1WhJ46vETE", "externalIdType": "BVID"})},
+	}
+}
+
+func TestFixedBilibiliAccountReferenceReachesProvider(t *testing.T) {
+	for _, operation := range fixedBilibiliOperations() {
+		t.Run(operation.OperationType, func(t *testing.T) {
+			h, _, _ := setupHandler(t)
+			calls := 0
+			h.Provider = accountReferenceProvider(func(_ context.Context, ref media.Reference) (media.Metadata, error) {
+				calls++
+				if ref.Kind != "BVID" || ref.ID != "BV1WhJ46vETE" {
+					t.Fatalf("account routing changed the selected video: %+v", ref)
+				}
+				metadata := testMetadata("http://127.0.0.1:1")
+				metadata.ExternalID = ref.ID
+				return metadata, nil
+			})
+			value, files, err := h.Handle(context.Background(), operation)
+			if err != nil || value == nil || len(files) != 0 || calls != 1 {
+				t.Fatalf("fixed account did not reach metadata provider: value=%v files=%v calls=%d err=%v", value, files, calls, err)
+			}
+			if operation.AccountRef == nil || *operation.AccountRef != "bilibili-main" {
+				t.Fatal("account reference was cleared during dispatch")
+			}
+		})
+	}
+}
+
+func TestBilibiliAccountReferenceRejectsOtherAccountsPlatformsAndOperations(t *testing.T) {
+	base := fixedBilibiliOperations()[0]
+	for _, test := range []struct{ name, account, platform, operation string }{
+		{"other account", "bilibili-secondary", "BILIBILI", "SYNC_BIL_SOURCE"},
+		{"wrong platform", "bilibili-main", "TELEGRAM", "SYNC_BIL_SOURCE"},
+		{"missing platform", "bilibili-main", "", "SYNC_BIL_SOURCE"},
+		{"non Bilibili operation", "bilibili-main", "BILIBILI", "VALIDATE_TARGET"},
+		{"unknown operation", "bilibili-main", "BILIBILI", "UNKNOWN"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h, _, _ := setupHandler(t)
+			calls := 0
+			h.Provider = accountReferenceProvider(func(context.Context, media.Reference) (media.Metadata, error) {
+				calls++
+				return media.Metadata{}, nil
+			})
+			operation := base
+			operation.AccountRef, operation.Platform, operation.OperationType = &test.account, test.platform, test.operation
+			_, _, err := h.Handle(context.Background(), operation)
+			if err == nil || media.Classify(err, "").Code != "ACCOUNT_NOT_CONFIGURED" || calls != 0 {
+				t.Fatalf("invalid account route reached provider: calls=%d err=%v", calls, err)
+			}
+		})
+	}
+}
+
+type unavailableBilibiliSession struct{ calls int }
+
+func (s *unavailableBilibiliSession) Bind(context.Context) (*http.Client, string, error) {
+	s.calls++
+	return nil, "", media.Fail("AUTH_REQUIRED", "BILIBILI_SESSION", false)
+}
+
+func TestFixedBilibiliAccountReferenceStillRequiresNativeSessionBinding(t *testing.T) {
+	for _, operation := range fixedBilibiliOperations() {
+		t.Run(operation.OperationType, func(t *testing.T) {
+			h, _, _ := setupHandler(t)
+			session := &unavailableBilibiliSession{}
+			h.Provider = &media.Bilibili{Session: session}
+			_, _, err := h.Handle(context.Background(), operation)
+			if err == nil || media.Classify(err, "").Code != "AUTH_REQUIRED" || session.calls != 1 {
+				t.Fatalf("native session binding was bypassed: calls=%d err=%v", session.calls, err)
+			}
+		})
+	}
+}
+
+func TestBilibiliAccountReferenceKeepsEmptyFixtureCompatibility(t *testing.T) {
+	empty := ""
+	for _, account := range []*string{nil, &empty} {
+		h, _, _ := setupHandler(t)
+		h.Provider = FixtureProvider{"BV1WhJ46vETE": testMetadata("http://127.0.0.1:1")}
+		operation := fixedBilibiliOperations()[0]
+		operation.AccountRef = account
+		if _, _, err := h.Handle(context.Background(), operation); err != nil {
+			t.Fatalf("empty account reference broke isolated fixture: %v", err)
+		}
+	}
+}
+
 func TestFrozenSelectionTargetBindingAndNoExtraIO(t *testing.T) {
 	h, root, _ := setupHandler(t)
 	var en, zh atomic.Int32
@@ -64,7 +163,7 @@ func TestFrozenSelectionTargetBindingAndNoExtraIO(t *testing.T) {
 	selected := content.MediaUnits[0]
 	selected.Tracks = selected.Tracks[:1]
 	payload := DownloadPayload{SchemaVersion: 1, ContentID: content.ID, ContentRevision: content.Revision, ContentKind: "SINGLE", ExternalID: "BVfixture", ExternalIDType: "BVID", QualityPolicy: "HIGHEST_AVAILABLE", ArchivePolicy: "NONE", Units: []Unit{selected}, Outputs: []Output{{ID: "out", RelativePath: "Bilibili/用户添加/标题(BVfixture)/en.json", TrackIDs: []string{"sub-en"}, Kind: "SUBTITLE"}}}
-	op := Operation{OperationID: "order", ResourceKey: "frozen", Destination: &Destination{RootID: "default", RootPath: root, RelativePath: "Bilibili/用户添加/标题(BVfixture)"}, OperationType: "DOWNLOAD_MEDIA", Payload: raw(payload)}
+	op := Operation{OperationID: "order", ResourceKey: "frozen", Platform: "BILIBILI", AccountRef: pointer("bilibili-main"), Destination: &Destination{RootID: "default", RootPath: root, RelativePath: "Bilibili/用户添加/标题(BVfixture)"}, OperationType: "DOWNLOAD_MEDIA", Payload: raw(payload)}
 	_, files, err := h.Handle(context.Background(), op)
 	if err != nil || len(files) != 1 {
 		t.Fatalf("files=%v err=%v", files, err)

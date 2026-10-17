@@ -90,7 +90,10 @@ func (h *Handler) rootID(root string) string {
 }
 func (h *Handler) Handle(ctx context.Context, op Operation) (any, []File, error) {
 	if op.AccountRef != nil && *op.AccountRef != "" {
-		return nil, nil, media.Fail("ACCOUNT_NOT_CONFIGURED", "ACCOUNT", false)
+		bilibiliOperation := op.OperationType == "SYNC_BIL_SOURCE" || op.OperationType == "FETCH_BIL_METADATA" || op.OperationType == "DOWNLOAD_MEDIA"
+		if op.Platform != "BILIBILI" || *op.AccountRef != "bilibili-main" || !bilibiliOperation {
+			return nil, nil, media.Fail("ACCOUNT_NOT_CONFIGURED", "ACCOUNT", false)
+		}
 	}
 	switch op.OperationType {
 	case "VALIDATE_TARGET":
