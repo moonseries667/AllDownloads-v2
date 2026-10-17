@@ -46,6 +46,7 @@ type Source struct {
 	URL, Version string
 	Headers      http.Header
 	Size         *int64
+	BackupURLs   []string `json:",omitempty"`
 }
 type Track struct {
 	ID, Kind, Language, LanguageName, SubtitleType, Availability, Reason string

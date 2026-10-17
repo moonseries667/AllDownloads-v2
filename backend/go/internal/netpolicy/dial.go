@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/net/proxy"
 )
 
 const (
@@ -18,8 +20,8 @@ const (
 )
 
 // DialContext returns a plain dialer for empty configuration, otherwise a TCP
-// dialer using HTTP CONNECT. Context governs establishment, not the lifetime of
-// a successfully returned connection, matching net.Dialer.DialContext.
+// dialer using HTTP CONNECT or anonymous SOCKS5. Context governs establishment,
+// not the lifetime of a returned connection, matching net.Dialer.DialContext.
 func DialContext(proxyURL string) (func(context.Context, string, string) (net.Conn, error), error) {
 	u, err := proxyAddress(proxyURL)
 	if err != nil {
@@ -28,12 +30,41 @@ func DialContext(proxyURL string) (func(context.Context, string, string) (net.Co
 	if u == nil {
 		return (&net.Dialer{}).DialContext, nil
 	}
+	var socks proxy.ContextDialer
+	if u.Scheme == "socks5" {
+		dialer, err := proxy.SOCKS5("tcp", u.Host, nil, &socksForward{})
+		if err != nil {
+			return nil, ErrProxyHandshake
+		}
+		var ok bool
+		socks, ok = dialer.(proxy.ContextDialer)
+		if !ok {
+			return nil, ErrProxyHandshake
+		}
+	}
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
 		if network != "tcp" && network != "tcp4" && network != "tcp6" {
 			return nil, ErrUnsupportedNetwork
 		}
 		if !validTarget(address) {
 			return nil, ErrInvalidTarget
+		}
+		if socks != nil {
+			handshakeCtx, cancel := context.WithTimeout(ctx, connectTimeout)
+			defer cancel()
+			conn, err := socks.DialContext(handshakeCtx, network, address)
+			if err != nil {
+				return nil, safeNetworkError(ctx, err, ErrProxyHandshake)
+			}
+			if err := handshakeCtx.Err(); err != nil {
+				conn.Close()
+				return nil, safeNetworkError(ctx, err, ErrProxyHandshake)
+			}
+			if err := conn.SetDeadline(time.Time{}); err != nil {
+				conn.Close()
+				return nil, safeNetworkError(ctx, err, ErrProxyHandshake)
+			}
+			return conn, nil
 		}
 		deadline := time.Now().Add(connectTimeout)
 		if end, ok := ctx.Deadline(); ok && end.Before(deadline) {
@@ -94,6 +125,50 @@ func DialContext(proxyURL string) (func(context.Context, string, string) (net.Co
 		success = true
 		return &bufferedConn{Conn: conn, reader: buffered}, nil
 	}, nil
+}
+
+type socksForward struct{ net.Dialer }
+
+func (d *socksForward) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	conn, err := d.Dialer.DialContext(ctx, network, address)
+	if err != nil {
+		return nil, safeNetworkError(ctx, err, ErrProxyUnavailable)
+	}
+	return &anonymousSOCKSConn{Conn: conn}, nil
+}
+
+// x/net/proxy sends an anonymous-only greeting when Auth is nil, but does not
+// reject an unadvertised server method. Validate only that method selection;
+// the library still owns address encoding, CONNECT and handshake cancellation.
+type anonymousSOCKSConn struct {
+	net.Conn
+	methodChecked bool
+	pending       []byte
+}
+
+func (c *anonymousSOCKSConn) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if !c.methodChecked {
+		var response [2]byte
+		if _, err := io.ReadFull(c.Conn, response[:]); err != nil {
+			return 0, err
+		}
+		if response[0] != 5 {
+			return 0, ErrProxyHandshake
+		}
+		if response[1] != 0 {
+			return 0, ErrProxyAuthentication
+		}
+		c.methodChecked, c.pending = true, response[:]
+	}
+	if len(c.pending) != 0 {
+		n := copy(p, c.pending)
+		c.pending = c.pending[n:]
+		return n, nil
+	}
+	return c.Conn.Read(p)
 }
 
 func validTarget(address string) bool {

@@ -41,7 +41,7 @@ func TestQRLoginUsesNewExplicitStorageAndDirectTerminalStreams(t *testing.T) {
 		t.Fatal(err)
 	}
 	storage := filepath.Join(root, "auth", "telegram")
-	tdl := &TDL{Executable: executable, ProxyURL: "http://127.0.0.1:40000", WorkDir: filepath.Join(root, "work"), Accounts: map[string]TDLAccount{"telegram-main": {Namespace: "alldownloads-v2", StorageDir: storage}}}
+	tdl := &TDL{Executable: executable, ProxyURL: "socks5://127.0.0.1:40000", WorkDir: filepath.Join(root, "work"), Accounts: map[string]TDLAccount{"telegram-main": {Namespace: "alldownloads-v2", StorageDir: storage}}}
 	tdl.Run = func(_ context.Context, _ string, _ time.Duration, _ ...string) ([]byte, error) {
 		return []byte("Version: 0.20.4"), nil
 	}
@@ -78,7 +78,7 @@ func TestExplicitCheckCallsOnlyVersionAndSelfExtension(t *testing.T) {
 	if err := os.Mkdir(storage, 0700); err != nil {
 		t.Fatal(err)
 	}
-	tdl := &TDL{Executable: filepath.Join(root, "tdl.exe"), ProxyURL: "http://127.0.0.1:40000", WorkDir: filepath.Join(root, "new-work"), Accounts: map[string]TDLAccount{
+	tdl := &TDL{Executable: filepath.Join(root, "tdl.exe"), ProxyURL: "socks5://127.0.0.1:40000", WorkDir: filepath.Join(root, "new-work"), Accounts: map[string]TDLAccount{
 		"telegram-main": {Namespace: "alldownloads-v2", StorageDir: storage, PeerID: "9007199254740993"},
 	}}
 	calls := 0
@@ -128,7 +128,7 @@ func TestExplicitCheckCallsOnlyVersionAndSelfExtension(t *testing.T) {
 func TestExportAndDownloadKeepExplicitProxyOnEveryInvocation(t *testing.T) {
 	document := tdlMessage(70, "media.bin", 0, `{"Document":{"ID":701,"Size":5,"MimeType":"application/octet-stream","Attributes":[{"FileName":"media.bin"}]}}`)
 	tdl, stub, _ := newTDLTest(t, []tdlTestMessage{document})
-	tdl.ProxyURL = "http://127.0.0.1:40000"
+	tdl.ProxyURL = "socks5://127.0.0.1:40000"
 	stub.downloadBytes = []byte("12345")
 	calls := 0
 	tdl.Run = func(ctx context.Context, executable string, timeout time.Duration, args ...string) ([]byte, error) {

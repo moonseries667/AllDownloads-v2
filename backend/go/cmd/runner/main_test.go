@@ -145,6 +145,23 @@ func TestFormalRunnerRejectsFixtureCatalogOutsideIsolatedModeBeforeControlIO(t *
 	}
 }
 
+func TestFormalRunnerRejectsExternalFixtureBackupBeforeControlIO(t *testing.T) {
+	server, capture := newMainTestControl(t, nil)
+	defer server.Close()
+	fixturePath := filepath.Join(t.TempDir(), "fixture.json")
+	fixture := `{"BVfixture":{"Units":[{"Tracks":[{"Kind":"VIDEO","Availability":"AVAILABLE","Source":{"URL":"http://127.0.0.1:1/primary","Version":"fixture-1","BackupURLs":["https://external.invalid/backup"]}}]}]}}`
+	if err := os.WriteFile(fixturePath, []byte(fixture), 0600); err != nil {
+		t.Fatal(err)
+	}
+	err := run(context.Background(), writeMainTestConfig(t, server.URL, fixturePath, true), true)
+	if err == nil || !strings.Contains(err.Error(), "fixture media URLs must be loopback HTTP") {
+		t.Fatalf("run error = %v, want external backup rejection", err)
+	}
+	if capture.registers != 0 || capture.acquires != 0 || capture.results != 0 || capture.otherCalls != 0 {
+		t.Fatalf("fixture rejection made control I/O: %+v", capture)
+	}
+}
+
 func writeMainTestConfig(t *testing.T, controlURL, fixture string, isolated bool) string {
 	t.Helper()
 	t.Setenv(mainTestTokenEnv, "synthetic-main-token")

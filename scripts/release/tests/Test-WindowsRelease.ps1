@@ -106,6 +106,8 @@ try {
     Test-Case 'bundle contains only declared release artifacts and no runtime' {
         & (Join-Path $PSScriptRoot '../Build-WindowsBundle.ps1') @buildArguments | Out-Null
         Assert-True (Test-Path -LiteralPath (Join-Path $script:bundle 'release/config-templates/runner.example.json')) 'configuration template'
+        $template = Read-JsonFile (Join-Path $script:bundle 'release/config-templates/runner.example.json')
+        Assert-True ($template.telegram.proxyURL -eq 'socks5://127.0.0.1:40000' -and $template.driveAccounts.'drive-main'.proxyURL -eq 'http://127.0.0.1:40000') 'release template keeps Telegram SOCKS5 and Drive HTTP'
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $script:bundle 'runtime'))) 'no runtime copied'
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $script:bundle 'scripts/release/tests'))) 'no test executable or fixture copied'
         Assert-True ((Read-JsonFile (Join-Path $script:bundle 'release/release.json')).rclone -eq '1.74.4') 'rclone version in manifest'
@@ -165,7 +167,7 @@ try {
         Assert-True ($drive.rclone.bindingFile -eq (Join-Path $root 'runtime/auth/drive-binding.json')) 'new identity binding stays in v2 runtime'
         foreach ($field in @('tokenEnv', 'tokenFile', 'clientFile')) { Assert-True (-not ($drive.PSObject.Properties.Name -contains $field)) 'rclone authentication does not also configure Google Desktop credentials' }
         Assert-True ($runner.driveMount.enabled -and $runner.driveMount.accountId -eq 'drive-main' -and $runner.driveMount.cacheDir -eq (Join-Path $root 'runtime/cache/gdrive')) 'default mount uses the same account and a fresh v2 cache'
-        Assert-True ($runner.telegram.proxyURL -eq 'http://127.0.0.1:40000' -and $drive.proxyURL -eq 'http://127.0.0.1:40000') 'user-selected per-component WARP proxy'
+        Assert-True ($runner.telegram.proxyURL -eq 'socks5://127.0.0.1:40000' -and $drive.proxyURL -eq 'http://127.0.0.1:40000') 'Telegram SOCKS5 and Drive HTTP use the same WARP port'
         foreach ($path in @($runner.bilibili.cookieFile, $drive.rclone.bindingFile)) { Assert-True (-not (Test-Path -LiteralPath $path)) 'no platform credential or identity binding file created by default' }
         Assert-True ((Get-Item -LiteralPath (Join-Path $root 'runtime/auth/runner.token')).Length -ge 32) 'new token exists (contents not read)'
     }
@@ -173,11 +175,14 @@ try {
         $settingsPath = Join-Path $root 'runtime/config/deployment.local.json'
         $before = Get-Content -LiteralPath $settingsPath -Raw
         $runnerPath = Join-Path $root 'runtime/config/runner.local.json'
+        $runner = Read-JsonFile $runnerPath
+        $runner.telegram.proxyURL = 'http://127.0.0.1:40000'
+        Write-JsonFile $runnerPath $runner
         $runnerBefore = Get-Content -LiteralPath $runnerPath -Raw
         $tokenTime = (Get-Item -LiteralPath (Join-Path $root 'runtime/auth/runner.token')).LastWriteTimeUtc
         [void](Initialize-Runtime $root 9090 'does-not-exist.exe')
         Assert-True ($before -eq (Get-Content -LiteralPath $settingsPath -Raw)) 'existing config kept'
-        Assert-True ($runnerBefore -eq (Get-Content -LiteralPath $runnerPath -Raw)) 'existing runner config kept'
+        Assert-True ($runnerBefore -eq (Get-Content -LiteralPath $runnerPath -Raw)) 'existing runner config and explicit HTTP proxy kept'
         Assert-True ($tokenTime -eq (Get-Item -LiteralPath (Join-Path $root 'runtime/auth/runner.token')).LastWriteTimeUtc) 'token not rewritten'
     }
     Test-Case 'lifecycle lock prevents simultaneous mutations' {
@@ -243,6 +248,7 @@ try {
             Assert-True ((Read-JsonFile (Join-Path $root 'app/current.json')).version -eq '2026.10.16.2') 'new version activated'
             Assert-True (Test-Path -LiteralPath (Join-Path $root 'app/releases/2026.10.16.1/runner.exe')) 'old version retained'
             Assert-True ($configBefore -eq (Get-Content -LiteralPath $configPath -Raw)) 'private runner config retained'
+            Assert-True ((Read-JsonFile $configPath).telegram.proxyURL -eq 'http://127.0.0.1:40000') 'installer does not migrate an existing Telegram proxy'
             Assert-True ($toolBefore -eq (Get-Item -LiteralPath (Join-Path $root 'tools/ffmpeg-9.0.2/ffmpeg.exe')).LastWriteTimeUtc) 'existing tool not overwritten'
         } finally { $manifest.version = '2026.10.16.1'; Write-JsonFile $manifestPath $manifest }
     }

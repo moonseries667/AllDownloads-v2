@@ -29,7 +29,7 @@ func proxyAddress(raw string) (*url.URL, error) {
 		return nil, nil
 	}
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "http" || u.Opaque != "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || strings.Contains(raw, "#") || (u.Path != "" && u.Path != "/") || u.RawPath != "" {
+	if err != nil || (u.Scheme != "http" && u.Scheme != "socks5") || u.Opaque != "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || strings.Contains(raw, "#") || (u.Path != "" && u.Path != "/") || u.RawPath != "" {
 		return nil, ErrInvalidProxy
 	}
 	host, port, err := net.SplitHostPort(u.Host)
@@ -41,7 +41,7 @@ func proxyAddress(raw string) (*url.URL, error) {
 	if ip == nil || !ip.IsLoopback() || err != nil || n == 0 {
 		return nil, ErrInvalidProxy
 	}
-	return &url.URL{Scheme: "http", Host: net.JoinHostPort(ip.String(), strconv.FormatUint(n, 10))}, nil
+	return &url.URL{Scheme: u.Scheme, Host: net.JoinHostPort(ip.String(), strconv.FormatUint(n, 10))}, nil
 }
 
 // HTTPClient clones the default transport for each client. A nonempty proxy
@@ -61,15 +61,26 @@ func HTTPClient(proxyURL string, timeout time.Duration) (*http.Client, error) {
 	if u == nil {
 		return client, nil
 	}
-	transport.Proxy = http.ProxyURL(u)
-	transport.OnProxyConnectResponse = func(_ context.Context, _ *url.URL, _ *http.Request, res *http.Response) error {
-		if res.StatusCode == http.StatusProxyAuthRequired {
-			return ErrProxyAuthentication
+	if u.Scheme == "socks5" {
+		transport.Proxy = nil
+		transport.DialContext, err = DialContext(u.String())
+		if err != nil {
+			return nil, err
 		}
-		if res.StatusCode != http.StatusOK {
-			return ErrProxyHandshake
+		// Use the same bounded SOCKS dialer for HTTPS, then the standard origin
+		// TLS handshake. An inherited TLS-specific dial hook must not bypass it.
+		transport.DialTLS, transport.DialTLSContext = nil, nil
+	} else {
+		transport.Proxy = http.ProxyURL(u)
+		transport.OnProxyConnectResponse = func(_ context.Context, _ *url.URL, _ *http.Request, res *http.Response) error {
+			if res.StatusCode == http.StatusProxyAuthRequired {
+				return ErrProxyAuthentication
+			}
+			if res.StatusCode != http.StatusOK {
+				return ErrProxyHandshake
+			}
+			return nil
 		}
-		return nil
 	}
 	client.Transport = &proxyTransport{transport}
 	return client, nil
@@ -101,8 +112,10 @@ func safeNetworkError(ctx context.Context, err, fallback error) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	if errors.Is(err, ErrProxyHandshake) {
-		return ErrProxyHandshake
+	for _, failure := range []error{ErrProxyAuthentication, ErrProxyHandshake, ErrProxyUnavailable, ErrProxyTimeout} {
+		if errors.Is(err, failure) {
+			return failure
+		}
 	}
 	var timeout net.Error
 	if errors.As(err, &timeout) && timeout.Timeout() {

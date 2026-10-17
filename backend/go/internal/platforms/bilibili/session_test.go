@@ -251,3 +251,26 @@ func TestAPIRedirectCannotLeakSession(t *testing.T) {
 		}
 	}
 }
+
+func TestDownloadPreservesAccountVerificationFailureBeforeAnyMediaRequest(t *testing.T) {
+	var mediaHits atomic.Int32
+	s, server := newTestSession(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/x/web-interface/nav" {
+			w.WriteHeader(http.StatusForbidden)
+			fmt.Fprint(w, "private-upstream")
+			return
+		}
+		mediaHits.Add(1)
+		fmt.Fprint(w, "unexpected media")
+	})
+	writeCookie(t, s, cookieOne)
+	source := media.Source{
+		URL: server.URL + "/primary?private-upstream=locator", BackupURLs: []string{server.URL + "/backup"},
+		Version: "bilibili:42:video", Headers: http.Header{media.BilibiliIdentityHeader: {"42"}},
+	}
+	err := (&media.Downloader{Client: s.DownloadClient()}).Fetch(context.Background(), source, filepath.Join(t.TempDir(), "video.part"))
+	wantFault(t, err, "PERMISSION_DENIED")
+	if mediaHits.Load() != 0 {
+		t.Fatal("account verification failure reached a media origin")
+	}
+}

@@ -35,6 +35,7 @@ const contents = ref<RecordData[]>([]),
   view = ref("grid"),
   loading = ref(false),
   error = ref("");
+const failedCoverUrls = ref(new Set<string>());
 const selectedIds = ref<string[]>([]),
   querySelection = ref(false),
   frozenIds = ref<string[]>([]),
@@ -236,6 +237,10 @@ function cardDuration(c: RecordData) {
 }
 function unitCount(c: RecordData) {
   return c.mediaUnits?.length ?? c.downloadSummary.totalCount ?? 0;
+}
+function markCoverFailed(event: Event) {
+  const url = (event.currentTarget as HTMLImageElement).getAttribute("src");
+  if (url) failedCoverUrls.value.add(url);
 }
 async function addSources() {
   adding.value = true;
@@ -451,8 +456,8 @@ async function removeSource() {
             @click="addSelection(c.id)"
           >
             <div class="video-cover">
-              <img v-if="c.coverUrl" :src="c.coverUrl" :alt="c.title + '封面'" />
-              <span v-else class="cover-placeholder">暂无封面</span>
+              <img v-if="c.coverUrl && !failedCoverUrls.has(c.coverUrl)" :key="c.coverUrl" referrerpolicy="no-referrer" :src="c.coverUrl" :alt="c.title + '封面'" @error="markCoverFailed" />
+              <span v-else class="cover-placeholder">{{ c.coverUrl ? '封面加载失败' : '暂无封面' }}</span>
               <button
                 class="cover-checkbox"
                 :aria-label="'选择 ' + c.title"

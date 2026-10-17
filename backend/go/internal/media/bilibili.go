@@ -373,7 +373,7 @@ func (b *Bilibili) populate(ctx context.Context, unit *Unit, bvid, episode strin
 							size = &n
 						}
 					}
-					unit.Tracks = append(unit.Tracks, Track{ID: id, Kind: kind, Language: language, LanguageName: firstString(item, "language_doc", "lang_doc", "lan_doc", "languageDoc", "langDoc", "lanDoc"), SubtitleType: "NOT_APPLICABLE", Availability: "AVAILABLE", Duration: unit.Duration, Size: size, Source: Source{URL: normalizeURL(locator), Version: b.sourceVersion(id), Headers: b.sourceHeaders(), Size: size}})
+					unit.Tracks = append(unit.Tracks, Track{ID: id, Kind: kind, Language: language, LanguageName: firstString(item, "language_doc", "lang_doc", "lan_doc", "languageDoc", "langDoc", "lanDoc"), SubtitleType: "NOT_APPLICABLE", Availability: "AVAILABLE", Duration: unit.Duration, Size: size, Source: Source{URL: normalizeURL(locator), Version: b.sourceVersion(id), Headers: b.sourceHeaders(), Size: size, BackupURLs: dashBackupURLs(item, locator)}})
 					seenLanguage[language] = true
 				}
 			}
@@ -609,6 +609,27 @@ func normalizeURL(s string) string {
 	}
 	return s
 }
+
+func dashBackupURLs(item object, primary string) []string {
+	seen := map[string]bool{normalizeURL(strings.TrimSpace(primary)): true}
+	var backups []string
+	for _, field := range []string{"backupUrl", "backup_url"} {
+		for _, value := range list(item[field]) {
+			candidate, ok := value.(string)
+			if !ok {
+				continue
+			}
+			candidate = normalizeURL(strings.TrimSpace(candidate))
+			if candidate == "" || seen[candidate] {
+				continue
+			}
+			seen[candidate] = true
+			backups = append(backups, candidate)
+		}
+	}
+	return backups
+}
+
 func mediaHeaders() http.Header {
 	return http.Header{"Referer": {"https://www.bilibili.com/"}, "User-Agent": {"Mozilla/5.0"}}
 }
