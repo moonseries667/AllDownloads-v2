@@ -142,7 +142,7 @@ test("@accounts real Java account reads, explicit checks and revision-controlled
   const session: AuthSession = (await (await beginning).json()).data;
   expect(session).toMatchObject({ accountId: "bilibili-main", platform: "BILIBILI", state: "PENDING", nextAction: "WAIT" });
   const dialog = page.getByRole("dialog", { name: "Bilibili 登录", exact: true });
-  await expect(dialog).toContainText("正在等待执行程序");
+  await expect(dialog).toContainText("正在准备官方授权步骤，请稍候");
   await expect(dialog.locator(".auth-qr")).toHaveCount(0);
   await page.screenshot({ path: info.outputPath("real-java-account-login-wait.png"), animations: "disabled" });
   const cancelling = page.waitForResponse(response => response.url().includes("/auth-sessions/") && response.request().method() === "DELETE");
@@ -159,11 +159,12 @@ test("@accounts real Java account reads, explicit checks and revision-controlled
 
 test("contract stub: QR stays local, polling is bounded to the open flow and cancel uses revision", async ({ page }, info) => {
   const account = { id: "bilibili-main", platform: "BILIBILI", label: "Bilibili 主账号", state: "UNKNOWN", lastCheckedAt: null, reasonCode: null, revision: "1" };
-  let session: AuthSession = { authSessionId: "synthetic-auth", accountId: account.id, platform: "BILIBILI", state: "PENDING", nextAction: "SCAN_QR", url: "https://passport.bilibili.com/h5-app/passport/login/scan?fixture=browser-only", message: "合成授权步骤，仅验证界面", expiresAt: new Date(Date.now() + 120000).toISOString(), revision: "1", taskId: null, reasonCode: null };
+  let session: AuthSession = { authSessionId: "synthetic-auth", accountId: account.id, platform: "BILIBILI", state: "PENDING", nextAction: "SCAN_QR", url: "https://passport.bilibili.com/h5-app/passport/login/scan?fixture=browser-only", message: "合成授权步骤，仅验证界面", expiresAt: new Date(Date.now() + 120000).toISOString(), revision: "1", taskId: "synthetic-qr-task", reasonCode: null };
   let steps = 0, cancelled = false;
   const external: string[] = [];
   page.on("request", request => { if (!request.url().startsWith("http://127.0.0.1:5193") && !request.url().startsWith("data:")) external.push(request.url()); });
   await page.route("**/api/v1/accounts", route => route.fulfill({ json: { data: { items: [account], nextCursor: null }, requestId: "stub-account" } }));
+  await page.route("**/api/v1/tasks/synthetic-qr-task", route => route.fulfill({ json: { data: { status: "SUCCEEDED" }, requestId: "stub-qr-task" } }));
   await page.route("**/api/v1/auth-sessions**", async route => {
     const request = route.request();
     if (request.method() === "DELETE") {
@@ -191,6 +192,66 @@ test("contract stub: QR stays local, polling is bounded to the open flow and can
   expect(steps).toBe(stoppedAt);
   expect(external).toEqual([]);
   expect(await page.evaluate(() => localStorage.getItem("alldownloads.demo.feedback2.v3"))).toBeNull();
+});
+
+test("contract stub: WAIT confirmation keeps polling only after its current task succeeds", async ({ page }, info) => {
+  const account = { id: "bilibili-main", platform: "BILIBILI", label: "Bilibili 主账号", state: "UNKNOWN", lastCheckedAt: null, reasonCode: null, revision: "1" };
+  let session: AuthSession = { authSessionId: "synthetic-wait-auth", accountId: account.id, platform: "BILIBILI", state: "PENDING", nextAction: "SCAN_QR", url: "https://account.bilibili.com/h5/account-h5/auth/scan-web?navhide=1&callback=close&from=&qrcode_key=synthetic-browser-key", message: "合成扫码步骤，仅验证界面", expiresAt: new Date(Date.now() + 120000).toISOString(), revision: "1", taskId: "wait-auth-begin", reasonCode: null };
+  let begins = 0, steps = 0, confirmationTaskStatus = "RUNNING";
+  const confirmationTaskReads: string[] = [], stepTimes: number[] = [], external: string[] = [];
+  page.on("request", request => { if (!request.url().startsWith("http://127.0.0.1:5193") && !request.url().startsWith("data:")) external.push(request.url()); });
+  await page.route("**/api/v1/accounts", route => route.fulfill({ json: { data: { items: [account], nextCursor: null }, requestId: "stub-wait-account" } }));
+  await page.route("**/api/v1/tasks/wait-auth-*", async route => {
+    const confirmation = route.request().url().endsWith("wait-auth-confirmation");
+    if (confirmation) confirmationTaskReads.push(confirmationTaskStatus);
+    await route.fulfill({ json: { data: { status: confirmation ? confirmationTaskStatus : "SUCCEEDED" }, requestId: "stub-wait-task" } });
+  });
+  await page.route("**/api/v1/auth-sessions**", async route => {
+    const request = route.request();
+    if (request.method() === "POST") {
+      expect(request.headers()["idempotency-key"]).toBeTruthy();
+      if (request.url().endsWith("/steps")) {
+        expect(request.postDataJSON()).toEqual({ action: "POLL" });
+        steps++; stepTimes.push(Date.now());
+        if (steps === 1) {
+          session = { ...session, nextAction: "WAIT", url: null, message: "合成官方确认状态，仅验证界面", revision: "2", taskId: "wait-auth-confirmation" };
+        } else {
+          expect(steps).toBe(2);
+          expect(confirmationTaskStatus).toBe("SUCCEEDED");
+          session = { ...session, state: "SUCCEEDED", nextAction: "NONE", message: "授权流程已完成，请主动检查账号", revision: "3" };
+        }
+      } else {
+        expect(request.postDataJSON()).toEqual({ platform: "BILIBILI" });
+        begins++;
+      }
+    }
+    await route.fulfill({ json: { data: session, requestId: "stub-wait-auth" } });
+  });
+  await page.goto("/settings");
+  await page.getByRole("button", { name: "登录管理", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Bilibili 登录", exact: true });
+  await expect(dialog.getByRole("img", { name: "使用 Bilibili 官方客户端扫码登录", exact: true })).toHaveAttribute("src", /^data:image\/png;base64,/);
+  await expect.poll(() => steps).toBe(1);
+  await expect(dialog.locator(".auth-qr")).toHaveCount(0);
+  const waitFeedback = (await dialog.getByRole("status").allTextContents()).join(" ");
+  await page.screenshot({ path: info.outputPath("wait-official-confirmation.png"), animations: "disabled" });
+  // Let more than one four-second polling window elapse while the runner is busy.
+  await page.waitForTimeout(6500);
+  expect(steps).toBe(1);
+  expect(begins).toBe(1);
+  confirmationTaskStatus = "SUCCEEDED";
+  // Before the fix WAIT never reaches this second POLL, even after the task succeeds.
+  await expect.poll(() => steps).toBe(2);
+  await expect(dialog.getByRole("heading", { name: "授权流程已完成", exact: true })).toBeVisible();
+  await page.screenshot({ path: info.outputPath("wait-confirmation-completed.png"), animations: "disabled" });
+  expect(confirmationTaskReads).toContain("RUNNING");
+  expect(confirmationTaskReads).toContain("SUCCEEDED");
+  expect(stepTimes[1]! - stepTimes[0]!).toBeGreaterThanOrEqual(4000);
+  expect(waitFeedback).toContain("请在官方应用或页面完成确认，页面会自动更新");
+  await page.waitForTimeout(4500);
+  expect(steps).toBe(2);
+  expect(begins).toBe(1);
+  expect(external).toEqual([]);
 });
 
 test("a stopped Java process keeps the page in a visible error state without demo fallback", async ({ page }, info) => {
