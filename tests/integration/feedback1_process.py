@@ -20,6 +20,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+import zlib
 
 from validate_contracts import validate
 
@@ -119,9 +120,12 @@ def main():
     video, audio = work / "input-video.mp4", work / "input-audio.m4a"
     run([args.ffmpeg, "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=blue:s=64x64:r=10", "-t", "1", "-an", "-c:v", "mpeg4", video])
     run([args.ffmpeg, "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100", "-t", "1", "-vn", "-c:a", "aac", audio])
+    danmaku_xml = '<i><d p="0,1,25,16777215,0,0,0,1">fixture</d></i>'.encode()
+    compressor = zlib.compressobj(wbits=-15)
+    danmaku_deflate = compressor.compress(danmaku_xml) + compressor.flush()
     MediaServer.files = {"/video": video.read_bytes(), "/audio": audio.read_bytes(),
                          "/subtitle": json.dumps({"body": [{"from": 0, "to": 1, "content": "隔离验证"}]}).encode(),
-                         "/danmaku": '<i><d p="0,1,25,16777215,0,0,0,1">fixture</d></i>'.encode()}
+                         "/danmaku": danmaku_deflate}
     media = http.server.ThreadingHTTPServer(("127.0.0.1", 0), MediaServer)
     proxy = http.server.ThreadingHTTPServer(("127.0.0.1", 0), LossProxy)
     for server in [media, proxy]:
@@ -236,6 +240,8 @@ def main():
         assert {s["codec_type"] for s in probe["streams"]} == {"video", "audio"}
         subtitle = custom / next(o["relativePath"] for o in outputs if o["kind"] == "SUBTITLE")
         assert json.loads(subtitle.read_text())["body"][0]["content"] == "隔离验证"
+        danmaku = custom / next(o["relativePath"] for o in outputs if o["kind"] == "DANMAKU")
+        assert danmaku.read_bytes() == danmaku_xml
         stop_java()
         start_java()
         once()  # Replay Go receipt after both processes restart; no new media requests.
@@ -259,7 +265,7 @@ def main():
         assert api("GET", "/download-orders/" + bad_order["orderId"])["status"] == "NEEDS_ACTION"
         capture("Overview", api("GET", "/overview"))
         (work / "captures.json").write_text(json.dumps(captures, ensure_ascii=False), encoding="utf-8")
-        print("PASS: real Java/Go processes, metadata-only sync, exact mux/subtitle/danmaku outputs, target isolation, lost-ack replay across Java/Go restart, NONE archive exclusion, and media failure.")
+        print("PASS: real Java/Go processes, metadata-only sync, exact mux/subtitle/raw-DEFLATE danmaku XML outputs, target isolation, lost-ack replay across Java/Go restart, NONE archive exclusion, and media failure.")
         print("Isolated evidence directory:", work)
     finally:
         stop_java()
